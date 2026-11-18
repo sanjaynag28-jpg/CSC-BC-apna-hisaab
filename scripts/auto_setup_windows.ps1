@@ -25,6 +25,134 @@ function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "  [!]  $msg" -ForegroundColor Yellow }
 function Write-Err($msg)  { Write-Host "  [X]  $msg" -ForegroundColor Red }
 
+# ============================================================================
+# RETRY / SELF-HEAL HELPERS (network fail, corrupt download, partial install)
+# ============================================================================
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$Action,
+        [int]$Attempts = 3,
+        [int]$DelaySeconds = 5,
+        [string]$What = "operation"
+    )
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            return (& $Action)
+        } catch {
+            if ($i -eq $Attempts) { throw }
+            Write-Warn "$What fail hua (attempt $i/$Attempts): $($_.Exception.Message)"
+            Write-Warn "  $DelaySeconds sec me dobara koshish..."
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
+function Get-RemoteFile {
+    param([string]$Url, [string]$Path, [int]$Attempts = 5)
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            if (Test-Path $Path) { Remove-Item $Path -Force -ErrorAction SilentlyContinue }
+            Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing -TimeoutSec 300
+            if ((Test-Path $Path) -and (Get-Item $Path).Length -gt 1024) { return $true }
+            throw "Downloaded file empty ya corrupt hai"
+        } catch {
+            Write-Warn "Download attempt $i/$Attempts fail: $($_.Exception.Message)"
+            if ($i -lt $Attempts) { Start-Sleep -Seconds ([Math]::Min(20, 3 * $i)) }
+        }
+    }
+    return $false
+}
+
+# Files jo har haal me sahi hone chahiye (missing/corrupt = auto repair)
+$script:RequiredFiles = @{
+    'server.js'                      = 2000
+    'package.json'                   = 200
+    'package-lock.json'              = 5000
+    'setup-database.js'              = 1000
+    'database\setup.sql'             = 10000
+    'public\index.html'              = 50000
+    'public\app.js'                  = 50000
+    'routes\auth.js'                 = 500
+    'middleware\auth.js'             = 500
+    'utils\autoUpdater.js'           = 1000
+}
+
+function Test-ProjectFilesHealthy {
+    $bad = @()
+    foreach ($rel in $script:RequiredFiles.Keys) {
+        $p = Join-Path $ProjectDir $rel
+        if (-not (Test-Path $p)) { $bad += $rel; continue }
+        if ((Get-Item $p).Length -lt $script:RequiredFiles[$rel]) { $bad += $rel }
+    }
+    return $bad
+}
+
+function Copy-CodeFiles {
+    param([string]$SourceDir, [string]$TargetDir)
+    $skip = @('.env', '.git', 'backups', 'logs', 'node_modules', 'database\data', 'public\uploads', '.auto-update-tmp', '.previous-release', '.antigravity', 'bin')
+    Get-ChildItem -Path $SourceDir -Force | ForEach-Object {
+        if ($skip -contains $_.Name) { return }
+        $dest = Join-Path $TargetDir $_.Name
+        if ($_.PSIsContainer) {
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            $exclude = $null
+            if ($_.Name -eq 'public') { $exclude = 'uploads' }
+            if ($_.Name -eq 'database') { $exclude = 'data' }
+            Get-ChildItem -LiteralPath $_.FullName -Force | Where-Object { -not $exclude -or $_.Name -ne $exclude } | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $dest -Recurse -Force
+            }
+        } else {
+            Copy-Item -LiteralPath $_.FullName -Destination $dest -Force
+        }
+    }
+}
+
+function Repair-ProjectFiles {
+    $bad = Test-ProjectFilesHealthy
+    if ($bad.Count -eq 0) {
+        Write-Ok "Project files verified (koi file missing/corrupt nahi)."
+        return
+    }
+    Write-Warn ("Missing/corrupt files mile: " + ($bad -join ', '))
+    Write-Warn "Self-repair: GitHub se fresh copy download ho rahi hai (aapka data safe rahega)..."
+
+    $zipUrl = "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip"
+    $tmp = Join-Path $env:TEMP ("cmbc_repair_" + (Get-Random))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $zipPath = Join-Path $tmp "app.zip"
+
+    if (-not (Get-RemoteFile -Url $zipUrl -Path $zipPath -Attempts 6)) {
+        throw "Repair download fail. Internet check karke ONE_CLICK_SETUP.bat dobara chalayein."
+    }
+
+    $ext = Join-Path $tmp "ext"
+    $ok = $false
+    for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+        try {
+            if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
+            Expand-Archive -LiteralPath $zipPath -DestinationPath $ext -Force
+            $ok = $true
+        } catch {
+            Write-Warn "Extract attempt $i/3 fail: $($_.Exception.Message)"
+            Start-Sleep -Seconds (2 * $i)
+        }
+    }
+    if (-not $ok) { throw "Repair ZIP extract nahi hua (corrupt download)." }
+
+    $src = Get-ChildItem -Path $ext -Directory | Select-Object -First 1
+    if (-not $src) { throw "Repair ZIP empty hai." }
+
+    Copy-CodeFiles -SourceDir $src.FullName -TargetDir $ProjectDir
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+
+    $bad2 = Test-ProjectFilesHealthy
+    if ($bad2.Count -gt 0) {
+        throw ("Repair ke baad bhi files missing: " + ($bad2 -join ', '))
+    }
+    Write-Ok "Self-repair complete - fresh files restore ho gayi."
+}
+
 function Refresh-EnvPath {
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
@@ -60,7 +188,7 @@ function Find-NodeExe {
 }
 
 function Ensure-NodeJs {
-    Write-Step 1 7 "Checking Node.js..."
+    Write-Step 2 8 "Checking Node.js..."
     $nodeExe = Find-NodeExe
     if ($nodeExe) {
         $ver = & $nodeExe --version
@@ -71,19 +199,30 @@ function Ensure-NodeJs {
     Write-Warn "Node.js nahi mila — automatically install kar rahe hain (1-2 min)..."
     $winget = Get-Command winget -ErrorAction SilentlyContinue
     if ($winget) {
-        try {
-            & winget install -e --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+        for ($i = 1; $i -le 2 -and -not (Find-NodeExe); $i++) {
+            try {
+                & winget install -e --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+            } catch {
+                Write-Warn "Winget install warning (attempt $i/2): $($_.Exception.Message)"
+            }
             Refresh-EnvPath
-        } catch {
-            Write-Warn "Winget install warning: $($_.Exception.Message)"
+            if (-not (Find-NodeExe)) { Start-Sleep -Seconds (5 * $i) }
         }
     }
 
     if (-not (Find-NodeExe)) {
-        Write-Warn "Direct Node.js LTS installer download kar rahe hain..."
+        Write-Warn "Direct Node.js LTS installer download kar rahe hain (auto-retry)..."
         $msiPath = Join-Path $env:TEMP "nodejs_lts_setup.msi"
         $nodeUrl = "https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi"
-        Invoke-WebRequest -Uri $nodeUrl -OutFile $msiPath -UseBasicParsing
+        $downloaded = Get-RemoteFile -Url $nodeUrl -Path $msiPath -Attempts 5
+        if (-not $downloaded) {
+            # Alternate mirror fallback
+            Write-Warn "Primary mirror fail - alternate mirror try kar rahe hain..."
+            $downloaded = Get-RemoteFile -Url "https://nodejs.org/dist/latest-v22.x/node-v22.14.0-x64.msi" -Path $msiPath -Attempts 3
+        }
+        if (-not $downloaded) {
+            throw "Node.js installer download fail. Internet check karke ONE_CLICK_SETUP.bat dobara chalayein."
+        }
         Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait
         Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
         Refresh-EnvPath
@@ -188,7 +327,7 @@ function Enable-SqlTcpAndMixedMode($svc) {
 }
 
 function Ensure-SqlServerAndEnv {
-    Write-Step 2 7 "Checking SQL Server Express & Configuration (.env)..."
+    Write-Step 3 8 "Checking SQL Server Express & Configuration (.env)..."
 
     # Per-install random SA password — public repo me koi fixed/default password nahi.
     $saPass = "CmBc@" + (New-RandomString 16 "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789")
@@ -208,25 +347,40 @@ function Ensure-SqlServerAndEnv {
 
     $svc = Get-LocalSqlService
     if (-not $svc) {
-        Write-Warn "SQL Server Express nahi mila — automatically download & install kar rahe hain (3-5 min lag sakte hain)..."
+        Write-Warn "SQL Server Express nahi mila — automatically download & install kar rahe hain (3-5 min lag sakte hain, auto-retry ON)..."
         $winget = Get-Command winget -ErrorAction SilentlyContinue
         if ($winget) {
-            try {
-                & winget install -e --id Microsoft.SQLServer.2022.Express --silent --accept-package-agreements --accept-source-agreements
-            } catch {
-                Write-Warn "Winget SQL Express notice: $($_.Exception.Message)"
+            for ($i = 1; $i -le 2 -and -not (Get-LocalSqlService); $i++) {
+                try {
+                    & winget install -e --id Microsoft.SQLServer.2022.Express --silent --accept-package-agreements --accept-source-agreements
+                } catch {
+                    Write-Warn "Winget SQL Express notice (attempt $i/2): $($_.Exception.Message)"
+                }
+                Start-Sleep -Seconds 5
             }
         }
-        Start-Sleep -Seconds 5
         $svc = Get-LocalSqlService
 
         if (-not $svc) {
-            Write-Warn "Official Microsoft SQL Server Express web installer download kar rahe hain..."
+            Write-Warn "Official Microsoft SQL Server Express installer download kar rahe hain (auto-retry)..."
             $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
-            Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?linkid=2216019" -OutFile $sqlExe -UseBasicParsing
-            Start-Process -FilePath $sqlExe -ArgumentList "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /Features=SQLENGINE /InstanceName=SQLEXPRESS /SecurityMode=SQL /SAPWD=$saPass" -Wait
-            $sqlInstalledByUs = $true
-            Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+            $sqlOk = $false
+            for ($i = 1; $i -le 2 -and -not $sqlOk; $i++) {
+                if (Get-RemoteFile -Url "https://go.microsoft.com/fwlink/p/?linkid=2216019" -Path $sqlExe -Attempts 5) {
+                    try {
+                        Start-Process -FilePath $sqlExe -ArgumentList "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /Features=SQLENGINE /InstanceName=SQLEXPRESS /SecurityMode=SQL /SAPWD=$saPass" -Wait
+                        $sqlOk = $true
+                    } catch {
+                        Write-Warn "SQL silent install attempt $i/2 fail: $($_.Exception.Message)"
+                        Start-Sleep -Seconds 10
+                    } finally {
+                        Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    Write-Warn "SQL installer download fail (round $i/2) - dobara try..."
+                }
+            }
+            if ($sqlOk) { $sqlInstalledByUs = $true }
             Start-Sleep -Seconds 5
             $svc = Get-LocalSqlService
         }
@@ -259,12 +413,13 @@ function Ensure-SqlServerAndEnv {
 
     $winConnStr = "Server=$serverName;Database=master;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=15;"
     $provisioned = $false
-    try {
-        $conn = New-Object System.Data.SqlClient.SqlConnection($winConnStr)
-        $conn.Open()
-        $cmd = $conn.CreateCommand()
-        $safePass = $appPass.Replace("'", "''")
-        $cmd.CommandText = @"
+    for ($i = 1; $i -le 4 -and -not $provisioned; $i++) {
+        try {
+            $conn = New-Object System.Data.SqlClient.SqlConnection($winConnStr)
+            $conn.Open()
+            $cmd = $conn.CreateCommand()
+            $safePass = $appPass.Replace("'", "''")
+            $cmd.CommandText = @"
 IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'$appUser')
 BEGIN
     CREATE LOGIN [$appUser] WITH PASSWORD = N'$safePass', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;
@@ -276,12 +431,17 @@ BEGIN
 END
 ALTER SERVER ROLE [sysadmin] ADD MEMBER [$appUser];
 "@
-        [void]$cmd.ExecuteNonQuery()
-        $conn.Close()
-        $provisioned = $true
-        Write-Ok "SQL login '$appUser' automatically configured."
-    } catch {
-        Write-Warn "Windows Auth auto-login note: $($_.Exception.Message)"
+            [void]$cmd.ExecuteNonQuery()
+            $conn.Close()
+            $provisioned = $true
+            Write-Ok "SQL login '$appUser' automatically configured."
+        } catch {
+            Write-Warn "SQL auto-login attempt $i/4: $($_.Exception.Message)"
+            if ($i -lt 4) {
+                try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue } catch { }
+                Start-Sleep -Seconds (5 * $i)
+            }
+        }
     }
 
     if (-not $provisioned) {
@@ -330,25 +490,46 @@ Ye file sirf is PC ke liye hai. Kisi ke saath share na karein.
 }
 
 function Install-Dependencies {
-    Write-Step 3 7 "Installing Node.js dependencies (npm install)..."
-    & npm.cmd install --omit=dev --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) {
-        throw "npm install failed. Check internet connection and retry."
+    Write-Step 4 8 "Installing Node.js dependencies (npm install)..."
+    $ok = $false
+    for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+        & npm.cmd install --omit=dev --no-audit --no-fund
+        if ($LASTEXITCODE -eq 0) {
+            $ok = $true
+            break
+        }
+        Write-Warn "npm install fail (attempt $i/3). Corrupt cache/node_modules saaf karke retry..."
+        try { & npm.cmd cache clean --force 2>$null | Out-Null } catch { }
+        $nm = Join-Path $ProjectDir "node_modules"
+        if (Test-Path $nm) { Remove-Item $nm -Recurse -Force -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds (5 * $i)
+    }
+    if (-not $ok) {
+        throw "npm install 3 attempts ke baad bhi fail. Internet check karke ONE_CLICK_SETUP.bat dobara chalayein (retry automatic hai)."
     }
     Write-Ok "Dependencies installed successfully."
 }
 
 function Setup-Database {
-    Write-Step 4 7 "Creating Database, Tables, Stored Procedures & Starter Data..."
-    & node setup-database.js
-    if ($LASTEXITCODE -ne 0) {
-        throw "Database setup failed. Check SQL Server service and retry."
+    Write-Step 5 8 "Creating Database, Tables, Stored Procedures & Starter Data..."
+    $ok = $false
+    for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+        & node setup-database.js
+        if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+        Write-Warn "Database setup attempt $i/3 fail. SQL service check karke retry..."
+        Get-LocalSqlService | ForEach-Object {
+            try { Start-Service -Name $_.Name -ErrorAction SilentlyContinue } catch { }
+        }
+        Start-Sleep -Seconds (5 * $i)
+    }
+    if (-not $ok) {
+        throw "Database setup 3 attempts ke baad fail. SQL Server service running hai ya nahi check karein, phir ONE_CLICK_SETUP.bat dobara chalayein."
     }
     Write-Ok "Database ready (24 tables, 5 stored procedures, starter admin/accounts/categories/services)!"
 }
 
 function Install-AutoStart {
-    Write-Step 5 7 "Configuring silent auto-start on every PC boot..."
+    Write-Step 6 8 "Configuring silent auto-start on every PC boot..."
     try {
         $taskName = "CSC BC Apna Hisaab Server"
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
@@ -366,7 +547,7 @@ function Install-AutoStart {
 }
 
 function Create-DesktopShortcut {
-    Write-Step 6 7 "Creating Desktop Shortcut..."
+    Write-Step 7 8 "Creating Desktop Shortcut..."
     try {
         $desktop = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktop "CSC BC Apna Hisaab.lnk"
@@ -398,8 +579,21 @@ function Ensure-FirewallRule {
     }
 }
 
+function Wait-ServerReady {
+    param([int]$TimeoutSeconds = 60)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $r = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -UseBasicParsing -TimeoutSec 5
+            if ($r.StatusCode -eq 200) { return $true }
+        } catch { }
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
 function Launch-App {
-    Write-Step 7 7 "Starting Server in background & opening browser..."
+    Write-Step 8 8 "Starting Server in background & opening browser..."
     $taskName = "CSC BC Apna Hisaab Server"
     schtasks /Query /TN "$taskName" > $null 2>&1
     if ($LASTEXITCODE -eq 0) {
@@ -408,7 +602,26 @@ function Launch-App {
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
         Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbs`"" -WindowStyle Hidden
     }
-    Start-Sleep -Seconds 5
+
+    if (-not (Wait-ServerReady -TimeoutSeconds 60)) {
+        Write-Warn "Server pehli koshish me start nahi hua - auto-retry (hidden supervisor + node direct)..."
+        try { Start-Process -FilePath "wscript.exe" -ArgumentList "`"$(Join-Path $ProjectDir 'start-hidden.vbs')`"" -WindowStyle Hidden } catch { }
+        Start-Sleep -Seconds 5
+        if (-not (Wait-ServerReady -TimeoutSeconds 40)) {
+            $nodeExe = Find-NodeExe
+            if (-not $nodeExe) { $nodeExe = "node" }
+            try {
+                Start-Process -FilePath $nodeExe -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+            } catch { }
+            if (-not (Wait-ServerReady -TimeoutSeconds 40)) {
+                Write-Warn "Server respond nahi kar raha. Logs: logs\server-run.log"
+                Write-Warn "Aap ONE_CLICK_SETUP.bat dobara chala sakte hain - retry automatic hai, data safe rahega."
+                Start-Process "http://localhost:3000"
+                return
+            }
+        }
+    }
+
     Start-Process "http://localhost:3000"
     Write-Ok "App is LIVE at http://localhost:3000 (silent background mode)!"
 }
@@ -420,6 +633,9 @@ try {
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host "   CSC & BC APNA HISAAB - 1-CLICK COMPLETE AUTO SETUP" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
+
+    Write-Step 1 8 "Checking & self-repairing project files..."
+    Repair-ProjectFiles
 
     Ensure-NodeJs
     Ensure-SqlServerAndEnv

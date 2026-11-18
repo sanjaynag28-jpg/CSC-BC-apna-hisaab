@@ -1,7 +1,7 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Install folder ab %USERPROFILE%\\CSC-BC-Apna-Hisaab (C:\\Users\\<name>). Silent auto-start at PC boot (Task Scheduler + hidden supervisor), crash par auto-restart, install ke baad koi console window nahi. PUBLISH_UPDATE ab GitHub Release + SETUP.bat download asset bhi banata hai."
+  "notes": "Self-healing installer: network fail par auto-retry (backoff), corrupt/partial download detect hoke fresh copy, missing/corrupt project files auto-repair, npm install aur database setup auto-retry, server start health-check ke saath. Install folder %USERPROFILE%\\CSC-BC-Apna-Hisaab, boot par silent auto-start, koi console window nahi."
 }
