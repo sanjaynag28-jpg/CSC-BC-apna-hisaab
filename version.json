@@ -1,7 +1,7 @@
 {
-  "version": "1.0.20",
+  "version": "1.0.21",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "TEST: Dashboard par colorful WELCOME popup (auto-update verify karne ke liye, temporary)"
+  "notes": "Temporary WELCOME test popup removed - normal dashboard (test pass, auto-update verified)"
 }

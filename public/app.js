@@ -3080,54 +3080,8 @@ function refreshIcons(scope = null) {
     });
 }
 
-// ===== TEMPORARY AUTO-UPDATE TEST (baad me hata dena) =====
-// Dashboard par click karne par colorful welcome popup.
-function showTestWelcome() {
-    try {
-        const old = document.getElementById('test-welcome-overlay');
-        if (old) old.remove();
-        if (!document.getElementById('test-welcome-style')) {
-            const st = document.createElement('style');
-            st.id = 'test-welcome-style';
-            st.textContent = `
-                #test-welcome-overlay{position:fixed;inset:0;z-index:99999;display:flex;
-                    align-items:center;justify-content:center;background:rgba(8,12,30,.55);
-                    backdrop-filter:blur(4px);animation:twFade .25s ease-out;}
-                #test-welcome-card{position:relative;padding:38px 54px;border-radius:24px;
-                    text-align:center;background:linear-gradient(135deg,#6d28d9,#db2777,#f59e0b,#10b981,#3b82f6);
-                    background-size:300% 300%;animation:twFlow 6s ease infinite,twPop .35s ease-out;
-                    box-shadow:0 24px 70px rgba(0,0,0,.45),0 0 0 3px rgba(255,255,255,.25) inset;cursor:pointer;}
-                #test-welcome-card h1{margin:0;font-size:54px;font-weight:900;letter-spacing:3px;
-                    color:#fff;text-shadow:0 3px 0 rgba(0,0,0,.18),0 0 22px rgba(255,255,255,.55);
-                    animation:twGlow 1.6s ease-in-out infinite alternate;}
-                #test-welcome-card p{margin:14px 0 0;font-size:17px;font-weight:600;color:#fff;
-                    text-shadow:0 1px 3px rgba(0,0,0,.35);}
-                #test-welcome-card small{display:block;margin-top:10px;font-size:12px;color:rgba(255,255,255,.85);}
-                @keyframes twFade{from{opacity:0}to{opacity:1}}
-                @keyframes twPop{from{transform:scale(.75) rotate(-3deg)}to{transform:scale(1) rotate(0)}}
-                @keyframes twFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-                @keyframes twGlow{from{transform:scale(1)}to{transform:scale(1.04)}}
-            `;
-            document.head.appendChild(st);
-        }
-        const ov = document.createElement('div');
-        ov.id = 'test-welcome-overlay';
-        ov.innerHTML = `
-            <div id="test-welcome-card">
-                <h1>WELCOME</h1>
-                <p>Auto-update test successful - aapka app latest version par hai</p>
-                <small>Auto-close 5 sec me (ya click karein)</small>
-            </div>
-        `;
-        ov.addEventListener('click', () => ov.remove());
-        document.body.appendChild(ov);
-        setTimeout(() => { if (ov.parentNode) ov.remove(); }, 5000);
-    } catch (e) { console.warn('test welcome popup:', e); }
-}
-
 function showPage(page, navEl) {
     if (!page) page = 'dashboard';
-    if (page === 'dashboard') showTestWelcome();
 
     // Reroute relocated modules to their dedicated Settings tabs
     if (page === 'database') {
