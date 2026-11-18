@@ -369,6 +369,7 @@ function Invoke-SqlSetupExe {
     Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
 
     $p = Start-Process -FilePath $Exe -ArgumentList $SetupArgs -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    try { $null = $p.Handle } catch { }   # handle rakho warna ExitCode $null aata hai
     $start = Get-Date
     while (-not $p.HasExited) {
         Start-Sleep -Seconds 20
@@ -389,6 +390,7 @@ function Invoke-SqlSetupExe {
         }
     }
 
+    try { $p.WaitForExit() } catch { }
     foreach ($f in @($stdout, $stderr)) {
         if (Test-Path $f) {
             Get-Content $f -ErrorAction SilentlyContinue | ForEach-Object {
