@@ -1,4 +1,4 @@
-# CSC & BC Apna Hisaab (Cash Management System)
+﻿# CSC & BC Apna Hisaab (Cash Management System)
 
 Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Payments, Khatabook, Customer 360 & Invoicing** software built with Node.js, Express, and SQL Server.
 
@@ -20,18 +20,18 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 - ✅ **Microsoft SQL Server Express** nahi hai toh automatically download & install karta hai
 - ✅ **SQL Server Mixed Mode & TCP/IP** automatically enable karta hai
 - ✅ **`.env` file + secure database login + JWT secret** automatically generate karta hai (kuch manually type nahi karna!)
-- ✅ **Fresh `CashManagement` Database, 24 Tables, 5 Stored Procedures, Starter Admin Login (`admin` / `admin123`), Starter Cash/Bank Accounts, Categories & CSC Services** sab automatically banata hai
+- ✅ **Fresh `CashManagement` Database, 24 Tables, 5 Stored Procedures, Starter Admin with Random Password + Localhost Auto-Login (no typing; remote/LAN credentials `.admin-login.txt` me), Starter Cash/Bank Accounts, Categories & CSC Services** sab automatically banata hai
 - ✅ Desktop par **`CSC BC Apna Hisaab`** shortcut banata hai
 - ✅ Server start karke browser mein **`http://localhost:3000`** khol deta hai — **Project turant Ready!**
 
 ---
 
 ## 🔄 Automatic Silent Updates (Lifetime Auto-Update)
-- Jab bhi aap Desktop shortcut (`START.bat`) ya server open karte hain, app silently GitHub se latest `version.json` check karta hai.
+- Jab bhi aap Desktop shortcut (`START.bat`) ya server open karte hain, app silently GitHub se latest `version.json` check karta hai. Uske baad **har raat 2:30 AM** par bhi check hota hai — restart sirf tab jab app idle ho (koi transaction na chal rahi ho).
 - Naya update milte hi:
   1. Pehle aapke SQL Server database ka **automatic backup** hota hai (`backups/`).
   2. Sirf code files update hoti hain — **aapka database, `.env`, `public/uploads/`, aur `backups/` 100% safe rehta hai** (Git ho ya ZIP install — dono mein kaam karta hai!).
-  3. Safe DB migration chalti hai aur server + browser automatically refresh ho jate hain.
+  3. Safe DB migration chalti hai aur server gracefully restart hota hai.
 - Offline hone par update silently skip ho jata hai aur app bina ruke chalta hai.
 - Manual force-update ke liye **`UPDATE_APP.bat`** double-click karein.
 

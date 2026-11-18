@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Complete 1-click zero-config Windows installer (auto Node.js + SQL Server Express + .env + fresh DB + starter data + Desktop shortcut) and direct GitHub ZIP installer."
+  "notes": "Fresh-install fix: jsonwebtoken + archiver ab package.json me declared (naye PC par server crash nahi hoga). Auto-update ab boot + raat 2:30 AM idle window me (din me restart nahi). Graceful shutdown, Windows Firewall rule, random admin password (.admin-login.txt) aur broken start-tunnel.bat removed."
 }

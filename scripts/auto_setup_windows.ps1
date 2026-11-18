@@ -190,6 +190,10 @@ function Enable-SqlTcpAndMixedMode($svc) {
 function Ensure-SqlServerAndEnv {
     Write-Step 2 6 "Checking SQL Server Express & Configuration (.env)..."
 
+    # Per-install random SA password — public repo me koi fixed/default password nahi.
+    $saPass = "CmBc@" + (New-RandomString 16 "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789")
+    $sqlInstalledByUs = $false
+
     $envPath = Join-Path $ProjectDir ".env"
     if (Test-Path $envPath) {
         $cfg = Parse-DotEnv $envPath
@@ -220,7 +224,8 @@ function Ensure-SqlServerAndEnv {
             Write-Warn "Official Microsoft SQL Server Express web installer download kar rahe hain..."
             $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
             Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?linkid=2216019" -OutFile $sqlExe -UseBasicParsing
-            Start-Process -FilePath $sqlExe -ArgumentList "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /Features=SQLENGINE /InstanceName=SQLEXPRESS /SecurityMode=SQL /SAPWD=CashMgmt#2026!" -Wait
+            Start-Process -FilePath $sqlExe -ArgumentList "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /Features=SQLENGINE /InstanceName=SQLEXPRESS /SecurityMode=SQL /SAPWD=$saPass" -Wait
+            $sqlInstalledByUs = $true
             Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 5
             $svc = Get-LocalSqlService
@@ -280,11 +285,11 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [$appUser];
     }
 
     if (-not $provisioned) {
-        # Fallback: check if standard sa password from silent install works
-        $fallbackTest = "Server=$serverName;Database=master;User Id=sa;Password=CashMgmt#2026!;TrustServerCertificate=True;Connection Timeout=8;"
+        # Fallback: check if our own random SA password from silent install works
+        $fallbackTest = "Server=$serverName;Database=master;User Id=sa;Password=$saPass;TrustServerCertificate=True;Connection Timeout=8;"
         if (Test-SqlConnection $fallbackTest) {
             $appUser = "sa"
-            $appPass = "CashMgmt#2026!"
+            $appPass = $saPass
             $provisioned = $true
         }
     }
@@ -306,6 +311,22 @@ AUTO_UPDATE_DISABLED=false
 "@
     Set-Content -Path $envPath -Value $envContent -Encoding UTF8
     Write-Ok ".env automatically generated (AUTO_UPDATE enabled)."
+
+    if ($sqlInstalledByUs) {
+        try {
+            $sqlCredPath = Join-Path $ProjectDir ".sql-server-credentials.txt"
+            Set-Content -Path $sqlCredPath -Encoding UTF8 -Value @"
+SQL Server Express — Local Credentials (is PC ke liye)
+=====================================================
+Instance: $serverName
+Login: sa
+Password: $saPass
+
+Ye file sirf is PC ke liye hai. Kisi ke saath share na karein.
+"@
+            Write-Ok "SQL Server credentials saved locally: .sql-server-credentials.txt"
+        } catch { }
+    }
 }
 
 function Install-Dependencies {
@@ -343,6 +364,21 @@ function Create-DesktopShortcut {
     }
 }
 
+function Ensure-FirewallRule {
+    try {
+        $ruleName = "CSC BC Apna Hisaab (Port 3000)"
+        netsh advfirewall firewall show rule name="$ruleName" > $null 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=3000 profile=private,domain > $null
+            Write-Ok "Windows Firewall rule added (same Wi-Fi / LAN access on port 3000)."
+        } else {
+            Write-Ok "Windows Firewall rule already present."
+        }
+    } catch {
+        Write-Warn "Firewall rule skipped: $($_.Exception.Message)"
+    }
+}
+
 function Launch-App {
     Write-Step 6 6 "Starting Server & Opening Browser..."
     Start-Process -FilePath "cmd.exe" -ArgumentList "/c title CSC BC Apna Hisaab Server && node server.js" -WorkingDirectory $ProjectDir
@@ -361,6 +397,7 @@ try {
 
     Ensure-NodeJs
     Ensure-SqlServerAndEnv
+    Ensure-FirewallRule
     Install-Dependencies
     Setup-Database
     Create-DesktopShortcut
@@ -370,8 +407,9 @@ try {
     Write-Host "============================================================" -ForegroundColor Green
     Write-Host "   SETUP 100% COMPLETE! PROJECT READY TO USE!" -ForegroundColor Green
     Write-Host "   URL:   http://localhost:3000" -ForegroundColor White
-    Write-Host "   Login: admin / admin123 (Localhost auto-login active)" -ForegroundColor White
-    Write-Host "   Auto-Update: ON (Har launch par silent update hoga)" -ForegroundColor White
+    Write-Host "   Login: bina password (localhost auto-login)" -ForegroundColor White
+    Write-Host "          Mobile/LAN login ke liye credentials: .admin-login.txt" -ForegroundColor White
+    Write-Host "   Auto-Update: ON (boot + raat 2:30 AM, idle hone par hi restart)" -ForegroundColor White
     Write-Host "============================================================" -ForegroundColor Green
     exit 0
 } catch {

@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
@@ -82,6 +82,19 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Access-Control-Request-Private-Network']
 }));
+// Active request tracking — auto-update sirf tab chalega jab koi request in-flight na ho.
+// SSE (/api/live-events) ko count nahi karte warna stream hamesha "busy" rahega.
+let activeRequests = 0;
+app.use((req, res, next) => {
+    if (req.path === '/api/live-events') return next();
+    activeRequests++;
+    let done = false;
+    const dec = () => { if (!done) { done = true; activeRequests = Math.max(0, activeRequests - 1); } };
+    res.on('finish', dec);
+    res.on('close', dec);
+    next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.text({ type: ['text/*', 'application/json'] }));
@@ -782,9 +795,11 @@ async function connectDbInBackground() {
 }
 
 // Server start: app.listen turant chalu hoga taaki localhost:3000 par "site can't be reached" na aaye!
+let httpServer = null;
+
 function startServer() {
     try {
-        app.listen(PORT, HOST, () => {
+        httpServer = app.listen(PORT, HOST, () => {
             const os = require('os');
             const nets = os.networkInterfaces();
             let lanIp = '127.0.0.1';
@@ -810,13 +825,18 @@ function startServer() {
             // Background mein SQL Server se connect karein bina port 3000 block kiye
             connectDbInBackground();
 
-            // Automatic Silent Update from GitHub (non-blocking, 5s after boot + every 6 hours)
+            // Automatic Silent Update from GitHub:
+            // boot ke 5s baad ek check + har raat 2:30 AM (idle hone par hi restart).
+            // Din me restart nahi hoga, isliye kisi transaction ke beech update ka risk nahi.
             setTimeout(() => {
-                autoUpdater.runSilentAutoUpdate({ restartOnUpdate: true }).catch(() => { });
+                autoUpdater.runSilentAutoUpdate({
+                    restartOnUpdate: true,
+                    requireIdle: true,
+                    isIdle: () => activeRequests === 0
+                }).catch(() => { });
             }, 5000);
-            setInterval(() => {
-                autoUpdater.runSilentAutoUpdate({ restartOnUpdate: true }).catch(() => { });
-            }, 6 * 60 * 60 * 1000);
+
+            scheduleNightlyUpdate();
         });
     } catch (err) {
         console.error('');
@@ -834,6 +854,58 @@ async function runRecurring() {
         console.error('🔁 Recurring process error (non-fatal):', e.message);
     }
 }
+
+// Raat ka auto-update scheduler: roz 2:30 AM local time.
+// Boot ke baad bhi ek check hota hai, isliye purana install bhi turant update ho jata hai.
+function scheduleNightlyUpdate() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(2, 30, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+
+    console.log(`🕝 [Auto-Update] Next check: ${next.toLocaleString()}`);
+    setTimeout(async () => {
+        try {
+            await autoUpdater.runSilentAutoUpdate({
+                restartOnUpdate: true,
+                requireIdle: true,
+                isIdle: () => activeRequests === 0
+            });
+        } catch (_) { }
+        scheduleNightlyUpdate();
+    }, next.getTime() - now.getTime());
+}
+
+// Graceful shutdown: in-flight requests + SQL pool ko safely band karo.
+let shuttingDown = false;
+function gracefulShutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n🛑 ${signal} received — graceful shutdown shuru...`);
+
+    for (const client of sseClients) {
+        try { client.end(); } catch (_) { }
+    }
+    sseClients.clear();
+
+    const finish = async () => {
+        try {
+            const db = require('./database/db');
+            if (db.closePool) await db.closePool();
+        } catch (_) { }
+        process.exit(0);
+    };
+
+    if (httpServer) {
+        httpServer.close(() => finish());
+        setTimeout(() => finish(), 8000).unref();
+    } else {
+        finish();
+    }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 startServer();
 

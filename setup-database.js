@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cash Management - Automated Fresh & Existing Database Setup, Migration & Starter Seeding
  * Safe & Idempotent:
  * - On a brand-new SQL Server: creates the database from master, builds all 24 tables,
@@ -55,7 +55,11 @@ async function seedStarterDataIfEmpty(pool) {
     // 1. Starter SuperAdmin user (ONLY if Users table is completely empty)
     const userCount = (await pool.request().query('SELECT COUNT(*) AS cnt FROM Users')).recordset[0].cnt;
     if (userCount === 0) {
-        const passwordHash = await bcrypt.hash('admin123', 10);
+        // Koi fixed/default password nahi: har install par random password banta hai.
+        // Is PC par localhost auto-login hai, isliye password type karne ki zaroorat nahi.
+        // Mobile / LAN se login ke liye credentials .admin-login.txt me save hote hain.
+        const adminPassword = crypto.randomBytes(12).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 14);
+        const passwordHash = await bcrypt.hash(adminPassword, 10);
         const apiToken = crypto.randomBytes(24).toString('hex');
         await pool.request()
             .input('u', sql.NVarChar, 'admin')
@@ -67,7 +71,26 @@ async function seedStarterDataIfEmpty(pool) {
                 INSERT INTO Users (Username, PasswordHash, ShopName, OwnerName, Role, IsActive, ApiToken, CreatedAt, UpdatedAt)
                 VALUES (@u, @p, @s, @o, 'SuperAdmin', 1, @t, GETDATE(), GETDATE())
             `);
-        console.log('✅ Starter Admin account created (Login: admin / admin123 — Settings me password badal sakte hain).');
+
+        try {
+            const credPath = path.join(__dirname, '.admin-login.txt');
+            fs.writeFileSync(credPath, [
+                'CSC & BC Apna Hisaab — Admin Login',
+                '=================================',
+                'Username: admin',
+                `Password: ${adminPassword}`,
+                '',
+                'Is PC par localhost auto-login hai — password type karne ki zaroorat nahi.',
+                'Mobile / LAN se login karne ke liye upar wala password use karein.',
+                'Settings me apna password set karne ke baad ye file delete kar dein.',
+                ''
+            ].join('\r\n'), 'utf8');
+            console.log('✅ Admin account ready — is PC par bina password (localhost auto-login).');
+            console.log(`   Remote/LAN login credentials saved: ${credPath}`);
+        } catch (credErr) {
+            console.warn('⚠️ .admin-login.txt save nahi ho payi:', credErr.message);
+            console.log(`   Admin password (is baar ke liye): ${adminPassword}`);
+        }
     }
 
     // 2. Starter Accounts (ONLY if Accounts table is completely empty)

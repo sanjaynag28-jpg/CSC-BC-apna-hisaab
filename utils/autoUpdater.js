@@ -1,4 +1,4 @@
-/**
+﻿/**
  * utils/autoUpdater.js
  * ============================================================================
  * Automatic Silent Update Engine for CSC-BC-apna-hisaab
@@ -378,6 +378,14 @@ async function runSilentAutoUpdate(options = {}) {
     if (disabledFlag && !force) {
         state.lastResult = 'disabled-in-env';
         return { success: true, updated: false, skipped: true, reason: 'AUTO_UPDATE_DISABLED=true in .env' };
+    }
+
+    // Busy guard: agar koi request abhi chal rahi hai (transaction/save), update skip karo.
+    // Manual --force update is guard ko bypass karta hai.
+    if (!force && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+        state.lastResult = 'skipped-busy';
+        logUpdate('Update skipped: app busy hai (request in-flight). Next idle window me try hoga.');
+        return { success: true, updated: false, skipped: true, reason: 'App busy — update skipped safely' };
     }
 
     const check = await checkForUpdate();

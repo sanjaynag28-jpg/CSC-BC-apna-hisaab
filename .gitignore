@@ -1,4 +1,4 @@
-# ==========================================================
+﻿# ==========================================================
 # STRICT DATA & PRIVACY PROTECTION (.gitignore)
 # Personal data, live databases, uploads & secrets NEVER go to GitHub
 # ==========================================================
@@ -31,6 +31,10 @@ logs/
 *.log
 npm-debug.log*
 .auto-update-tmp/
+.previous-release/
+.admin-login.txt
+.sql-server-credentials.txt
+version.json.bak
 
 # Local Binaries & IDE/Workspace Metadata
 bin/
