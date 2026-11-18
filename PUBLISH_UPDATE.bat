@@ -9,7 +9,7 @@ if %errorlevel% neq 0 (
     if exist "C:\Program Files\Git\bin\git.exe" (
         set "GIT_EXE=C:\Program Files\Git\bin\git.exe"
     ) else (
-        echo [!] Git not found! Please install Git from https://git-scm.com/
+        echo [ERR] Git not found - please install Git from https://git-scm.com/
         pause
         exit /b 1
     )
@@ -29,7 +29,7 @@ set "REL_NOTES=%~1"
 for /f "delims=" %%L in ("%TEMP%\cmbc_changes.tmp") do set "HAS_CHANGES=1"
 del "%TEMP%\cmbc_changes.tmp" >nul 2>&1
 if not defined HAS_CHANGES (
-    echo [!] Koi code change nahi mila - publish karne ki zaroorat nahi.
+    echo [INFO] Koi code change nahi mila - publish karne ki zaroorat nahi.
     echo     Code change karke PUBLISH_UPDATE.bat dobara chalayein.
     pause
     exit /b 0
@@ -40,7 +40,7 @@ echo [1/5] Running 13/13 Verification Suite (npm run verify)...
 call npm run verify
 if %errorlevel% neq 0 (
     echo.
-    echo [!] Verification FAILED! Update publish aborted to protect users.
+    echo [ERR] Verification FAILED - update publish aborted to protect users.
     pause
     exit /b 1
 )
@@ -67,7 +67,7 @@ echo [3/5] Staged files check (Zero Data Leak Audit)...
 "%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
 if %errorlevel% equ 0 (
     echo.
-    echo [!] DANGER: Sensitive data file staged! Publish aborted.
+    echo [ERR] DANGER: Sensitive data file staged - publish aborted.
     "%GIT_EXE%" reset >nul 2>&1
     pause
     exit /b 1
@@ -93,7 +93,7 @@ for /l %%i in (1,1,3) do (
 )
 if not defined PUSH_OK (
     echo.
-    echo [!] Push 3 attempts ke baad fail. Internet/GitHub login check karke dobara chalayein.
+    echo [ERR] Push 3 attempts ke baad fail. Internet/GitHub login check karke dobara chalayein.
     pause
     exit /b 1
 )
@@ -104,7 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0utils\publish_release_
 
 echo.
 echo ============================================================
-echo   SUCCESS! v%NEW_VER% LIVE on GitHub
+echo   SUCCESS - v%NEW_VER% LIVE on GitHub
 echo ============================================================
 echo   Installer (naye PC ke liye, direct download):
 echo   https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/download/v%NEW_VER%/SETUP.bat
@@ -113,3 +113,4 @@ echo   Purane PC: agle boot ya raat 2:30 AM par automatic silent update
 echo   (data safe - .env / uploads / backups / database untouched).
 echo ============================================================
 pause
+exit /b 0

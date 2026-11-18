@@ -1,7 +1,7 @@
 {
-  "version": "1.0.6",
+  "version": "1.0.7",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "One-click publish now fully automatic with retries and direct installer link"
+  "notes": "Automatic update release"
 }
