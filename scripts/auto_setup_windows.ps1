@@ -502,8 +502,22 @@ function Ensure-SqlServerAndEnv {
             Write-Warn "Purana adhoora SQL Server install mila (master.mdf leftover) - auto cleanup:"
             $leftovers | ForEach-Object { Write-Warn "  $_" }
             Clear-BrokenSqlInstall -Paths $leftovers
-        }
 
+            # Cleanup ke baad bhi SQLEXPRESS naam conflict kar sakta hai:
+            # is liye seedha FRESH instance install karo (naya naam = naya DATA folder).
+            Write-Warn "Conflict se bachne ke liye seedha fresh SQL instance install kar rahe hain..."
+            foreach ($inst in @('CMBCSQL', 'SQLEXPRESS01', 'CMBCSQL01')) {
+                Write-Warn "Fresh instance '$inst' try..."
+                if (Install-SqlExpressInstance -InstanceName $inst -SaPassword $saPass) {
+                    $sqlInstalledByUs = $true
+                    $svc = Get-LocalSqlService
+                    if ($svc) { break }
+                }
+            }
+        }
+    }
+
+    if (-not $svc) {
         Write-Warn "SQL Server Express nahi mila — automatically install kar rahe hain (3-6 min, auto-retry ON)..."
         $winget = Get-Command winget -ErrorAction SilentlyContinue
         if ($winget) {
@@ -525,9 +539,9 @@ function Ensure-SqlServerAndEnv {
             $svc = Get-LocalSqlService
         }
 
-        # Guaranteed fallback: fresh instance name (leftover leftover se koi conflict nahi)
+        # Guaranteed fallback: fresh instance name (leftover se koi conflict nahi)
         if (-not $svc) {
-            foreach ($inst in @('SQLEXPRESS01', 'CMBCSQL', 'CMBCSQL01')) {
+            foreach ($inst in @('CMBCSQL', 'SQLEXPRESS01', 'CMBCSQL01')) {
                 if ($svc) { break }
                 Write-Warn "SQLEXPRESS install nahi hua - fresh instance '$inst' try kar rahe hain..."
                 if (Install-SqlExpressInstance -InstanceName $inst -SaPassword $saPass) {
