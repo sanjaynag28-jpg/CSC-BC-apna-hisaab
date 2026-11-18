@@ -239,7 +239,7 @@ if ($nodeExe -and (Test-Path $autostartJs)) {
 }
 
 # 3c) Login task (XML se - path me space ho to bhi sahi chalta hai)
-if ($isAdmin -and (Test-Path $hiddenVbs)) {
+if (Test-Path $hiddenVbs) {
     try {
         $taskName = 'CSC BC Apna Hissab Server (Login)'
         $xmlPath = Join-Path $env:TEMP 'cmbc_login_task.xml'

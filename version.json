@@ -1,7 +1,7 @@
 {
-  "version": "1.0.18",
+  "version": "1.0.19",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "DOCTOR: PC restart ke baad server na chale to one-click auto-fix + login auto-start (Run key + Startup entry + ONLOGON task)"
+  "notes": "New PC install: XML-based login task (space-safe path) + doctor task fix without admin gate"
 }

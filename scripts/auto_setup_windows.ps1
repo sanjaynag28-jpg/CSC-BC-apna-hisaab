@@ -856,21 +856,61 @@ function Setup-Database {
     Write-Ok "Database ready (24 tables, 5 stored procedures, starter admin/accounts/categories/services)!"
 }
 
+function Register-AutoStartTask {
+    param([string]$TaskName, [string]$VbsPath)
+
+    # XML se task banate hain - path me space ho ya na ho, dono me sahi chalta hai.
+    # Logon trigger + user context = koi password nahi chahiye, boot par bhi
+    # chalta hai jab user login kare.
+    $xmlPath = Join-Path $env:TEMP ("cmbc_task_" + [Guid]::NewGuid().ToString('N') + ".xml")
+    $taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>CSC BC Apna Hisaab - silent server auto-start</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><Delay>PT10S</Delay></LogonTrigger></Triggers>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>wscript.exe</Command>
+      <Arguments>"$VbsPath"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+    try {
+        [System.IO.File]::WriteAllText($xmlPath, $taskXml, [System.Text.Encoding]::Unicode)
+        schtasks /Create /TN "$TaskName" /XML "$xmlPath" /F | Out-Null
+        $code = $LASTEXITCODE
+    } catch {
+        $code = 1
+    } finally {
+        Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    }
+    return ($code -eq 0)
+}
+
 function Install-AutoStart {
     Write-Step 6 8 "Configuring silent auto-start on every PC boot..."
-    $taskInstalled = $false
     try {
         $taskName = "CSC BC Apna Hissab Server"
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
-        $wscript = Join-Path $env:WINDIR "System32\wscript.exe"
-        $action = "`"$wscript`" `"$vbs`""
-        # Login trigger: user context me chalta hai (password ki zaroorat nahi).
-        # ONSTART ke bajaye ONLOGON isliye, kyunki bina password wala boot task
-        # kai PCs par chalta hi nahi.
-        schtasks /Create /TN "$taskName" /TR $action /SC ONLOGON /RL HIGHEST /F | Out-Null
-        if ($LASTEXITCODE -eq 0) { $taskInstalled = $true }
-        schtasks /Create /TN "$taskName (Login)" /TR $action /SC ONLOGON /RL HIGHEST /F | Out-Null
-        if ($taskInstalled -or $LASTEXITCODE -eq 0) {
+        $ok = Register-AutoStartTask -TaskName $taskName -VbsPath $vbs
+        [void](Register-AutoStartTask -TaskName "$taskName (Login)" -VbsPath $vbs)
+        if ($ok) {
             Write-Ok "Auto-start task installed (login par server silently chalu)."
         } else {
             Write-Warn "Task create nahi hua - Startup entry se auto-start chalega."
