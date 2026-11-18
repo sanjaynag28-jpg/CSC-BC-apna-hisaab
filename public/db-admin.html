@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Studio - Cash Management BC</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --bg-header: #0b1120;
+            --bg-hover: #334155;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --accent: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--bg-header);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+        }
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-brand h1 {
+            font-size: 18px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-badge .dot {
+            width: 7px;
+            height: 7px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .btn {
+            background: var(--bg-hover);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: #475569; }
+        .btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+        .btn-primary:hover { background: var(--primary-hover); }
+
+        /* Main Container */
+        .app-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            height: calc(100vh - 57px);
+        }
+
+        /* Sidebar */
+        aside {
+            width: 300px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .search-box {
+            position: relative;
+            width: 100%;
+        }
+        .search-box input {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 12px 8px 32px;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+        }
+        .search-box input:focus { border-color: var(--primary); }
+        .search-box i {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .tables-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .table-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            transition: background 0.15s;
+        }
+        .table-item:hover { background: var(--bg-hover); }
+        .table-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+        }
+        .table-name-wrapper {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .table-name {
+            font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .table-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .row-pill {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: var(--font-mono);
+        }
+
+        /* Content Area */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-body);
+            overflow: hidden;
+        }
+
+        .tabs-header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 0 16px;
+        }
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 12px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab-btn:hover { color: var(--text-main); }
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 16px;
+        }
+        .tab-content.active { display: flex; }
+
+        /* Table View Controls */
+        .view-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            gap: 12px;
+        }
+        .filter-input {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            width: 280px;
+        }
+
+        /* Data Grid Container */
+        .grid-container {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: auto;
+            position: relative;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+            text-align: left;
+        }
+        th {
+            background: #111827;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            color: #cbd5e1;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        td {
+            padding: 9px 14px;
+            border-bottom: 1px solid #283548;
+            color: #e2e8f0;
+            white-space: nowrap;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: var(--font-mono);
+            font-size: 12px;
+        }
+        tr:hover td { background: rgba(51, 65, 85, 0.4); }
+
+        /* Pagination Footer */
+        .pagination-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 4px 0 4px;
+            font-size: 12.5px;
+            color: var(--text-muted);
+        }
+        .page-buttons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* SQL Editor Tab */
+        .sql-editor-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            height: 100%;
+        }
+        .sql-textarea {
+            width: 100%;
+            height: 140px;
+            background: #0b1120;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            color: #a5f3fc;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            outline: none;
+            resize: vertical;
+        }
+        .sql-textarea:focus { border-color: var(--primary); }
+
+        .query-results-box {
+            flex: 1;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-brand">
+            <i class="fa-solid fa-database" style="color: #60a5fa; font-size: 20px;"></i>
+            <div>
+                <h1>SQL Database Studio</h1>
+            </div>
+            <div class="status-badge" id="dbStatusBadge">
+                <span class="dot"></span>
+                <span id="dbStatusText">SQL Server Online</span>
+            </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn" onclick="fetchOverview()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            <a href="/" class="btn btn-primary"><i class="fa-solid fa-arrow-left"></i> Main App Dashboard</a>
+        </div>
+    </header>
+
+    <div class="app-body">
+        <!-- Sidebar Tables List -->
+        <aside>
+            <div class="sidebar-header">
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="tableSearch" placeholder="Search tables..." oninput="filterTables()">
+                </div>
+            </div>
+            <div class="tables-list" id="tablesContainer">
+                <div style="padding: 20px; text-align: center; color: var(--text-muted);">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Loading tables...
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main>
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab('data')"><i class="fa-solid fa-table"></i> Table Data</button>
+                <button class="tab-btn" onclick="switchTab('schema')"><i class="fa-solid fa-diagram-project"></i> Schema & Structure</button>
+                <button class="tab-btn" onclick="switchTab('sql')"><i class="fa-solid fa-terminal"></i> SQL Query Runner</button>
+            </div>
+
+            <!-- Tab 1: Table Data -->
+            <div class="tab-content active" id="tabData">
+                <div class="view-controls">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="text" id="gridSearchInput" class="filter-input" placeholder="Search in table..." onkeyup="if(event.key==='Enter') loadTableData(currentTable, 1)">
+                        <button class="btn" onclick="loadTableData(currentTable, 1)"><i class="fa-solid fa-search"></i> Filter</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button class="btn" onclick="exportCurrentTableCSV()"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
+                    </div>
+                </div>
+                <div class="grid-container" id="tableDataGrid">
+                    <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                        Select a table from the sidebar to view data.
+                    </div>
+                </div>
+                <div class="pagination-footer">
+                    <span id="paginationInfo">Showing 0 to 0 of 0 entries</span>
+                    <div class="page-buttons" id="paginationControls"></div>
+                </div>
+            </div>
+
+            <!-- Tab 2: Schema -->
+            <div class="tab-content" id="tabSchema">
+                <div class="grid-container" id="schemaGrid">
+                    <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+                        Select a table from the sidebar to inspect schema.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: SQL Runner -->
+            <div class="tab-content" id="tabSql">
+                <div class="sql-editor-container">
+                    <textarea id="sqlQueryInput" class="sql-textarea" placeholder="SELECT TOP 50 * FROM Customers WHERE IsActive = 1;"></textarea>
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div style="font-size: 12px; color: var(--text-muted);">
+                            <i class="fa-solid fa-shield-halved"></i> Read-only mode: Only SELECT statements are permitted.
+                        </div>
+                        <button class="btn btn-primary" onclick="executeCustomQuery()"><i class="fa-solid fa-play"></i> Execute Query</button>
+                    </div>
+                    <div class="query-results-box" id="queryResultsBox">
+                        <div style="padding: 30px; text-align: center; color: var(--text-muted);">
+                            Query results will be displayed here.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let allTables = [];
+        let currentTable = null;
+        let currentPage = 1;
+        let totalPages = 1;
+
+        async function fetchOverview() {
+            try {
+                const res = await fetch('/api/database/overview');
+                const json = await res.json();
+                if (!json.success) throw new Error(json.error);
+
+                allTables = json.tables || [];
+                renderTablesList(allTables);
+
+                if (allTables.length > 0 && !currentTable) {
+                    selectTable(allTables[0].name);
+                }
+            } catch (err) {
+                console.error('Failed to load overview:', err);
+                document.getElementById('tablesContainer').innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: var(--danger); font-size: 13px;">
+                        <i class="fa-solid fa-triangle-exclamation"></i> ${err.message}
+                    </div>
+                `;
+            }
+        }
+
+        function renderTablesList(tables) {
+            const container = document.getElementById('tablesContainer');
+            if (tables.length === 0) {
+                container.innerHTML = `<div style="padding: 20px; text-align: center; color: var(--text-muted);">No tables found.</div>`;
+                return;
+            }
+
+            container.innerHTML = tables.map(t => `
+                <div class="table-item ${currentTable === t.name ? 'active' : ''}" onclick="selectTable('${t.name}')">
+                    <div class="table-name-wrapper">
+                        <span class="table-name"><i class="fa-solid fa-table" style="font-size: 11px; margin-right: 5px; opacity: 0.7;"></i>${t.name}</span>
+                        <span class="table-label">${t.label || ''}</span>
+                    </div>
+                    <span class="row-pill">${t.rowCount.toLocaleString('en-IN')}</span>
+                </div>
+            `).join('');
+        }
+
+        function filterTables() {
+            const q = document.getElementById('tableSearch').value.toLowerCase().trim();
+            const filtered = allTables.filter(t => t.name.toLowerCase().includes(q) || (t.label && t.label.toLowerCase().includes(q)));
+            renderTablesList(filtered);
+        }
+
+        function selectTable(tableName) {
+            currentTable = tableName;
+            renderTablesList(allTables);
+            loadTableData(tableName, 1);
+            loadTableSchema(tableName);
+            document.getElementById('sqlQueryInput').value = `SELECT TOP 50 * FROM [${tableName}];`;
+        }
+
+        async function loadTableData(tableName, page = 1) {
+            if (!tableName) return;
+            currentPage = page;
+            const grid = document.getElementById('tableDataGrid');
+            const search = document.getElementById('gridSearchInput').value.trim();
+
+            grid.innerHTML = `<div style="padding: 40px; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Loading ${tableName}...</div>`;
+
+            try {
+                const res = await fetch(`/api/database/table/${tableName}?page=${page}&limit=50&search=${encodeURIComponent(search)}`);
+                const json = await res.json();
+                if (!json.success) throw new Error(json.error);
+
+                const data = json.data || [];
+                const cols = json.columns || [];
+                const total = json.totalRecords || 0;
+                totalPages = Math.ceil(total / 50) || 1;
+
+                if (data.length === 0) {
+                    grid.innerHTML = `<div style="padding: 40px; text-align: center; color: var(--text-muted);">No records found in ${tableName}.</div>`;
+                    document.getElementById('paginationInfo').innerText = `Total 0 records`;
+                    return;
+                }
+
+                let html = `<table><thead><tr>`;
+                cols.forEach(c => { html += `<th>${c.name}</th>`; });
+                html += `</tr></thead><tbody>`;
+
+                data.forEach(row => {
+                    html += `<tr>`;
+                    cols.forEach(c => {
+                        let val = row[c.name];
+                        if (val === null || val === undefined) val = `<span style="opacity: 0.35;">NULL</span>`;
+                        else if (typeof val === 'boolean') val = val ? 'TRUE' : 'FALSE';
+                        else if (typeof val === 'object') val = JSON.stringify(val);
+                        html += `<td>${val}</td>`;
+                    });
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+                grid.innerHTML = html;
+
+                const startIdx = (page - 1) * 50 + 1;
+                const endIdx = Math.min(page * 50, total);
+                document.getElementById('paginationInfo').innerText = `Showing ${startIdx} to ${endIdx} of ${total} records`;
+
+                renderPaginationControls();
+            } catch (err) {
+                grid.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--danger);">${err.message}</div>`;
+            }
+        }
+
+        function renderPaginationControls() {
+            const controls = document.getElementById('paginationControls');
+            let btns = '';
+            if (currentPage > 1) {
+                btns += `<button class="btn" onclick="loadTableData(currentTable, ${currentPage - 1})"><i class="fa-solid fa-chevron-left"></i> Prev</button>`;
+            }
+            btns += `<span style="padding: 0 8px; font-weight: 600;">Page ${currentPage} / ${totalPages}</span>`;
+            if (currentPage < totalPages) {
+                btns += `<button class="btn" onclick="loadTableData(currentTable, ${currentPage + 1})">Next <i class="fa-solid fa-chevron-right"></i></button>`;
+            }
+            controls.innerHTML = btns;
+        }
+
+        async function loadTableSchema(tableName) {
+            const grid = document.getElementById('schemaGrid');
+            try {
+                const res = await fetch(`/api/database/table/${tableName}/schema`);
+                const json = await res.json();
+                if (!json.success) return;
+
+                const cols = json.columns || [];
+                let html = `<table><thead><tr>
+                    <th>Column Name</th>
+                    <th>Data Type</th>
+                    <th>Max Length</th>
+                    <th>Nullable</th>
+                    <th>Primary Key</th>
+                    <th>Default</th>
+                </tr></thead><tbody>`;
+
+                cols.forEach(c => {
+                    html += `<tr>
+                        <td style="font-weight: 600;">${c.COLUMN_NAME}</td>
+                        <td>${c.DATA_TYPE}</td>
+                        <td>${c.CHARACTER_MAXIMUM_LENGTH || '-'}</td>
+                        <td>${c.IS_NULLABLE}</td>
+                        <td>${c.IsPrimaryKey ? '<span style="color: #60a5fa; font-weight: bold;">YES</span>' : 'NO'}</td>
+                        <td>${c.COLUMN_DEFAULT || '-'}</td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+                grid.innerHTML = html;
+            } catch (err) {
+                grid.innerHTML = `<div style="padding: 20px; color: var(--danger);">${err.message}</div>`;
+            }
+        }
+
+        async function executeCustomQuery() {
+            const sqlText = document.getElementById('sqlQueryInput').value.trim();
+            const box = document.getElementById('queryResultsBox');
+            if (!sqlText) return;
+
+            box.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Executing query...</div>`;
+
+            try {
+                const res = await fetch('/api/database/execute-query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sqlQuery: sqlText })
+                });
+                const json = await res.json();
+                if (!json.success) throw new Error(json.error);
+
+                const records = json.recordset || [];
+                const cols = json.columns || [];
+
+                if (records.length === 0) {
+                    box.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--success);"><i class="fa-solid fa-check"></i> Query executed in ${json.executionTimeMs}ms. 0 rows returned.</div>`;
+                    return;
+                }
+
+                let html = `<div style="padding: 8px 14px; background: #111827; border-bottom: 1px solid var(--border-color); font-size: 12px; color: var(--text-muted);">
+                    ${records.length} rows returned in ${json.executionTimeMs}ms
+                </div>`;
+                html += `<table><thead><tr>`;
+                cols.forEach(c => { html += `<th>${c}</th>`; });
+                html += `</tr></thead><tbody>`;
+
+                records.forEach(row => {
+                    html += `<tr>`;
+                    cols.forEach(c => {
+                        let val = row[c];
+                        if (val === null || val === undefined) val = `<span style="opacity: 0.35;">NULL</span>`;
+                        else if (typeof val === 'boolean') val = val ? 'TRUE' : 'FALSE';
+                        html += `<td>${val}</td>`;
+                    });
+                    html += `</tr>`;
+                });
+                html += `</tbody></table>`;
+                box.innerHTML = html;
+            } catch (err) {
+                box.innerHTML = `<div style="padding: 30px; text-align: center; color: var(--danger);"><i class="fa-solid fa-circle-exclamation"></i> ${err.message}</div>`;
+            }
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            if (tabId === 'data') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('tabData').classList.add('active');
+            } else if (tabId === 'schema') {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('tabSchema').classList.add('active');
+            } else if (tabId === 'sql') {
+                document.querySelectorAll('.tab-btn')[2].classList.add('active');
+                document.getElementById('tabSql').classList.add('active');
+            }
+        }
+
+        function exportCurrentTableCSV() {
+            if (!currentTable) return;
+            window.open(`/api/database/export/${currentTable}`, '_blank');
+        }
+
+        fetchOverview();
+    </script>
+</body>
+</html>

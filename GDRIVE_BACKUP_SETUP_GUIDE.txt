@@ -1,0 +1,104 @@
+============================================================================
+☁️  CASH MANAGEMENT BC — GOOGLE DRIVE AUTO-CODE-BACKUP
+    (Google Drive app KAHIN install nahi karna, sirf browser + folder share)
+============================================================================
+
+YE SYSTEM KYA KAREGA:
+ - Code me kuch bhi update karoge (viewer/extensions/styles/routes/sab) ->
+   thodi der me ZIP snapshot bana ke tumhare Google Drive folder me upload
+   ho jayega (one-way: local delete par Drive data SAFE rehta hai!)
+ - Har snapshot timestamped hai (CMBC_code_2026-11-06_14-30.zip)
+ - Max 5 / 10 / 15 backups chain rakhta hai (purane auto)
+ - Poora folder delete ho sake to "restore" se wapas mila lo
+
+============================================================================
+ ONE-TIME SETUP (approx 10 minute)
+============================================================================
+STEP 1: Google Cloud project banao
+  - Browser me kholo: https://console.cloud.google.com
+  - Apne Gmail se login karo. Top bar me project dropdown -> "New Project"
+  - Naam do: cmbc-backup  -> Create
+
+STEP 2: Drive API enable karo
+  - Left menu: "APIs & Services" -> "Library"
+  - Search: "Google Drive API" -> khole -> "Enable"
+
+STEP 3: Service Account banao (ye "watchman robot" hai)
+  - "APIs & Services" -> "Credentials"
+  - "Create Credentials" -> "Service account"
+  - Naam: cmbc-backup-bot  -> Create -> (roles skip) -> Done
+  - Credentials page par is naam par click karo
+  - Tab "KEYS" -> "Add key" -> "Create new key" -> JSON -> Create
+  - JSON file download hogi. Usko is naam se copy karo:
+    D:\Cash Managment BC\backups\gdrive-service-account.json
+
+STEP 4: Drive folder banao aur robot ko share karo
+  - https://drive.google.com kholo -> New -> Folder -> naam: CMBC Project Backup
+  - Folder par RIGHT CLICK -> "Share" -> email field me DAALO:
+      (service-account JSON me jo client_email hai — jaise
+       cmbc-backup-bot@cmbc-backup.iam.gserviceaccount.com)
+      → role: **Editor**  -> Send
+  - Ab folder ID nikalna: folder kholo, browser URL me:
+      https://drive.google.com/drive/folders/ABCD1234xyz   <--  <- ye ID hai
+
+STEP 5: Config file banao
+  - backups\gdrive-config.example.json  ko copy karke
+    backups\gdrive-config.json  naam de do
+  - "folderId" me wo ID paste karo (STEP 4 wala)
+
+STEP 6: Test karo
+  - CMD kholo project folder me, chalado:
+      node scripts\gdrive_backup.js check
+    → "Setup sab sahi hai!" dikhna chahiye
+  - Manual backup:
+      node scripts\gdrive_backup.js now
+  - Afty ho gaya Drive folder me ZIP dikh jayegi!
+
+============================================================================
+ AUTO-BACKUP START (code change par khud upload)
+============================================================================
+  TARIKA A (simple):
+    START_GDRIVE_BACKUP.bat  double-click karo (window open rahe)
+  TARIKA B (PC start par khud):
+    - Win+R -> shell:startup -> Enter
+    - START_GDRIVE_BACKUP.bat ka shortcut isi folder me paste kar do
+      (right click START_GDRIVE_BACKUP.bat -> "Create shortcut" -> shortcut ko
+       shell:startup folder me daal do)
+
+============================================================================
+ KOI GADBAD / DATA DELETE KE BAAD RECOVERY
+============================================================================
+ - Scenario: "D:\Cash Managment BC" folder someone delete kar diya
+   → Drive par saari ZIP SAFE (Service Account owns them).
+   Naya machine/folder me recovery:
+     1) wahi setup (steps 1-5, ya JSON+config backup copy)
+     2) chalao: node scripts\gdrive_backup.js list
+     3) phir:   node scripts\gdrive_backup.js restore
+        (sabse naya zip download+extract)
+     4) Us folder me: npm install   (node_modules wapas)
+     5) node server.js — kaam chalu!
+
+ - Scenario: Kisi EK CODE FILE me galti ho gayi (purane version wapas chahiye)
+     node scripts\gdrive_backup.js list      → purani zip naam dekho
+     node scripts\gdrive_backup.js restore CMBC_code_2026-11-06_10-00.zip
+     → "restore_..." folder me extract hoga, wahan se file copy kar lo
+       (poore project ko replace karne ki zaroorat nahi!)
+
+⚠ AADHDESHT LALTAN (IMPORTANT SAFEGUARD)
+ - Drive folder khud delete mat karo (wahi par backups hai)
+ - DB (database) ka backup bahut bade .bak file hai — code backup me default
+   NAHI hai. Pura DB backup bhi chahiye to config me:
+        "includeLatestDbBackup": true
+   (zip 15-25 MB ho jayegi, chill — Drive free quota 15 GB)
+ - Service-account JSON PRIVATE file hai — kisi ko mat do aur net pe upload
+   mat karo. Isi folder me rakho (Drive backup me exclude rahegi).
+
+============================================================================
+ COMMANDS SAARE
+============================================================================
+ node scripts\gdrive_backup.js check
+ node scripts\gdrive_backup.js now [--dry]
+ node scripts\gdrive_backup.js watch
+ node scripts\gdrive_backup.js list
+ node scripts\gdrive_backup.js restore [backup_name.zip] [target_dir]
+============================================================================

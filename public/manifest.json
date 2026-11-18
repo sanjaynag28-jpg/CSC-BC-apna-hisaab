@@ -1,0 +1,18 @@
+{
+  "name": "Cash Management & BC System",
+  "short_name": "Cash BC",
+  "description": "Multi-Shop Cash Management, Kiosk Banking & CSC Tracker",
+  "start_url": "/#dashboard",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

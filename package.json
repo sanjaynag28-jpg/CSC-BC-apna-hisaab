@@ -1,0 +1,33 @@
+{
+  "name": "cash-management",
+  "version": "1.0.0",
+  "description": "Aapka Personal Cash Management System - BC ka Hisaab Kitaab",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "setup": "node setup-database.js",
+    "migrate": "node scripts/migration_rule1_sourceline.js",
+    "reconcile-sn": "node scripts/reconcile_and_backfill_all_sn.js",
+    "verify": "node scratch/verify_all.js"
+  },
+  "keywords": [
+    "cash",
+    "management",
+    "hisaab",
+    "finance"
+  ],
+  "author": "BC",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.2",
+    "cors": "^2.8.6",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "moment": "^2.31.0",
+    "mssql": "^12.7.4",
+    "multer": "^2.4.0",
+    "tesseract.js": "^7.0.0"
+  }
+}

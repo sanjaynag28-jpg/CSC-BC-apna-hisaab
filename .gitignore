@@ -1,0 +1,59 @@
+# ==========================================================
+# STRICT DATA & PRIVACY PROTECTION (.gitignore)
+# Personal data, live databases, uploads & secrets NEVER go to GitHub
+# ==========================================================
+
+# Dependencies
+node_modules/
+
+# Environment & Secrets (NEVER commit real .env)
+.env
+.env.*
+!.env.example
+
+# Live SQL Server Database files & Backups (CRITICAL - ZERO DATA LEAK)
+database/data/
+backups/
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.bak_*
+*.bak-*
+database/setup.sql.bak_setup
+
+# Customer Uploaded Documents & Receipts (CRITICAL - ZERO DATA LEAK)
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Logs & Runtime Temp Files
+logs/
+*.log
+npm-debug.log*
+.auto-update-tmp/
+
+# Local Binaries & IDE/Workspace Metadata
+bin/
+.antigravity/
+.vscode/
+.DS_Store
+Thumbs.db
+extension/.build-state.json
+
+# Throwaway Debug / Audit / Prototype Files (Keep ONLY essential core scripts)
+docs/audit_archive/
+public/demos/
+public/tests/
+public/*.bak*
+public/receipt_samples.html
+public/prototype_bc_designs.html
+public/test_grabber.html
+
+scratch/*
+!scratch/verify_all.js
+
+scripts/*
+!scripts/migration_rule1_sourceline.js
+!scripts/reconcile_and_backfill_all_sn.js
+!scripts/create_project_zip.js
+!scripts/gdrive_backup.js

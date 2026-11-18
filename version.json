@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "releasedAt": "2026-11-18",
+  "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
+  "branch": "main",
+  "notes": "Initial clean public release with automatic silent updater and multi-tenant isolation."
+}

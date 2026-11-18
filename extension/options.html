@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <title>Cash Management BC - Extension Settings</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 520px;
+      padding: 30px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    h2 {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      color: #34d399;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 13px;
+      line-height: 1.5;
+      margin: 0 0 24px 0;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 12px;
+      color: white;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+    .hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .btn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+    }
+    .btn:hover {
+      opacity: 0.95;
+    }
+    .status-msg {
+      display: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 16px;
+      text-align: center;
+    }
+    .status-success {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid #10b981;
+      color: #34d399;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>💰 Cash Management Extension Settings</h2>
+    <p>Apni dukan ke remote access ke liye Central Server URL aur apna Shop API Token darz karein.</p>
+
+    <div class="form-group">
+      <label>Central Server URL (सर्वर पता)</label>
+      <input type="text" id="serverUrl" placeholder="http://localhost:3000 ya Cloudflare Domain">
+      <div class="hint">Local PC ke liye <code>http://localhost:3000</code> chhod dein. Remote dukaan ke liye Sanjay dwara diya gaya link paste karein.</div>
+    </div>
+
+    <div class="form-group">
+      <label>Shop API Token (दुकान टोकन)</label>
+      <input type="text" id="apiToken" placeholder="e.g. tok_xxxxxxxxxxxxxxxx">
+      <div class="hint">Sanjay ke system se aapko mila hua 32-akshar ka API token yahan daalein taaki auto-capture entry aapki hi dukan me darz ho.</div>
+    </div>
+
+    <button class="btn" id="saveBtn">Settings Save Karein</button>
+
+    <div class="status-msg status-success" id="statusMsg">
+      ✅ Settings kamyabi se save ho gayi!
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
