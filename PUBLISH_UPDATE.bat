@@ -16,11 +16,26 @@ if %errorlevel% neq 0 (
 )
 
 echo ============================================================
-echo   PUBLISH NEW UPDATE TO GITHUB (SAFE CODE-ONLY RELEASE)
+echo   PUBLISH NEW UPDATE TO GITHUB (FULLY AUTOMATIC)
+echo   verify -^> version bump -^> leak audit -^> push -^> release
 echo ============================================================
 echo.
 
-:: Step 1: Run 13/13 integrity verification suite
+:: Optional: note argument (na dein to auto note ban jayega)
+set "REL_NOTES=%~1"
+
+:: Step 0: Koi change hai ya nahi
+"%GIT_EXE%" status --porcelain > "%TEMP%\cmbc_changes.tmp" 2>nul
+for /f "delims=" %%L in ("%TEMP%\cmbc_changes.tmp") do set "HAS_CHANGES=1"
+del "%TEMP%\cmbc_changes.tmp" >nul 2>&1
+if not defined HAS_CHANGES (
+    echo [!] Koi code change nahi mila - publish karne ki zaroorat nahi.
+    echo     Code change karke PUBLISH_UPDATE.bat dobara chalayein.
+    pause
+    exit /b 0
+)
+
+:: Step 1: 13/13 integrity verification suite
 echo [1/5] Running 13/13 Verification Suite (npm run verify)...
 call npm run verify
 if %errorlevel% neq 0 (
@@ -30,47 +45,71 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Step 2: Prompt for release note & bump patch version
+:: Step 2: Auto release note (ya argument) + version bump (koi typing nahi)
 echo.
-set /p "REL_NOTES=Release note likhein (Enter for default): "
-if "%REL_NOTES%"=="" set "REL_NOTES=Bug fixes and performance improvements"
-
-echo [2/5] Bumping version in version.json & package.json...
-node -e "const fs=require('fs'); const v=JSON.parse(fs.readFileSync('version.json','utf8')); const p=v.version.split('.').map(Number); p[2]=(p[2]||0)+1; v.version=p.join('.'); v.releasedAt=new Date().toISOString().slice(0,10); v.notes=process.argv[1]; fs.writeFileSync('version.json', JSON.stringify(v,null,2)+'\n'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.version=v.version; fs.writeFileSync('package.json', JSON.stringify(pkg,null,2)+'\n'); console.log('New Version:', v.version);" "%REL_NOTES%"
-
-:: Step 3: Stage & verify NO personal data / secrets are staged
-echo [3/5] Checking staged files (Zero Data Leak Audit)...
-"%GIT_EXE%" add -A
-"%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.mdf$ \.ldf$ \.bak$ ^backups/ ^public/uploads/ ^database/data/" >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [!] DANGER: Sensitive data file detected in git staging! Aborting!
-    "%GIT_EXE%" reset
-    pause
-    exit /b 1
+echo [2/5] Release note + version bump...
+if not defined REL_NOTES (
+node -e "const cp=require('child_process');const fs=require('fs');const out=cp.execSync('git status --porcelain',{encoding:'utf8'});const files=out.split(/\r?\n/).filter(l=>l.trim()).map(l=>l.slice(3).trim());const areas=[...new Set(files.map(f=>f.split('/')[0]))];const note=('Auto update: '+files.length+' file(s) changed ('+areas.slice(0,6).join(', ')+(areas.length>6?', ...':'')+')').replace(/[&|<>^%\"']/g,'-');fs.writeFileSync('release-note.tmp',note);console.log('  Note: '+note);"
+if exist release-note.tmp (
+    set /p "REL_NOTES="<release-note.tmp
+    del release-note.tmp >nul 2>&1
 )
+)
+if not defined REL_NOTES set "REL_NOTES=Automatic update release"
+
+node -e "const fs=require('fs');const v=JSON.parse(fs.readFileSync('version.json','utf8'));const p=v.version.split('.').map(Number);p[2]=(p[2]||0)+1;v.version=p.join('.');v.releasedAt=new Date().toISOString().slice(0,10);v.notes=process.argv[1];fs.writeFileSync('version.json',JSON.stringify(v,null,2)+'\n');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));pkg.version=v.version;fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');try{const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));lock.version=v.version;if(lock.packages&&lock.packages['']){lock.packages[''].version=v.version;}fs.writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n');}catch(e){}console.log('  New version: '+v.version);" "%REL_NOTES%"
 
 for /f "delims=" %%V in ('node -e "console.log(require('./version.json').version)"') do set "NEW_VER=%%V"
 
-:: Step 4: Commit & Push to GitHub
-echo [4/5] Pushing v%NEW_VER% to GitHub...
-"%GIT_EXE%" commit -m "Release v%NEW_VER%: %REL_NOTES%"
-"%GIT_EXE%" push origin main
-if %errorlevel% neq 0 (
+:: Step 3: Stage + zero data leak audit
+echo [3/5] Staged files check (Zero Data Leak Audit)...
+"%GIT_EXE%" add -A
+"%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
+if %errorlevel% equ 0 (
     echo.
-    echo [!] Git push failed! Check internet or GitHub login.
+    echo [!] DANGER: Sensitive data file staged! Publish aborted.
+    "%GIT_EXE%" reset >nul 2>&1
+    pause
+    exit /b 1
+)
+echo   [OK] No personal data / secrets staged.
+
+:: Step 4: Commit + Push (auto retry 3x)
+echo [4/5] Pushing v%NEW_VER% to GitHub...
+"%GIT_EXE%" commit -m "Release v%NEW_VER%: %REL_NOTES%" >nul 2>&1
+if %errorlevel% neq 0 "%GIT_EXE%" commit -m "Release v%NEW_VER%"
+
+set "PUSH_OK="
+for /l %%i in (1,1,3) do (
+    if not defined PUSH_OK (
+        echo   push attempt %%i/3...
+        "%GIT_EXE%" push origin main
+        if !errorlevel! equ 0 (
+            set "PUSH_OK=1"
+        ) else (
+            timeout /t 5 /nobreak >nul
+        )
+    )
+)
+if not defined PUSH_OK (
+    echo.
+    echo [!] Push 3 attempts ke baad fail. Internet/GitHub login check karke dobara chalayein.
     pause
     exit /b 1
 )
 
-:: Step 5: GitHub Release + installer assets (naye PC ke liye direct download link)
-echo [5/5] Creating GitHub Release & attaching installer...
+:: Step 5: GitHub Release + installer assets (auto)
+echo [5/5] Creating GitHub Release ^& attaching installer...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0utils\publish_release_assets.ps1"
 
 echo.
 echo ============================================================
-echo   SUCCESS! v%NEW_VER% published to GitHub!
-echo   Purane PC: agle boot / raat 2:30 AM par automatic silent update.
-echo   Naye PC:   Release page par SETUP.bat download karke chalayein.
+echo   SUCCESS! v%NEW_VER% LIVE on GitHub
+echo ============================================================
+echo   Installer (naye PC ke liye, direct download):
+echo   https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/download/v%NEW_VER%/SETUP.bat
+echo.
+echo   Purane PC: agle boot ya raat 2:30 AM par automatic silent update
+echo   (data safe - .env / uploads / backups / database untouched).
 echo ============================================================
 pause
-

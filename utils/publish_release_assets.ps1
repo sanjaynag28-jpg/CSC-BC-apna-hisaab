@@ -58,14 +58,24 @@ try {
         }
         try {
             $url = "https://uploads.github.com/repos/$repo/releases/$($rel.id)/assets?name=$($a.Name)"
-            $up = Invoke-RestMethod -Uri $url -Headers $headers -Method Post -ContentType 'application/octet-stream' -InFile $a.Path
-            Write-Host "  [OK] $($a.Name) uploaded"
+            $uploaded = $false
+            for ($i = 1; $i -le 3 -and -not $uploaded; $i++) {
+                try {
+                    $up = Invoke-RestMethod -Uri $url -Headers $headers -Method Post -ContentType 'application/octet-stream' -InFile $a.Path
+                    $uploaded = $true
+                } catch {
+                    Write-Host "  [!] $($a.Name) upload attempt $i/3 fail: $($_.Exception.Message)"
+                    if ($i -lt 3) { Start-Sleep -Seconds (3 * $i) }
+                }
+            }
+            if ($uploaded) { Write-Host "  [OK] $($a.Name) uploaded" }
         } catch {
             Write-Host "  [!] $($a.Name) upload skip: $($_.Exception.Message)"
         }
     }
 
     Write-Host "  [OK] Release page: $($rel.html_url)"
+    Write-Host "  [OK] Direct download (naye PC): https://github.com/$repo/releases/download/$tag/SETUP.bat"
 } catch {
     Write-Host "  [!] Release assets skip: $($_.Exception.Message)"
 }
