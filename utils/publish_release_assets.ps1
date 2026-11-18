@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # utils/publish_release_assets.ps1
 # PUBLISH_UPDATE.bat ke baad chalta hai:
 # - version.json ka version uthata hai (e.g. 1.0.3 -> v1.0.3)
@@ -78,6 +78,19 @@ try {
 
     Write-Host "  [OK] Release page: $($rel.html_url)"
     Write-Host "  [OK] Direct download (naye PC): https://github.com/$repo/releases/download/$tag/SETUP.bat"
+
+    # ------------------------------------------------------------------
+    # Purane releases auto-cleanup: GitHub par sirf latest 3 rahenge
+    # (latest + 2 purane). Isse repo saaf rehta hai, manually kuch nahi karna.
+    # ------------------------------------------------------------------
+    try {
+        $cleanup = Join-Path $PSScriptRoot 'cleanup_old_releases.ps1'
+        if (Test-Path $cleanup) {
+            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $cleanup -Keep 3
+        }
+    } catch {
+        Write-Host "  [!] Releases cleanup skip: $($_.Exception.Message)"
+    }
 } catch {
     Write-Host "  [!] Release assets skip: $($_.Exception.Message)"
 }
