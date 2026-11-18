@@ -10,6 +10,7 @@ title SQL Server Express Fix - CSC ^& BC Apna Hisaab
 :: ============================================================================
 
 set "RAW=https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/sql_fix.ps1"
+set "REL=https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/latest/download/sql_fix.ps1"
 set "PS1=%TEMP%\cmbc_sql_fix.ps1"
 
 net session >nul 2>&1
@@ -24,7 +25,7 @@ echo   SQL SERVER EXPRESS - SELF REPAIR
 echo ============================================================
 echo.
 echo [1/2] Repair script download (auto-retry)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $u='%RAW%'; $o='%PS1%'; for($i=1;$i -le 6;$i++){ try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; if(Test-Path $o){ Remove-Item $o -Force }; Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 90; if((Test-Path $o) -and (Get-Item $o).Length -gt 1000){ exit 0 } } catch { }; Start-Sleep -Seconds (2*$i) }; exit 1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $o='%PS1%'; $urls=@('%REL%','%RAW%'); foreach($u in $urls){ for($i=1;$i -le 4;$i++){ try { [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; if(Test-Path $o){ Remove-Item $o -Force }; Invoke-WebRequest -Uri $u -OutFile $o -UseBasicParsing -TimeoutSec 90; if((Test-Path $o) -and (Get-Item $o).Length -gt 1000){ exit 0 } } catch { }; Start-Sleep -Seconds (2*$i) } }; exit 1"
 if errorlevel 1 (
     echo.
     echo [ERR] Repair script download fail. Internet check karke dobara chalayein.

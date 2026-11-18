@@ -1,7 +1,7 @@
 {
-  "version": "1.0.11",
+  "version": "1.0.12",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "SQL fix tools: leftover mile to seedha fresh instance CMBCSQL, alag SQL_FIX.bat with diagnostics and aggressive cleanup"
+  "notes": "SQL_FIX downloads from stable latest release asset (raw CDN fix) plus sql_fix.ps1 asset"
 }
