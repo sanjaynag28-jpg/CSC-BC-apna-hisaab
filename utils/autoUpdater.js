@@ -207,6 +207,51 @@ function downloadFile(url, destPath, timeoutMs = 60000, redirects = 0) {
     });
 }
 
+function downloadFileWithRetry(url, destPath, attempts = 4, timeoutMs = 60000) {
+    return (async () => {
+        let lastErr = null;
+        for (let i = 1; i <= attempts; i++) {
+            try {
+                return await downloadFile(url, destPath, timeoutMs);
+            } catch (err) {
+                lastErr = err;
+                logUpdate(`Download attempt ${i}/${attempts} failed: ${err.message}`);
+                try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
+                if (i < attempts) await new Promise(r => setTimeout(r, Math.min(20000, 3000 * i)));
+            }
+        }
+        throw lastErr || new Error('Download failed');
+    })();
+}
+
+// Critical code files: agar update ke baad koi missing/corrupt mile to fresh copy force karo
+const CRITICAL_FILES = {
+    'server.js': 2000,
+    'package.json': 200,
+    'package-lock.json': 5000,
+    'setup-database.js': 1000,
+    'database/setup.sql': 10000,
+    'public/index.html': 50000,
+    'public/app.js': 50000,
+    'routes/auth.js': 500,
+    'middleware/auth.js': 500,
+    'utils/autoUpdater.js': 1000
+};
+
+function findBrokenFiles() {
+    const broken = [];
+    for (const rel of Object.keys(CRITICAL_FILES)) {
+        const abs = path.join(ROOT_DIR, rel);
+        try {
+            const st = fs.statSync(abs);
+            if (!st.isFile() || st.size < CRITICAL_FILES[rel]) broken.push(rel);
+        } catch (_) {
+            broken.push(rel);
+        }
+    }
+    return broken;
+}
+
 function isProtectedPath(relPath) {
     const normalized = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
     if (!normalized) return false;
@@ -277,34 +322,64 @@ async function applyCodeUpdateViaGit(gitBin, force = false) {
 }
 
 async function applyCodeUpdateViaZip() {
-    logUpdate('Downloading latest release ZIP from GitHub...');
-    if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true, force: true });
-    fs.mkdirSync(TMP_DIR, { recursive: true });
+    let lastErr = null;
 
-    const zipPath = path.join(TMP_DIR, 'release.zip');
-    const extractDir = path.join(TMP_DIR, 'extracted');
+    for (let round = 1; round <= 3; round++) {
+        logUpdate(`Downloading latest release ZIP from GitHub... (attempt ${round}/3)`);
+        if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true, force: true });
+        fs.mkdirSync(TMP_DIR, { recursive: true });
 
-    try {
-        await downloadFile(REMOTE_ZIP_URL, zipPath, 60000);
-        fs.mkdirSync(extractDir, { recursive: true });
-        execFileSync('powershell', [
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-Command',
-            `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
-        ], { stdio: 'ignore', timeout: 60000 });
+        const zipPath = path.join(TMP_DIR, 'release.zip');
+        const extractDir = path.join(TMP_DIR, 'extracted');
 
-        const topEntries = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
-        if (topEntries.length === 0) throw new Error('Extracted ZIP archive was empty');
-        const extractedRoot = path.join(extractDir, topEntries[0].name);
-
-        copyDirectorySafely(extractedRoot, ROOT_DIR);
-        logUpdate('ZIP code files applied cleanly (user data & .env preserved).');
-    } finally {
         try {
-            if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true, force: true });
-        } catch (_) { }
+            await downloadFileWithRetry(REMOTE_ZIP_URL, zipPath, 4, 60000);
+
+            let extracted = false;
+            for (let i = 1; i <= 2 && !extracted; i++) {
+                try {
+                    if (fs.existsSync(extractDir)) fs.rmSync(extractDir, { recursive: true, force: true });
+                    fs.mkdirSync(extractDir, { recursive: true });
+                    execFileSync('powershell', [
+                        '-NoProfile',
+                        '-ExecutionPolicy', 'Bypass',
+                        '-Command',
+                        `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
+                    ], { stdio: 'ignore', timeout: 60000 });
+                    extracted = true;
+                } catch (extractErr) {
+                    logUpdate(`ZIP extract attempt ${i}/2 failed: ${extractErr.message}`);
+                    if (i === 2) throw extractErr;
+                }
+            }
+
+            const topEntries = fs.readdirSync(extractDir, { withFileTypes: true }).filter(e => e.isDirectory());
+            if (topEntries.length === 0) throw new Error('Extracted ZIP archive was empty');
+            const extractedRoot = path.join(extractDir, topEntries[0].name);
+
+            copyDirectorySafely(extractedRoot, ROOT_DIR);
+
+            const broken = findBrokenFiles();
+            if (broken.length > 0) {
+                throw new Error(`Update incomplete - missing/corrupt: ${broken.join(', ')}`);
+            }
+
+            logUpdate('ZIP code files applied cleanly (user data & .env preserved).');
+            return;
+        } catch (err) {
+            lastErr = err;
+            logUpdate(`ZIP update attempt ${round}/3 failed: ${err.message}`);
+            if (round < 3) {
+                await new Promise(r => setTimeout(r, Math.min(15000, 4000 * round)));
+            }
+        } finally {
+            try {
+                if (fs.existsSync(TMP_DIR)) fs.rmSync(TMP_DIR, { recursive: true, force: true });
+            } catch (_) { }
+        }
     }
+
+    throw lastErr || new Error('ZIP update failed');
 }
 
 async function checkForUpdate() {
@@ -416,6 +491,11 @@ async function runSilentAutoUpdate(options = {}) {
         if (gitBin && isGitRepo) {
             try {
                 await applyCodeUpdateViaGit(gitBin, force);
+                const brokenAfterGit = findBrokenFiles();
+                if (brokenAfterGit.length > 0) {
+                    logUpdate(`Git update ke baad files missing/corrupt: ${brokenAfterGit.join(', ')} — ZIP se auto-repair...`);
+                    await applyCodeUpdateViaZip();
+                }
             } catch (gitErr) {
                 if (gitErr.message === 'LOCAL_CHANGES_PRESENT') {
                     logUpdate('Skipped silent update: uncommitted local edits detected (developer safety guard).');
