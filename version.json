@@ -1,7 +1,7 @@
 {
-  "version": "1.0.17",
+  "version": "1.0.18",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Release cleanup automation: har publish ke baad sirf latest 3 releases GitHub par rakhta hai (latest + 2 purane)"
+  "notes": "DOCTOR: PC restart ke baad server na chale to one-click auto-fix + login auto-start (Run key + Startup entry + ONLOGON task)"
 }

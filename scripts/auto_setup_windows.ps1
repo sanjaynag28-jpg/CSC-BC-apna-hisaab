@@ -858,16 +858,24 @@ function Setup-Database {
 
 function Install-AutoStart {
     Write-Step 6 8 "Configuring silent auto-start on every PC boot..."
+    $taskInstalled = $false
     try {
         $taskName = "CSC BC Apna Hissab Server"
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
         $wscript = Join-Path $env:WINDIR "System32\wscript.exe"
         $action = "`"$wscript`" `"$vbs`""
-        schtasks /Create /TN "$taskName" /TR $action /SC ONSTART /RL HIGHEST /F | Out-Null
-        # Login trigger bhi (laptop / fast-startup PCs par ONSTART kabhi miss hota hai)
+        # Login trigger: user context me chalta hai (password ki zaroorat nahi).
+        # ONSTART ke bajaye ONLOGON isliye, kyunki bina password wala boot task
+        # kai PCs par chalta hi nahi.
+        schtasks /Create /TN "$taskName" /TR $action /SC ONLOGON /RL HIGHEST /F | Out-Null
+        if ($LASTEXITCODE -eq 0) { $taskInstalled = $true }
         schtasks /Create /TN "$taskName (Login)" /TR $action /SC ONLOGON /RL HIGHEST /F | Out-Null
+        if ($taskInstalled -or $LASTEXITCODE -eq 0) {
+            Write-Ok "Auto-start task installed (login par server silently chalu)."
+        } else {
+            Write-Warn "Task create nahi hua - Startup entry se auto-start chalega."
+        }
         schtasks /Run /TN "$taskName" | Out-Null
-        Write-Ok "Auto-start tasks installed (PC on / login par server silently chalu)."
     } catch {
         Write-Warn "Auto-start task skipped: $($_.Exception.Message)"
         try {

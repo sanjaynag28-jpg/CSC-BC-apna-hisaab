@@ -100,11 +100,55 @@ function ensureShortcuts() {
     }
 }
 
+/**
+ * HKCU Run entry (backup auto-start): Startup folder kisi policy se band ho
+ * jaye to bhi login par server start ho jaye. Admin ki zaroorat nahi.
+ */
+function ensureRunKey() {
+    const hiddenVbs = path.join(ROOT_DIR, 'start-hidden.vbs');
+    if (!fs.existsSync(hiddenVbs)) return 'missing-launcher';
+
+    try {
+        const q = execFileSync('reg.exe', [
+            'query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+            '/v', 'CSC BC Apna Hissab'
+        ], { windowsHide: true, timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
+        if (q.toLowerCase().includes('start-hidden.vbs')) return 'unchanged';
+    } catch (_) {
+        // Entry nahi hai - neeche bana denge
+    }
+
+    // PowerShell -EncodedCommand se likhte hain taaki path me space/quotes se
+    // koi escaping problem na aaye.
+    const ps = [
+        "$key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'",
+        'if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }',
+        "$w = Join-Path $env:WINDIR 'System32\\wscript.exe'",
+        `$v = '"' + $w + '" "' + '${hiddenVbs.replace(/'/g, "''")}' + '"'`,
+        "Set-ItemProperty -Path $key -Name 'CSC BC Apna Hissab' -Value $v",
+        "$check = (Get-ItemProperty -Path $key -Name 'CSC BC Apna Hissab').'CSC BC Apna Hissab'",
+        'if (-not $check) { exit 1 }'
+    ].join('\r\n');
+
+    try {
+        const encoded = Buffer.from(ps, 'utf16le').toString('base64');
+        execFileSync('powershell.exe', [
+            '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+            '-EncodedCommand', encoded
+        ], { windowsHide: true, timeout: 45000, stdio: 'ignore' });
+        log('Windows Run entry ready (login auto-start fallback).');
+        return 'created';
+    } catch (e) {
+        return 'error:' + e.message;
+    }
+}
+
 function ensureWindowsAutostart() {
     if (process.platform !== 'win32') return { skipped: true, reason: 'not-windows' };
     return {
         startupEntry: ensureStartupEntry(),
-        shortcuts: ensureShortcuts()
+        shortcuts: ensureShortcuts(),
+        runKey: ensureRunKey()
     };
 }
 

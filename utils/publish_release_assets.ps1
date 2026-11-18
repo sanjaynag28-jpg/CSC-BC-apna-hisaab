@@ -48,7 +48,9 @@ try {
         @{ Name = 'SETUP.bat';                  Path = (Join-Path $root 'INSTALL_FROM_GITHUB.bat') },
         @{ Name = 'INSTALL_FROM_GITHUB.bat';    Path = (Join-Path $root 'INSTALL_FROM_GITHUB.bat') },
         @{ Name = 'SQL_FIX.bat';                Path = (Join-Path $root 'SQL_FIX.bat') },
-        @{ Name = 'sql_fix.ps1';                Path = (Join-Path $root 'scripts\sql_fix.ps1') }
+        @{ Name = 'sql_fix.ps1';                Path = (Join-Path $root 'scripts\sql_fix.ps1') },
+        @{ Name = 'DOCTOR.bat';                 Path = (Join-Path $root 'DOCTOR.bat') },
+        @{ Name = 'doctor.ps1';                 Path = (Join-Path $root 'scripts\doctor.ps1') }
     )
 
     $existing = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/$($rel.id)/assets" -Headers $headers -Method Get
