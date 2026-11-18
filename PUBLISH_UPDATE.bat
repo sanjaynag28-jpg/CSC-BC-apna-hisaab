@@ -48,7 +48,7 @@ if %errorlevel% neq 0 (
 :: Step 2: Auto release note (ya argument) + version bump (koi typing nahi)
 echo.
 echo [2/5] Release note + version bump...
-if not defined REL_NOTES node -e "const cp=require('child_process');const fs=require('fs');const out=cp.execSync('git status --porcelain',{encoding:'utf8'});const files=out.split(/\r?\n/).filter(l=>l.trim()).map(l=>l.slice(3).trim());const areas=[...new Set(files.map(f=>f.split('/')[0]))];const note=('Auto update: '+files.length+' file(s) changed ('+areas.slice(0,6).join(', ')+(areas.length>6?', ...':'')+')').replace(/[&|<>^%\"']/g,'-');fs.writeFileSync('release-note.tmp',note);console.log('  Note: '+note);"
+if not defined REL_NOTES node -e "const cp=require('child_process');const fs=require('fs');const out=cp.execSync('git status --porcelain',{encoding:'utf8'});const files=out.split(/\r?\n/).filter(l=>l.trim()).map(l=>l.slice(3).trim());const areas=[...new Set(files.map(f=>f.split('/')[0]))];const note=('Auto update: '+files.length+' file(s) changed ('+areas.slice(0,6).join(', ')+(areas.length>6?', ...':'')+')').replace(/[&|<>^']/g,'-');fs.writeFileSync('release-note.tmp',note);console.log('  Note: '+note);"
 if not defined REL_NOTES if exist release-note.tmp for /f "delims=" %%N in (release-note.tmp) do set "REL_NOTES=%%N"
 if exist release-note.tmp del release-note.tmp >nul 2>&1
 if not defined REL_NOTES set "REL_NOTES=Automatic update release"
