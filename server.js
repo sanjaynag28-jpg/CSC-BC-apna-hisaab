@@ -865,13 +865,21 @@ function scheduleNightlyUpdate() {
 
     console.log(`🕝 [Auto-Update] Next check: ${next.toLocaleString()}`);
     setTimeout(async () => {
+        let result = null;
         try {
-            await autoUpdater.runSilentAutoUpdate({
+            result = await autoUpdater.runSilentAutoUpdate({
                 restartOnUpdate: true,
                 requireIdle: true,
                 isIdle: () => activeRequests === 0
             });
         } catch (_) { }
+
+        // Agar app busy tha to agle din ka wait na karo — 30 min baad dobara try karo.
+        if (result && result.skipped && /busy/i.test(String(result.reason || ''))) {
+            console.log('⏳ [Auto-Update] App busy tha — 30 minute baad dobara try hoga.');
+            setTimeout(() => scheduleNightlyUpdate(), 30 * 60 * 1000);
+            return;
+        }
         scheduleNightlyUpdate();
     }, next.getTime() - now.getTime());
 }
