@@ -237,16 +237,18 @@ function Ensure-NodeJs {
 
 function Get-LocalSqlService {
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name -eq 'MSSQL$SQLEXPRESS' -or
-        $_.Name -eq 'MSSQLSERVER' -or
-        $_.Name -like 'MSSQL$SQLEXPRESS*'
+        $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*'
     }
-    if ($services) {
-        $preferred = $services | Where-Object { $_.Name -eq 'MSSQL$SQLEXPRESS' } | Select-Object -First 1
+    if (-not $services) { return $null }
+    $running = @($services | Where-Object { $_.Status -eq 'Running' })
+    if ($running.Count -gt 0) {
+        $preferred = $running | Where-Object { $_.Name -eq 'MSSQL$SQLEXPRESS' } | Select-Object -First 1
         if ($preferred) { return $preferred }
-        return ($services | Select-Object -First 1)
+        return ($running | Sort-Object Name | Select-Object -First 1)
     }
-    return $null
+    $preferred = $services | Where-Object { $_.Name -eq 'MSSQL$SQLEXPRESS' } | Select-Object -First 1
+    if ($preferred) { return $preferred }
+    return ($services | Sort-Object Name | Select-Object -First 1)
 }
 
 function Get-InstanceServerName($svc) {
@@ -260,6 +262,153 @@ function Test-SqlConnection([string]$connStr) {
         $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
         $conn.Open()
         $conn.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# ----------------------------------------------------------------------------
+# SQL SELF-HEAL: leftover/broken SQL Express install (master.mdf already exists)
+# ----------------------------------------------------------------------------
+function Get-SqlSetupExe {
+    $roots = @((Join-Path $env:ProgramFiles 'Microsoft SQL Server'))
+    if (${env:ProgramFiles(x86)}) { $roots += (Join-Path ${env:ProgramFiles(x86)} 'Microsoft SQL Server') }
+    foreach ($r in $roots) {
+        if (-not (Test-Path $r)) { continue }
+        $bootstrap = Join-Path $r '160\Setup Bootstrap'
+        if (-not (Test-Path $bootstrap)) { $bootstrap = Join-Path $r '150\Setup Bootstrap' }
+        if (Test-Path $bootstrap) {
+            $exe = Get-ChildItem -Path $bootstrap -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($exe) { return $exe.FullName }
+        }
+    }
+    return $null
+}
+
+function Get-SqlLeftoverInstances {
+    $found = @()
+    $roots = @((Join-Path $env:ProgramFiles 'Microsoft SQL Server'))
+    if (${env:ProgramFiles(x86)}) { $roots += (Join-Path ${env:ProgramFiles(x86)} 'Microsoft SQL Server') }
+    foreach ($r in $roots) {
+        if (-not (Test-Path $r)) { continue }
+        Get-ChildItem -Path $r -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Name -match '^MSSQL\d+\.(.+)$') {
+                $inst = $Matches[1]
+                $svcName = if ($inst -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { "MSSQL`$$inst" }
+                if (-not (Get-Service -Name $svcName -ErrorAction SilentlyContinue)) {
+                    $found += $_.FullName
+                }
+            }
+        }
+    }
+    return $found
+}
+
+function Remove-SqlInstanceRegistry([string]$instName) {
+    $regRoots = @(
+        'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server',
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Microsoft SQL Server'
+    )
+    foreach ($root in $regRoots) {
+        $namesKey = Join-Path $root 'Instance Names\SQL'
+        if (-not (Test-Path $namesKey)) { continue }
+        $instId = $null
+        try { $instId = (Get-ItemProperty -Path $namesKey -Name $instName -ErrorAction Stop).$instName } catch { }
+        if ($instId) {
+            try { Remove-ItemProperty -Path $namesKey -Name $instName -Force -ErrorAction Stop } catch { }
+            $instKey = Join-Path $root $instId
+            if (Test-Path $instKey) {
+                try { Remove-Item $instKey -Recurse -Force -ErrorAction Stop } catch { }
+            }
+        }
+    }
+}
+
+function Clear-BrokenSqlInstall {
+    param([string[]]$Paths)
+
+    $setup = Get-SqlSetupExe
+    foreach ($p in $Paths) {
+        $leaf = Split-Path $p -Leaf
+        if ($leaf -match '^MSSQL\d+\.(.+)$') {
+            $instName = $Matches[1]
+            if ($setup) {
+                try {
+                    Write-Warn "Purane adhoore instance '$instName' ka silent uninstall try..."
+                    Start-Process -FilePath $setup -ArgumentList "/Action=Uninstall /InstanceName=$instName /FEATURES=SQLENGINE /Quiet /IACCEPTSQLSERVERLICENSETERMS" -Wait -ErrorAction SilentlyContinue
+                    Start-Sleep -Seconds 5
+                } catch { }
+            }
+            Remove-SqlInstanceRegistry -instName $instName
+        }
+    }
+
+    foreach ($p in $Paths) {
+        if (Test-Path $p) {
+            try {
+                Remove-Item $p -Recurse -Force -ErrorAction Stop
+                Write-Ok "Leftover SQL data removed: $p"
+            } catch {
+                Write-Warn "Leftover folder lock hai (remove nahi hua): $p"
+            }
+        }
+    }
+}
+
+function Install-SqlExpressInstance {
+    param([string]$InstanceName, [string]$SaPassword)
+
+    Write-Warn "SQL Server Express install ho raha hai — instance '$InstanceName' (silent, 3-6 min)..."
+    $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr-$InstanceName.exe"
+    if (-not (Get-RemoteFile -Url "https://go.microsoft.com/fwlink/p/?linkid=2216019" -Path $sqlExe -Attempts 4)) {
+        return $false
+    }
+    try {
+        $argList = "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /FEATURES=SQLENGINE /InstanceName=$InstanceName /SecurityMode=SQL /SAPWD=$SaPassword /TCPENABLED=1 /NPENABLED=0 /UpdateEnabled=0 /SkipRules=RebootRequiredCheck"
+        $proc = Start-Process -FilePath $sqlExe -ArgumentList $argList -Wait -PassThru
+        if ($proc -and $proc.ExitCode -ne 0) {
+            Write-Warn "SQL setup exit code: $($proc.ExitCode) (instance $InstanceName)"
+        }
+    } catch {
+        Write-Warn "SQL installer error ($InstanceName): $($_.Exception.Message)"
+    } finally {
+        Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+    }
+
+    # Service register hone ka intezaar (setup kabhi kabhi late register karta hai)
+    $svcName = "MSSQL`$$InstanceName"
+    $svc = $null
+    for ($w = 1; $w -le 12; $w++) {
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc) { break }
+        Start-Sleep -Seconds 5
+    }
+    if (-not $svc) {
+        Write-Warn "Instance '$InstanceName' register nahi hua."
+        return $false
+    }
+    try { Set-Service -Name $svcName -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
+    try {
+        if ((Get-Service -Name $svcName).Status -ne 'Running') {
+            Start-Service -Name $svcName
+            Start-Sleep -Seconds 3
+        }
+    } catch { }
+    if ((Get-Service -Name $svcName -ErrorAction SilentlyContinue).Status -eq 'Running') {
+        Write-Ok "SQL instance '$InstanceName' installed & running."
+        return $true
+    }
+    Write-Warn "Instance '$InstanceName' installed par service start nahi hui."
+    return $false
+}
+
+function Repair-SqlInstance([string]$InstanceName) {
+    $setup = Get-SqlSetupExe
+    if (-not $setup) { return $false }
+    try {
+        Write-Warn "SQL instance '$InstanceName' repair try..."
+        Start-Process -FilePath $setup -ArgumentList "/Action=Repair /InstanceName=$InstanceName /Quiet /IACCEPTSQLSERVERLICENSETERMS" -Wait -ErrorAction SilentlyContinue
         return $true
     } catch {
         return $false
@@ -347,7 +496,15 @@ function Ensure-SqlServerAndEnv {
 
     $svc = Get-LocalSqlService
     if (-not $svc) {
-        Write-Warn "SQL Server Express nahi mila — automatically download & install kar rahe hain (3-5 min lag sakte hain, auto-retry ON)..."
+        # Self-heal: leftover/broken SQL install (e.g. "master.mdf already exists")
+        $leftovers = @(Get-SqlLeftoverInstances)
+        if ($leftovers.Count -gt 0) {
+            Write-Warn "Purana adhoora SQL Server install mila (master.mdf leftover) - auto cleanup:"
+            $leftovers | ForEach-Object { Write-Warn "  $_" }
+            Clear-BrokenSqlInstall -Paths $leftovers
+        }
+
+        Write-Warn "SQL Server Express nahi mila — automatically install kar rahe hain (3-6 min, auto-retry ON)..."
         $winget = Get-Command winget -ErrorAction SilentlyContinue
         if ($winget) {
             for ($i = 1; $i -le 2 -and -not (Get-LocalSqlService); $i++) {
@@ -362,27 +519,22 @@ function Ensure-SqlServerAndEnv {
         $svc = Get-LocalSqlService
 
         if (-not $svc) {
-            Write-Warn "Official Microsoft SQL Server Express installer download kar rahe hain (auto-retry)..."
-            $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
-            $sqlOk = $false
-            for ($i = 1; $i -le 2 -and -not $sqlOk; $i++) {
-                if (Get-RemoteFile -Url "https://go.microsoft.com/fwlink/p/?linkid=2216019" -Path $sqlExe -Attempts 5) {
-                    try {
-                        Start-Process -FilePath $sqlExe -ArgumentList "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /Features=SQLENGINE /InstanceName=SQLEXPRESS /SecurityMode=SQL /SAPWD=$saPass" -Wait
-                        $sqlOk = $true
-                    } catch {
-                        Write-Warn "SQL silent install attempt $i/2 fail: $($_.Exception.Message)"
-                        Start-Sleep -Seconds 10
-                    } finally {
-                        Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
-                    }
-                } else {
-                    Write-Warn "SQL installer download fail (round $i/2) - dobara try..."
+            if (Install-SqlExpressInstance -InstanceName 'SQLEXPRESS' -SaPassword $saPass) {
+                $sqlInstalledByUs = $true
+            }
+            $svc = Get-LocalSqlService
+        }
+
+        # Guaranteed fallback: fresh instance name (leftover leftover se koi conflict nahi)
+        if (-not $svc) {
+            foreach ($inst in @('SQLEXPRESS01', 'CMBCSQL', 'CMBCSQL01')) {
+                if ($svc) { break }
+                Write-Warn "SQLEXPRESS install nahi hua - fresh instance '$inst' try kar rahe hain..."
+                if (Install-SqlExpressInstance -InstanceName $inst -SaPassword $saPass) {
+                    $sqlInstalledByUs = $true
+                    $svc = Get-LocalSqlService
                 }
             }
-            if ($sqlOk) { $sqlInstalledByUs = $true }
-            Start-Sleep -Seconds 5
-            $svc = Get-LocalSqlService
         }
     }
 
@@ -390,12 +542,41 @@ function Ensure-SqlServerAndEnv {
         throw "SQL Server Express install/detect nahi ho paya. Kripya SQL Server Express install karke ONE_CLICK_SETUP.bat dobara chalayein."
     }
 
-    # Ensure SQL Server service is running
+    # Ensure SQL Server service is running (broken service -> auto repair)
     try { Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
-    if ($svc.Status -ne 'Running') {
+    $svc = Get-Service -Name $svc.Name -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -ne 'Running') {
         Write-Ok "Starting SQL Server service ($($svc.Name))..."
-        Start-Service -Name $svc.Name
-        Start-Sleep -Seconds 3
+        try {
+            Start-Service -Name $svc.Name
+            Start-Sleep -Seconds 3
+        } catch {
+            Write-Warn "SQL service start fail: $($_.Exception.Message)"
+            $instName = if ($svc.Name -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { $svc.Name -replace '^MSSQL\$', '' }
+            if (Repair-SqlInstance -InstanceName $instName) {
+                try {
+                    Start-Service -Name $svc.Name
+                    Start-Sleep -Seconds 3
+                } catch { }
+            }
+        }
+        $svc = Get-Service -Name $svc.Name -ErrorAction SilentlyContinue
+    }
+
+    if (-not $svc -or $svc.Status -ne 'Running') {
+        # Broken instance: fresh alias instance se kaam chalayenge (leftover se conflict nahi)
+        Write-Warn "Maujooda SQL service start nahi ho payi - fresh instance install try kar rahe hain..."
+        foreach ($inst in @('SQLEXPRESS01', 'CMBCSQL', 'CMBCSQL01')) {
+            if (Install-SqlExpressInstance -InstanceName $inst -SaPassword $saPass) {
+                $sqlInstalledByUs = $true
+                $svc = Get-Service -Name ("MSSQL`$" + $inst) -ErrorAction SilentlyContinue
+                if ($svc) { break }
+            }
+        }
+    }
+
+    if (-not $svc -or $svc.Status -ne 'Running') {
+        throw "SQL Server service start nahi ho payi. Logs: C:\Program Files\Microsoft SQL Server\160\Setup Bootstrap\Log - PC restart karke ONE_CLICK_SETUP.bat dobara chalayein."
     }
 
     # Enable Mixed Mode & TCP/IP automatically
@@ -458,7 +639,14 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [$appUser];
         throw "SQL Server se auto-login set nahi ho paya. Kripya ONE_CLICK_SETUP.bat par Right-Click -> 'Run as Administrator' karein."
     }
 
-    # Write fresh .env cleanly
+    # Write fresh .env cleanly (purana .env backup ho jata hai)
+    if (Test-Path $envPath) {
+        try {
+            $bak = Join-Path $ProjectDir ('.env.backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+            Copy-Item -Path $envPath -Destination $bak -Force
+            Write-Ok "Purana .env backup: $(Split-Path $bak -Leaf)"
+        } catch { }
+    }
     $envContent = @"
 PORT=3000
 HOST=0.0.0.0

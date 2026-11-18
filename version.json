@@ -1,7 +1,7 @@
 {
-  "version": "1.0.9",
+  "version": "1.0.10",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Auto update: 1 file(s) changed (PUBLISH_UPDATE.bat)"
+  "notes": "SQL self-heal: leftover master.mdf clear, broken SQL Express auto-repair, fresh instance fallback, .env backup"
 }
