@@ -180,30 +180,93 @@ for ($i = 1; $i -le 5 -and -not $downloaded; $i++) {
 
 $installed = $false
 if ($downloaded) {
-    $args = "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /FEATURES=SQLENGINE /InstanceName=$InstanceName /SecurityMode=SQL /SAPWD=$saPass /TCPENABLED=1 /NPENABLED=0 /UpdateEnabled=0 /SkipRules=RebootRequiredCheck"
-    for ($round = 1; $round -le 2 -and -not $installed; $round++) {
-        Write-Log ("  Install round " + $round + "/2 (instance: " + $InstanceName + ")...")
+    $setupOutLog = Join-Path $env:TEMP ('cmbc_sql_install_' + $InstanceName + '.log')
+
+    # METHOD 1: SSEI + configuration file (SSEI /SAPWD etc. nahi leta)
+    try {
+        $cfgPath = Join-Path $env:TEMP ('cmbc_sql_' + $InstanceName + '.ini')
+        $cfg = @"
+[OPTIONS]
+ACTION="Install"
+QUIET="True"
+FEATURES=SQLENGINE
+INSTANCENAME="$InstanceName"
+SECURITYMODE="SQL"
+SAPWD="$saPass"
+TCPENABLED="1"
+NPENABLED="0"
+IACCEPTSQLSERVERLICENSETERMS="True"
+SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
+"@
+        Set-Content -Path $cfgPath -Value $cfg -Encoding ASCII
+        Write-Log ('  Method 1: configuration file install (instance ' + $InstanceName + ')...')
+        & $exe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms "/ConfigurationFile=$cfgPath" *>&1 |
+            Tee-Object -FilePath $setupOutLog -Append | ForEach-Object { if ($_) { Write-Log ('    ' + $_) } }
+        Write-Log ('  Config-file install exit code: ' + $LASTEXITCODE)
+    } catch {
+        Write-Log ('  Config-file method error: ' + $_.Exception.Message) 'WARN'
+    }
+
+    # METHOD 2: SSEI default install (Microsoft khud naya instance name chunta hai)
+    $existing = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' })
+    if ($existing.Count -eq 0) {
         try {
-            $p = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
-            Write-Log ("  SQL setup exit code: " + $p.ExitCode)
+            Write-Log '  Method 2: Microsoft default Express install (auto instance name)...'
+            & $exe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms *>&1 |
+                Tee-Object -FilePath $setupOutLog -Append | ForEach-Object { if ($_) { Write-Log ('    ' + $_) } }
+            Write-Log ('  Default install exit code: ' + $LASTEXITCODE)
         } catch {
-            Write-Log ("  Install error: " + $_.Exception.Message) 'WARN'
-        }
-        for ($w = 1; $w -le 18; $w++) {
-            $svc = Get-Service -Name ("MSSQL`$" + $InstanceName) -ErrorAction SilentlyContinue
-            if ($svc) {
-                try { Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
-                try {
-                    if ((Get-Service -Name $svc.Name).Status -ne 'Running') { Start-Service -Name $svc.Name; Start-Sleep -Seconds 3 }
-                } catch { }
-                if ((Get-Service -Name $svc.Name -ErrorAction SilentlyContinue).Status -eq 'Running') {
-                    $installed = $true
-                    break
-                }
-            }
-            Start-Sleep -Seconds 5
+            Write-Log ('  Default install error: ' + $_.Exception.Message) 'WARN'
         }
     }
+
+    # METHOD 3: media download + setup.exe (full args)
+    $existing = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' })
+    if ($existing.Count -eq 0) {
+        $mediaPath = Join-Path $env:TEMP ('cmbc_sql_media_' + $InstanceName)
+        try {
+            if (Test-Path $mediaPath) { Remove-Item $mediaPath -Recurse -Force -ErrorAction SilentlyContinue }
+            New-Item -ItemType Directory -Force -Path $mediaPath | Out-Null
+            Write-Log '  Method 3: SQL media download (approx 250-300 MB)...'
+            & $exe /Action=Download /Quiet "/MediaPath=$mediaPath" /MediaType=Express *>&1 |
+                Tee-Object -FilePath $setupOutLog -Append | ForEach-Object { if ($_) { Write-Log ('    ' + $_) } }
+            Write-Log ('  Media download exit code: ' + $LASTEXITCODE)
+
+            $setupExe = Get-ChildItem -Path $mediaPath -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($setupExe) {
+                $setupArgs = @(
+                    '/Action=Install', '/Quiet', '/IACCEPTSQLSERVERLICENSETERMS', '/FEATURES=SQLENGINE',
+                    "/InstanceName=$InstanceName", '/SECURITYMODE=SQL', "/SAPWD=$saPass",
+                    '/TCPENABLED=1', '/NPENABLED=0', '/SQLSYSADMINACCOUNTS=BUILTIN\Administrators',
+                    '/SkipRules=RebootRequiredCheck'
+                )
+                Write-Log ('  setup.exe install start (instance ' + $InstanceName + ')...')
+                & $setupExe.FullName @setupArgs *>&1 | Tee-Object -FilePath $setupOutLog -Append | Out-Null
+                Write-Log ('  setup.exe exit code: ' + $LASTEXITCODE)
+            } else {
+                Write-Log '  Media me setup.exe nahi mila.' 'WARN'
+            }
+        } catch {
+            Write-Log ('  Media method error: ' + $_.Exception.Message) 'WARN'
+        }
+    }
+
+    # Service register hone ka intezaar
+    for ($w = 1; $w -le 18; $w++) {
+        $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' } | Select-Object -First 1
+        if ($svc) {
+            try { Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
+            try {
+                if ((Get-Service -Name $svc.Name).Status -ne 'Running') { Start-Service -Name $svc.Name; Start-Sleep -Seconds 3 }
+            } catch { }
+            if ((Get-Service -Name $svc.Name -ErrorAction SilentlyContinue).Status -eq 'Running') {
+                $installed = $true
+                break
+            }
+        }
+        Start-Sleep -Seconds 5
+    }
+    Write-Log ('  SQL install log: ' + $setupOutLog)
     try { Remove-Item $exe -Force -ErrorAction SilentlyContinue } catch { }
 } else {
     Write-Log 'Installer download nahi hua - internet check karein.' 'ERROR'
@@ -213,17 +276,18 @@ if ($downloaded) {
 # 5) RESULT
 # ---------------------------------------------------------------------------
 Write-Log '--- 5) Result ---'
-$finalSvc = Get-Service -Name ("MSSQL`$" + $InstanceName) -ErrorAction SilentlyContinue
-if ($finalSvc -and $finalSvc.Status -eq 'Running') {
-    Write-Log ("SUCCESS: SQL instance '" + $InstanceName + "' chal raha hai.") 'OK'
-    Write-Log ("Server name: localhost\" + $InstanceName)
+$finalSvc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'MSSQLSERVER' -or $_.Name -like 'MSSQL$*' } | Where-Object { $_.Status -eq 'Running' } | Select-Object -First 1
+if ($finalSvc) {
+    $actualInstance = if ($finalSvc.Name -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { $finalSvc.Name -replace '^MSSQL\$', '' }
+    $serverName = if ($finalSvc.Name -eq 'MSSQLSERVER') { 'localhost' } else { 'localhost\' + $actualInstance }
+    Write-Log ("SUCCESS: SQL instance '" + $actualInstance + "' chal raha hai.") 'OK'
+    Write-Log ("Server name: " + $serverName)
     try {
         Set-Content -Path (Join-Path $Desktop 'SQL_INSTANCE_INFO.txt') -Encoding UTF8 -Value @"
 SQL Server Express - is PC par
 ===============================
-Instance: localhost\$InstanceName
-Login: sa
-Password: $saPass
+Instance: $serverName
+Service: $($finalSvc.Name)
 
 Ab SETUP.bat dobara chalayein - wo is instance ko detect karke .env bana dega.
 "@
@@ -232,7 +296,7 @@ Ab SETUP.bat dobara chalayein - wo is instance ko detect karke .env bana dega.
     $code = 0
 } else {
     Write-Log 'FAIL: SQL instance abhi bhi start nahi ho paya.' 'ERROR'
-    Write-Log 'Log file bhejein (is file ka poora content): ' 
+    Write-Log 'Log file bhejein (is file ka poora content): '
     Write-Log ("  " + $LogPath)
     $code = 1
 }

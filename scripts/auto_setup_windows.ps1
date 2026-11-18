@@ -359,35 +359,106 @@ function Clear-BrokenSqlInstall {
 function Install-SqlExpressInstance {
     param([string]$InstanceName, [string]$SaPassword)
 
-    Write-Warn "SQL Server Express install ho raha hai — instance '$InstanceName' (silent, 3-6 min)..."
+    Write-Warn "SQL Server Express install ho raha hai — requested instance '$InstanceName'..."
     $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr-$InstanceName.exe"
     if (-not (Get-RemoteFile -Url "https://go.microsoft.com/fwlink/p/?linkid=2216019" -Path $sqlExe -Attempts 4)) {
+        Write-Warn "SQL web installer download fail."
         return $false
     }
+    $outLog = Join-Path $env:TEMP ("cmbc_sql_install_" + $InstanceName + ".log")
+
+    # ------------------------------------------------------------------
+    # Method 1: SSEI + configuration file (SSEI /SAPWD etc. nahi leta,
+    #           par /ConfigurationFile support karta hai)
+    # ------------------------------------------------------------------
     try {
-        $argList = "/Action=Install /Quiet /IACCEPTSQLSERVERLICENSETERMS /FEATURES=SQLENGINE /InstanceName=$InstanceName /SecurityMode=SQL /SAPWD=$SaPassword /TCPENABLED=1 /NPENABLED=0 /UpdateEnabled=0 /SkipRules=RebootRequiredCheck"
-        $proc = Start-Process -FilePath $sqlExe -ArgumentList $argList -Wait -PassThru
-        if ($proc -and $proc.ExitCode -ne 0) {
-            Write-Warn "SQL setup exit code: $($proc.ExitCode) (instance $InstanceName)"
-        }
+        $cfgPath = Join-Path $env:TEMP ("cmbc_sql_" + $InstanceName + ".ini")
+        $cfg = @"
+[OPTIONS]
+ACTION="Install"
+QUIET="True"
+FEATURES=SQLENGINE
+INSTANCENAME="$InstanceName"
+SECURITYMODE="SQL"
+SAPWD="$SaPassword"
+TCPENABLED="1"
+NPENABLED="0"
+IACCEPTSQLSERVERLICENSETERMS="True"
+SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
+"@
+        Set-Content -Path $cfgPath -Value $cfg -Encoding ASCII
+        Write-Warn "Install method 1: configuration file (instance '$InstanceName')..."
+        & $sqlExe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms "/ConfigurationFile=$cfgPath" *>&1 |
+            Tee-Object -FilePath $outLog -Append | Out-Null
+        Write-Warn "Config-file install exit code: $LASTEXITCODE"
     } catch {
-        Write-Warn "SQL installer error ($InstanceName): $($_.Exception.Message)"
-    } finally {
-        Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+        Write-Warn "Config-file method note: $($_.Exception.Message)"
     }
 
-    # Service register hone ka intezaar (setup kabhi kabhi late register karta hai)
-    $svcName = "MSSQL`$$InstanceName"
+    # ------------------------------------------------------------------
+    # Method 2: SSEI default install — Microsoft khud naya instance naam
+    #           (SQLEXPRESS01 etc.) chun leta hai. Isme koi arg conflict nahi.
+    # ------------------------------------------------------------------
+    $anySql = Get-LocalSqlService
+    if (-not $anySql) {
+        try {
+            Write-Warn "Install method 2: Microsoft default Express install (auto instance name)..."
+            & $sqlExe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms *>&1 |
+                Tee-Object -FilePath $outLog -Append | Out-Null
+            Write-Warn "Default install exit code: $LASTEXITCODE"
+        } catch {
+            Write-Warn "Default install note: $($_.Exception.Message)"
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Method 3 (last resort): media download + setup.exe (full args)
+    # ------------------------------------------------------------------
+    $anySql = Get-LocalSqlService
+    if (-not $anySql) {
+        $mediaPath = Join-Path $env:TEMP ("cmbc_sql_media_" + $InstanceName)
+        try {
+            if (Test-Path $mediaPath) { Remove-Item $mediaPath -Recurse -Force -ErrorAction SilentlyContinue }
+            New-Item -ItemType Directory -Force -Path $mediaPath | Out-Null
+            Write-Warn "SQL media download (approx 250-300 MB)..."
+            & $sqlExe /Action=Download /Quiet "/MediaPath=$mediaPath" /MediaType=Express *>&1 |
+                Tee-Object -FilePath $outLog -Append | Out-Null
+            Write-Warn "Media download exit code: $LASTEXITCODE"
+
+            $setupExe = Get-ChildItem -Path $mediaPath -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($setupExe) {
+                Write-Warn "setup.exe se install (instance '$InstanceName')..."
+                $setupArgs = @(
+                    '/Action=Install', '/Quiet', '/IACCEPTSQLSERVERLICENSETERMS', '/FEATURES=SQLENGINE',
+                    "/InstanceName=$InstanceName", '/SECURITYMODE=SQL', "/SAPWD=$SaPassword",
+                    '/TCPENABLED=1', '/NPENABLED=0', '/SQLSYSADMINACCOUNTS=BUILTIN\Administrators',
+                    '/SkipRules=RebootRequiredCheck'
+                )
+                & $setupExe.FullName @setupArgs *>&1 | Tee-Object -FilePath $outLog -Append | Out-Null
+                Write-Warn "setup.exe exit code: $LASTEXITCODE"
+            } else {
+                Write-Warn "Media me setup.exe nahi mila."
+            }
+        } catch {
+            Write-Warn "Media method note: $($_.Exception.Message)"
+        }
+    }
+
+    Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+
+    # Service register hone ka intezaar (koi bhi SQL instance)
     $svc = $null
-    for ($w = 1; $w -le 12; $w++) {
-        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+    for ($w = 1; $w -le 18; $w++) {
+        $svc = Get-LocalSqlService
         if ($svc) { break }
         Start-Sleep -Seconds 5
     }
     if (-not $svc) {
-        Write-Warn "Instance '$InstanceName' register nahi hua."
+        Write-Warn "SQL instance register nahi hua. Install log: $outLog"
         return $false
     }
+
+    $svcName = $svc.Name
     try { Set-Service -Name $svcName -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
     try {
         if ((Get-Service -Name $svcName).Status -ne 'Running') {
@@ -396,10 +467,10 @@ function Install-SqlExpressInstance {
         }
     } catch { }
     if ((Get-Service -Name $svcName -ErrorAction SilentlyContinue).Status -eq 'Running') {
-        Write-Ok "SQL instance '$InstanceName' installed & running."
+        Write-Ok "SQL instance installed & running: $svcName"
         return $true
     }
-    Write-Warn "Instance '$InstanceName' installed par service start nahi hui."
+    Write-Warn "SQL instance '$svcName' installed par service start nahi hui. Install log: $outLog"
     return $false
 }
 
@@ -677,7 +748,9 @@ AUTO_UPDATE_DISABLED=false
     if ($sqlInstalledByUs) {
         try {
             $sqlCredPath = Join-Path $ProjectDir ".sql-server-credentials.txt"
-            Set-Content -Path $sqlCredPath -Encoding UTF8 -Value @"
+            $saWorks = Test-SqlConnection "Server=$serverName;Database=master;User Id=sa;Password=$saPass;TrustServerCertificate=True;Connection Timeout=8;"
+            if ($saWorks) {
+                Set-Content -Path $sqlCredPath -Encoding UTF8 -Value @"
 SQL Server Express — Local Credentials (is PC ke liye)
 =====================================================
 Instance: $serverName
@@ -686,7 +759,18 @@ Password: $saPass
 
 Ye file sirf is PC ke liye hai. Kisi ke saath share na karein.
 "@
-            Write-Ok "SQL Server credentials saved locally: .sql-server-credentials.txt"
+            } else {
+                Set-Content -Path $sqlCredPath -Encoding UTF8 -Value @"
+SQL Server Express — Local Info (is PC ke liye)
+===============================================
+Instance: $serverName
+App login: $appUser (password .env file me hai)
+
+Note: SQL Express Microsoft ke default installer se install hua hai,
+is liye 'sa' password is file me nahi likha. App apna alag login use karta hai.
+"@
+            }
+            Write-Ok "SQL Server credentials/info saved locally: .sql-server-credentials.txt"
         } catch { }
     }
 }

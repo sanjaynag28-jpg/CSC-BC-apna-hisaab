@@ -1,7 +1,7 @@
 {
-  "version": "1.0.12",
+  "version": "1.0.13",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "SQL_FIX downloads from stable latest release asset (raw CDN fix) plus sql_fix.ps1 asset"
+  "notes": "SQL install fix: SSEI config-file method + Microsoft default auto-instance fallback (SSEI /InstanceName /SAPWD support nahi karta)"
 }
