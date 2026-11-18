@@ -4,49 +4,48 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 
 ---
 
+## ⚡ 1-Click Direct Download & Complete Auto-Install (Sab Kuch Automatic!)
+
+### Option A — Direct ZIP Download (Sabse Aasan — Bina Coding)
+1. **Direct ZIP Download Karein:**  
+   👉 **[Download Complete Project ZIP](https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip)**
+2. ZIP ko extract (unzip) karein.
+3. Folder ke andar **`ONE_CLICK_SETUP.bat`** par double-click karein!
+
+### Option B — Single-File Installer (WhatsApp/Share ke liye)
+- Bas **`INSTALL_FROM_GITHUB.bat`** download karein aur double-click karein — wo khud GitHub se poora project `C:\CSC-BC-Apna-Hisaab` mein download karke complete setup chala dega!
+
+### `ONE_CLICK_SETUP.bat` Automatically Kya-Kya Karta Hai?
+- ✅ **Node.js LTS** nahi hai toh automatically install karta hai
+- ✅ **Microsoft SQL Server Express** nahi hai toh automatically download & install karta hai
+- ✅ **SQL Server Mixed Mode & TCP/IP** automatically enable karta hai
+- ✅ **`.env` file + secure database login + JWT secret** automatically generate karta hai (kuch manually type nahi karna!)
+- ✅ **Fresh `CashManagement` Database, 24 Tables, 5 Stored Procedures, Starter Admin Login (`admin` / `admin123`), Starter Cash/Bank Accounts, Categories & CSC Services** sab automatically banata hai
+- ✅ Desktop par **`CSC BC Apna Hisaab`** shortcut banata hai
+- ✅ Server start karke browser mein **`http://localhost:3000`** khol deta hai — **Project turant Ready!**
+
+---
+
+## 🔄 Automatic Silent Updates (Lifetime Auto-Update)
+- Jab bhi aap Desktop shortcut (`START.bat`) ya server open karte hain, app silently GitHub se latest `version.json` check karta hai.
+- Naya update milte hi:
+  1. Pehle aapke SQL Server database ka **automatic backup** hota hai (`backups/`).
+  2. Sirf code files update hoti hain — **aapka database, `.env`, `public/uploads/`, aur `backups/` 100% safe rehta hai** (Git ho ya ZIP install — dono mein kaam karta hai!).
+  3. Safe DB migration chalti hai aur server + browser automatically refresh ho jate hain.
+- Offline hone par update silently skip ho jata hai aur app bina ruke chalta hai.
+- Manual force-update ke liye **`UPDATE_APP.bat`** double-click karein.
+
+---
+
 ## ✨ Key Features
 - **BC / AEPS Counter Banking:** Cash Withdrawal, Deposit, Money Transfer, QR Pay, Customer Slip Printing (A4, A4/2, 80mm Thermal) & WhatsApp Share.
 - **CSC Services & Applications:** Fee collection, government fee ledger, status tracking, customer document storage.
 - **Bill Payments & EMI:** Electricity, Recharge, Loan EMI, automated receipt OCR & customer due tracking.
 - **Customer Khatabook & 360° Profile:** Unified customer ledger, udhaar/advance tracking, family linking, universal serial numbers (`SN-XXXX`).
 - **Multi-Tenant Shop Isolation:** Strict account & data separation across shops.
-- **Automatic Silent Updates:** App automatically checks GitHub on launch and updates code silently in the background without touching your SQL Server database, `.env`, or customer uploads.
-
----
-
-## 🚀 Installation (New PC Setup)
-
-### Prerequisites
-1. **Node.js (LTS)** — [Download](https://nodejs.org/)
-2. **Microsoft SQL Server Express** — Running locally (`localhost\SQLEXPRESS`)
-
-### 3-Step Setup
-1. **Download / Clone:**
-   ```bash
-   git clone https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab.git
-   cd CSC-BC-apna-hisaab
-   ```
-   *(Ya GitHub se **Code → Download ZIP** karke extract kar lein.)*
-2. **Run One-Click Setup:**
-   - Double-click **`ONE_CLICK_SETUP.bat`**
-   - First run par `.env` file automatically create hokar Notepad mein khul jayegi — usmein apna `DB_SERVER` aur `DB_PASSWORD` enter karke save karein.
-3. **Daily Launch:**
-   - Rozana chalane ke liye **`START.bat`** ya **`START_SILENT.bat`** (PM2 background mode) par double-click karein.
-   - Browser automatically `http://localhost:3000` par khul jayega!
-
----
-
-## 🔄 Automatic Silent Updates
-- Jab bhi aap software open karte hain (`START.bat`, `RUN.bat`, `START_SILENT.bat`, ya `node server.js`), background mein automatically GitHub se latest `version.json` check hota hai.
-- Naya version milne par:
-  1. Pehle aapke SQL Server database ka **automatic backup** hota hai.
-  2. Sirf naye code files download/update hote hain (aapka `.env`, database, `backups/`, aur `public/uploads/` 100% surakshit rehta hai).
-  3. Safe DB migration chalti hai aur server restart hokar browser automatically refresh ho jata hai.
-- Manual force-update ke liye **`UPDATE_APP.bat`** double-click karein.
-- Offline hone par update silently skip ho jata hai aur app bina ruke chalta hai.
 
 ---
 
 ## 🔒 Data Privacy
 - `.env`, `database/data/`, `public/uploads/`, `backups/`, aur `logs/` sabhi `.gitignore` mein strictly excluded hain.
-- Har shop ka data uske apne local SQL Server database mein rehta hai.
+- Har shop ka data uske apne local SQL Server database mein 100% private rehta hai.
