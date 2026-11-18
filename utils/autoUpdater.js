@@ -344,6 +344,13 @@ async function checkForUpdate() {
 }
 
 function triggerCleanRestart() {
+    // 0. Hidden supervisor mode: exit karo — supervisor khud naya code load karke restart karega
+    if (process.env.CMBC_SUPERVISOR === '1') {
+        logUpdate('Supervisor mode: exiting so hidden supervisor restarts with updated code...');
+        setTimeout(() => process.exit(0), 1200);
+        return;
+    }
+
     // 1. If running under PM2, exit cleanly so PM2 auto-restarts with updated code
     if (process.env.pm_id !== undefined || process.env.PM2_HOME) {
         logUpdate('Restarting server via PM2...');

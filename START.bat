@@ -1,9 +1,17 @@
 @echo off
-title Cash Management BC
+title CSC & BC Apna Hisaab
 cd /d "%~dp0"
-where node >nul 2>&1 || (echo Node.js not found. Install from https://nodejs.org & pause & exit /b 1)
-:: Automatic silent update check (offline safe, preserves all user data)
+
+where node >nul 2>&1
+if errorlevel 1 (
+    echo Node.js nahi mila. Kripya ONE_CLICK_SETUP.bat chalayein.
+    pause
+    exit /b 1
+)
+
+rem Silent update check (offline safe, data safe)
 node utils\autoUpdater.js --silent >nul 2>&1
-start "" cmd /c "node server.js"
-timeout /t 3 /nobreak >nul
-start http://localhost:3000
+
+rem Server ko hidden background me start karo aur browser kholo (koi console window nahi)
+start "" wscript.exe "%~dp0open-app.vbs"
+exit /b 0

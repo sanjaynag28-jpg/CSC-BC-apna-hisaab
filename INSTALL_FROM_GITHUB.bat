@@ -3,7 +3,8 @@ title CSC & BC Apna Hisaab - Direct 1-Click GitHub Installer
 :: ============================================================================
 :: Direct 1-Click Installer from GitHub ZIP:
 :: Downloads https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip
-:: Extracts into C:\CSC-BC-Apna-Hisaab and launches ONE_CLICK_SETUP.bat automatically!
+:: Installs into C:\Users\<username>\CSC-BC-Apna-Hisaab
+:: Data (`.env`, backups, uploads, logs, node_modules) kabhi overwrite nahi hota.
 :: ============================================================================
 
 net session >nul 2>&1
@@ -17,14 +18,14 @@ echo ============================================================
 echo   CSC ^& BC APNA HISAAB - DIRECT 1-CLICK GITHUB INSTALLER
 echo ============================================================
 echo.
-echo [1/2] GitHub se latest project ZIP download ^& extract ho raha hai...
-echo       Folder: C:\CSC-BC-Apna-Hisaab
+echo [1/2] GitHub se latest project download ^& extract ho raha hai...
+echo       Folder: %USERPROFILE%\CSC-BC-Apna-Hisaab
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
   "$zipUrl='https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip';" ^
-  "$installDir='C:\CSC-BC-Apna-Hisaab';" ^
+  "$installDir=Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab';" ^
   "$tmpDir=Join-Path $env:TEMP ('cmbc_gh_install_' + (Get-Random));" ^
   "$zipPath=Join-Path $tmpDir 'app.zip';" ^
   "New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null;" ^
@@ -34,7 +35,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Expand-Archive -LiteralPath $zipPath -DestinationPath $extDir -Force;" ^
   "$src=(Get-ChildItem -Path $extDir -Directory | Select-Object -First 1).FullName;" ^
   "if (!(Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null };" ^
-  "$skip=@('.env','backups','logs','node_modules','database\data','public\uploads');" ^
+  "$skip=@('.env','.git','backups','logs','node_modules','database\data','public\uploads','.auto-update-tmp','.previous-release','.antigravity','bin');" ^
   "Get-ChildItem -Path $src -Force | ForEach-Object {" ^
   "  if ($skip -contains $_.Name) { return };" ^
   "  $dst=Join-Path $installDir $_.Name;" ^
@@ -42,7 +43,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  else { Copy-Item -Path $_.FullName -Destination $dst -Force }" ^
   "};" ^
   "Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue;" ^
-  "Write-Host '  [OK] Project files extracted cleanly to C:\CSC-BC-Apna-Hisaab!' -ForegroundColor Green;"
+  "Write-Host ('  [OK] Project files extracted cleanly to ' + $installDir) -ForegroundColor Green;"
 
 if %errorlevel% neq 0 (
     echo [X] Download/Extract failed! Internet connection check karein.
@@ -51,6 +52,6 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [2/2] Launching Complete 1-Click Setup (Node.js + SQL Server + Database + App)...
-cd /d "C:\CSC-BC-Apna-Hisaab"
-call "C:\CSC-BC-Apna-Hisaab\ONE_CLICK_SETUP.bat"
+echo [2/2] Launching Complete 1-Click Setup (Node.js + SQL Server + Database + Silent Auto-Start)...
+cd /d "%USERPROFILE%\CSC-BC-Apna-Hisaab"
+call "%USERPROFILE%\CSC-BC-Apna-Hisaab\ONE_CLICK_SETUP.bat"

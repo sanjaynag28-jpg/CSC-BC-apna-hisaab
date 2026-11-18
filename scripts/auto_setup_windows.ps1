@@ -60,7 +60,7 @@ function Find-NodeExe {
 }
 
 function Ensure-NodeJs {
-    Write-Step 1 6 "Checking Node.js..."
+    Write-Step 1 7 "Checking Node.js..."
     $nodeExe = Find-NodeExe
     if ($nodeExe) {
         $ver = & $nodeExe --version
@@ -188,7 +188,7 @@ function Enable-SqlTcpAndMixedMode($svc) {
 }
 
 function Ensure-SqlServerAndEnv {
-    Write-Step 2 6 "Checking SQL Server Express & Configuration (.env)..."
+    Write-Step 2 7 "Checking SQL Server Express & Configuration (.env)..."
 
     # Per-install random SA password — public repo me koi fixed/default password nahi.
     $saPass = "CmBc@" + (New-RandomString 16 "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789")
@@ -330,7 +330,7 @@ Ye file sirf is PC ke liye hai. Kisi ke saath share na karein.
 }
 
 function Install-Dependencies {
-    Write-Step 3 6 "Installing Node.js dependencies (npm install)..."
+    Write-Step 3 7 "Installing Node.js dependencies (npm install)..."
     & npm.cmd install --omit=dev --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
         throw "npm install failed. Check internet connection and retry."
@@ -339,7 +339,7 @@ function Install-Dependencies {
 }
 
 function Setup-Database {
-    Write-Step 4 6 "Creating Database, Tables, Stored Procedures & Starter Data..."
+    Write-Step 4 7 "Creating Database, Tables, Stored Procedures & Starter Data..."
     & node setup-database.js
     if ($LASTEXITCODE -ne 0) {
         throw "Database setup failed. Check SQL Server service and retry."
@@ -347,16 +347,35 @@ function Setup-Database {
     Write-Ok "Database ready (24 tables, 5 stored procedures, starter admin/accounts/categories/services)!"
 }
 
+function Install-AutoStart {
+    Write-Step 5 7 "Configuring silent auto-start on every PC boot..."
+    try {
+        $taskName = "CSC BC Apna Hisaab Server"
+        $vbs = Join-Path $ProjectDir "start-hidden.vbs"
+        $wscript = Join-Path $env:WINDIR "System32\wscript.exe"
+        $action = "`"$wscript`" `"$vbs`""
+        schtasks /Create /TN "$taskName" /TR $action /SC ONSTART /RL HIGHEST /F | Out-Null
+        schtasks /Run /TN "$taskName" | Out-Null
+        Write-Ok "Auto-start task installed (PC on hote hi server silently chalu)."
+    } catch {
+        Write-Warn "Auto-start task skipped: $($_.Exception.Message)"
+        try {
+            Start-Process -FilePath "wscript.exe" -ArgumentList "`"$(Join-Path $ProjectDir 'start-hidden.vbs')`"" -WindowStyle Hidden
+        } catch { }
+    }
+}
+
 function Create-DesktopShortcut {
-    Write-Step 5 6 "Creating Desktop Shortcut..."
+    Write-Step 6 7 "Creating Desktop Shortcut..."
     try {
         $desktop = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktop "CSC BC Apna Hisaab.lnk"
         $wsh = New-Object -ComObject WScript.Shell
         $sc = $wsh.CreateShortcut($shortcutPath)
-        $sc.TargetPath = Join-Path $ProjectDir "START.bat"
+        $sc.TargetPath = Join-Path $env:WINDIR "System32\wscript.exe"
+        $sc.Arguments = '"' + (Join-Path $ProjectDir "open-app.vbs") + '"'
         $sc.WorkingDirectory = $ProjectDir
-        $sc.Description = "CSC & BC Apna Hisaab - Cash Management System (Auto-Updating)"
+        $sc.Description = "CSC & BC Apna Hisaab - Cash Management System (Silent / Auto-Start)"
         $sc.Save()
         Write-Ok "Desktop shortcut created: CSC BC Apna Hisaab"
     } catch {
@@ -380,11 +399,18 @@ function Ensure-FirewallRule {
 }
 
 function Launch-App {
-    Write-Step 6 6 "Starting Server & Opening Browser..."
-    Start-Process -FilePath "cmd.exe" -ArgumentList "/c title CSC BC Apna Hisaab Server && node server.js" -WorkingDirectory $ProjectDir
-    Start-Sleep -Seconds 4
+    Write-Step 7 7 "Starting Server in background & opening browser..."
+    $taskName = "CSC BC Apna Hisaab Server"
+    schtasks /Query /TN "$taskName" > $null 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        schtasks /Run /TN "$taskName" | Out-Null
+    } else {
+        $vbs = Join-Path $ProjectDir "start-hidden.vbs"
+        Start-Process -FilePath "wscript.exe" -ArgumentList "`"$vbs`"" -WindowStyle Hidden
+    }
+    Start-Sleep -Seconds 5
     Start-Process "http://localhost:3000"
-    Write-Ok "App is LIVE at http://localhost:3000 !"
+    Write-Ok "App is LIVE at http://localhost:3000 (silent background mode)!"
 }
 
 # ============================================================================
@@ -400,6 +426,7 @@ try {
     Ensure-FirewallRule
     Install-Dependencies
     Setup-Database
+    Install-AutoStart
     Create-DesktopShortcut
     Launch-App
 
@@ -410,6 +437,7 @@ try {
     Write-Host "   Login: bina password (localhost auto-login)" -ForegroundColor White
     Write-Host "          Mobile/LAN login ke liye credentials: .admin-login.txt" -ForegroundColor White
     Write-Host "   Auto-Update: ON (boot + raat 2:30 AM, idle hone par hi restart)" -ForegroundColor White
+    Write-Host "   Auto-Start:  ON (PC on hote hi server silently chalu, hamesha running)" -ForegroundColor White
     Write-Host "============================================================" -ForegroundColor Green
     exit 0
 } catch {

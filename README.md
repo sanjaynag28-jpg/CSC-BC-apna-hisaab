@@ -13,7 +13,7 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 3. Folder ke andar **`ONE_CLICK_SETUP.bat`** par double-click karein!
 
 ### Option B — Single-File Installer (WhatsApp/Share ke liye)
-- Bas **`INSTALL_FROM_GITHUB.bat`** download karein aur double-click karein — wo khud GitHub se poora project `C:\CSC-BC-Apna-Hisaab` mein download karke complete setup chala dega!
+- Bas **`INSTALL_FROM_GITHUB.bat`** download karein aur double-click karein - wo khud GitHub se poora project `%USERPROFILE%\CSC-BC-Apna-Hisaab` (jaise `C:\Users\AapkaNaam\CSC-BC-Apna-Hisaab`) mein download karke complete setup chala dega!
 
 ### `ONE_CLICK_SETUP.bat` Automatically Kya-Kya Karta Hai?
 - ✅ **Node.js LTS** nahi hai toh automatically install karta hai
@@ -22,6 +22,8 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 - ✅ **`.env` file + secure database login + JWT secret** automatically generate karta hai (kuch manually type nahi karna!)
 - ✅ **Fresh `CashManagement` Database, 24 Tables, 5 Stored Procedures, Starter Admin with Random Password + Localhost Auto-Login (no typing; remote/LAN credentials `.admin-login.txt` me), Starter Cash/Bank Accounts, Categories & CSC Services** sab automatically banata hai
 - ✅ Desktop par **`CSC BC Apna Hisaab`** shortcut banata hai
+- ✅ PC on hote hi server **silently auto-start** hota hai (Windows Task Scheduler) aur background me hamesha chalta rehta hai — crash hone par khud restart
+- ✅ Install ke baad **koi cmd/console window nahi** khulti — sab silent
 - ✅ Server start karke browser mein **`http://localhost:3000`** khol deta hai — **Project turant Ready!**
 
 ---
