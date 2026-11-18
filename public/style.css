@@ -1250,6 +1250,41 @@ body.sidebar-collapsed .sidebar,
     letter-spacing: 0.5px !important;
 }
 
+/* Sidebar header me current app version (auto-update ke saath khud badalta hai) */
+.app-version-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 3px 8px !important;
+    border-radius: 999px !important;
+    font-size: 10.5px !important;
+    font-weight: 800 !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+    letter-spacing: 0.4px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    cursor: default !important;
+    margin-left: 6px !important;
+    margin-right: 8px !important;
+    color: #10b981 !important;
+    background: rgba(16, 185, 129, 0.12) !important;
+    border: 1px solid rgba(16, 185, 129, 0.35) !important;
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0) !important;
+    transition: box-shadow 0.3s ease !important;
+}
+
+.app-version-badge.updated {
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+}
+
+[data-theme="light"] .app-version-badge,
+body.light-theme .app-version-badge {
+    color: #047857 !important;
+    background: rgba(4, 120, 87, 0.10) !important;
+    border-color: rgba(4, 120, 87, 0.30) !important;
+}
+
 .sidebar-toggle {
     width: 32px !important;
     height: 32px !important;
@@ -1269,6 +1304,7 @@ body.sidebar-collapsed .sidebar,
 }
 
 .sidebar.collapsed .logo-text,
+.sidebar.collapsed .app-version-badge,
 .sidebar.collapsed .sidebar-toggle,
 .sidebar.collapsed .nav-section-title,
 .sidebar.collapsed .nav-item span,

@@ -26036,3 +26036,58 @@ function openReportCustomer360() {
     else if (typeof showToast === 'function') showToast('Customer 360° modal uplabdh nahi hai', 'warning');
 }
 window.openReportCustomer360 = openReportCustomer360;
+// ===== APP VERSION BADGE (sidebar header: HisaabBC ke aage) =====
+// Har page load par server se current version leta hai, aur version badalne par
+// (auto-update ke baad) khud naya version dikhata hai - page reload ki zaroorat nahi.
+async function refreshAppVersionBadge(showGlow) {
+    const badge = document.getElementById('appVersionBadge');
+    if (!badge) return;
+    try {
+        const res = await fetch('/api/app-version?t=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const raw = String((data && (data.releaseVersion || data.version)) || '');
+        const ver = raw.split('-')[0].trim();
+        if (!ver) return;
+
+        const newText = 'v' + ver;
+        const changed = badge.textContent.trim() !== newText && badge.dataset.loaded === '1';
+        badge.textContent = newText;
+        badge.dataset.loaded = '1';
+        badge.dataset.version = ver;
+        badge.title = 'Current version: v' + ver + ' - auto-update hone par khud badal jata hai';
+
+        try { localStorage.setItem('cmbc_app_version', ver); } catch (e) { }
+
+        if (changed && showGlow) {
+            badge.classList.add('updated');
+            setTimeout(() => badge.classList.remove('updated'), 3000);
+        }
+    } catch (e) { }
+}
+
+(function initAppVersionBadge() {
+    const start = () => {
+        const badge = document.getElementById('appVersionBadge');
+        if (!badge) return;
+
+        // Pehle cached version turant dikhao (flash na ho), phir server se confirm karo
+        try {
+            const cached = localStorage.getItem('cmbc_app_version');
+            if (cached) badge.textContent = 'v' + cached;
+        } catch (e) { }
+
+        refreshAppVersionBadge(false);
+        setInterval(() => refreshAppVersionBadge(true), 5 * 60 * 1000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) refreshAppVersionBadge(true);
+        });
+        window.addEventListener('focus', () => refreshAppVersionBadge(true));
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+})();

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.21",
+  "version": "1.0.22",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Temporary WELCOME test popup removed - normal dashboard (test pass, auto-update verified)"
+  "notes": "Sidebar header me live app version badge (HisaabBC ke aage) - auto-update par khud badalta hai"
 }
