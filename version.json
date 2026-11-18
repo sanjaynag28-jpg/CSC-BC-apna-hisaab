@@ -1,7 +1,7 @@
 {
-  "version": "1.0.13",
+  "version": "1.0.14",
   "releasedAt": "2026-11-18",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "SQL install fix: SSEI config-file method + Microsoft default auto-instance fallback (SSEI /InstanceName /SAPWD support nahi karta)"
+  "notes": "SQL fix: progress heartbeat (har 20s) + quoted config/media paths + 3-min service wait"
 }

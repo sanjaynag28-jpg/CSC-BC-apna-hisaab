@@ -356,6 +356,49 @@ function Clear-BrokenSqlInstall {
     }
 }
 
+function Invoke-SqlSetupExe {
+    param(
+        [string]$Exe,
+        [string[]]$SetupArgs,
+        [string]$OutLog,
+        [string]$Label,
+        [int]$TimeoutMinutes = 90
+    )
+    $stdout = Join-Path $env:TEMP 'cmbc_sql_out.txt'
+    $stderr = Join-Path $env:TEMP 'cmbc_sql_err.txt'
+    Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
+
+    $p = Start-Process -FilePath $Exe -ArgumentList $SetupArgs -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $start = Get-Date
+    while (-not $p.HasExited) {
+        Start-Sleep -Seconds 20
+        $elapsed = [int]((Get-Date) - $start).TotalSeconds
+        if ($elapsed -gt ($TimeoutMinutes * 60)) {
+            Write-Warn "$Label timeout - process band kar rahe hain."
+            try { $p.Kill() } catch { }
+            break
+        }
+        $tail = ''
+        if (Test-Path $stdout) {
+            $tail = ((Get-Content $stdout -Tail 2 -ErrorAction SilentlyContinue) -join ' | ')
+        }
+        if ($tail) {
+            Write-Warn "$Label chal raha hai... ${elapsed}s | $tail"
+        } else {
+            Write-Warn "$Label chal raha hai... ${elapsed}s (download/install jaari hai - window band na karein)"
+        }
+    }
+
+    foreach ($f in @($stdout, $stderr)) {
+        if (Test-Path $f) {
+            Get-Content $f -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($_ -and $_.Trim()) { Add-Content -Path $OutLog -Value $_ -Encoding UTF8 }
+            }
+        }
+    }
+    return $p.ExitCode
+}
+
 function Install-SqlExpressInstance {
     param([string]$InstanceName, [string]$SaPassword)
 
@@ -388,9 +431,8 @@ SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
 "@
         Set-Content -Path $cfgPath -Value $cfg -Encoding ASCII
         Write-Warn "Install method 1: configuration file (instance '$InstanceName')..."
-        & $sqlExe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms "/ConfigurationFile=$cfgPath" *>&1 |
-            Tee-Object -FilePath $outLog -Append | Out-Null
-        Write-Warn "Config-file install exit code: $LASTEXITCODE"
+        $rc = Invoke-SqlSetupExe -Exe $sqlExe -SetupArgs @('/Action=Install', '/Quiet', '/IAcceptSqlServerLicenseTerms', ('/ConfigurationFile="' + $cfgPath + '"')) -OutLog $outLog -Label 'Method 1 (config file)'
+        Write-Warn "Config-file install exit code: $rc"
     } catch {
         Write-Warn "Config-file method note: $($_.Exception.Message)"
     }
@@ -403,9 +445,8 @@ SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
     if (-not $anySql) {
         try {
             Write-Warn "Install method 2: Microsoft default Express install (auto instance name)..."
-            & $sqlExe /Action=Install /Quiet /IAcceptSqlServerLicenseTerms *>&1 |
-                Tee-Object -FilePath $outLog -Append | Out-Null
-            Write-Warn "Default install exit code: $LASTEXITCODE"
+            $rc = Invoke-SqlSetupExe -Exe $sqlExe -SetupArgs @('/Action=Install', '/Quiet', '/IAcceptSqlServerLicenseTerms') -OutLog $outLog -Label 'Method 2 (default install)'
+            Write-Warn "Default install exit code: $rc"
         } catch {
             Write-Warn "Default install note: $($_.Exception.Message)"
         }
@@ -421,9 +462,8 @@ SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
             if (Test-Path $mediaPath) { Remove-Item $mediaPath -Recurse -Force -ErrorAction SilentlyContinue }
             New-Item -ItemType Directory -Force -Path $mediaPath | Out-Null
             Write-Warn "SQL media download (approx 250-300 MB)..."
-            & $sqlExe /Action=Download /Quiet "/MediaPath=$mediaPath" /MediaType=Express *>&1 |
-                Tee-Object -FilePath $outLog -Append | Out-Null
-            Write-Warn "Media download exit code: $LASTEXITCODE"
+            $rc = Invoke-SqlSetupExe -Exe $sqlExe -SetupArgs @('/Action=Download', '/Quiet', ('/MediaPath="' + $mediaPath + '"'), '/MediaType=Express') -OutLog $outLog -Label 'Method 3 (media download)'
+            Write-Warn "Media download exit code: $rc"
 
             $setupExe = Get-ChildItem -Path $mediaPath -Filter 'setup.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($setupExe) {
@@ -434,8 +474,8 @@ SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
                     '/TCPENABLED=1', '/NPENABLED=0', '/SQLSYSADMINACCOUNTS=BUILTIN\Administrators',
                     '/SkipRules=RebootRequiredCheck'
                 )
-                & $setupExe.FullName @setupArgs *>&1 | Tee-Object -FilePath $outLog -Append | Out-Null
-                Write-Warn "setup.exe exit code: $LASTEXITCODE"
+                $rc = Invoke-SqlSetupExe -Exe $setupExe.FullName -SetupArgs $setupArgs -OutLog $outLog -Label 'Method 3 (setup.exe install)'
+                Write-Warn "setup.exe exit code: $rc"
             } else {
                 Write-Warn "Media me setup.exe nahi mila."
             }
@@ -446,9 +486,9 @@ SQLSYSADMINACCOUNTS="BUILTIN\Administrators"
 
     Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
 
-    # Service register hone ka intezaar (koi bhi SQL instance)
+    # Service register hone ka intezaar (koi bhi SQL instance, 3 min tak)
     $svc = $null
-    for ($w = 1; $w -le 18; $w++) {
+    for ($w = 1; $w -le 36; $w++) {
         $svc = Get-LocalSqlService
         if ($svc) { break }
         Start-Sleep -Seconds 5
