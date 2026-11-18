@@ -24,7 +24,7 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 const os = require('os');
@@ -127,14 +127,18 @@ app.get('/api/health', async (req, res) => {
         res.json({
             success: true,
             status: 'CONNECTED',
+            dbReady: true,
             database: 'CashManagement',
+            uptimeSeconds: Math.round((Date.now() - serverStartTime) / 1000),
             serverTime: new Date()
         });
     } else {
         res.status(503).json({
             success: false,
             status: 'DISCONNECTED',
+            dbReady: false,
             isDatabaseDown: true,
+            uptimeSeconds: Math.round((Date.now() - serverStartTime) / 1000),
             error: 'SQL Server connection is DOWN. Check SQL Server (SQLEXPRESS) service.'
         });
     }
@@ -605,6 +609,40 @@ app.use((req, res, next) => {
     next();
 });
 
+// ---------------------------------------------------------------------------
+// STARTUP "PLEASE WAIT" GATE
+// Server turant listen karta hai, isliye browser me "site can't be reached"
+// nahi aata. Par jab tak SQL Server ready na ho, HTML page par friendly
+// "Please wait" screen dikhti hai jo khud refresh hoti hai. DB ready hote hi
+// normal app khul jata hai. (User ko kuch samajhne/karne ki zaroorat nahi.)
+// ---------------------------------------------------------------------------
+const startupWaitPage = (() => {
+    try {
+        return fs.readFileSync(path.join(__dirname, 'public', 'startup-wait.html'), 'utf8');
+    } catch (e) {
+        return null;
+    }
+})();
+
+app.use(async (req, res, next) => {
+    if (req.method !== 'GET') return next();
+    if (req.path.startsWith('/api') || req.path.startsWith('/extension')) return next();
+    const accept = String(req.headers.accept || '');
+    if (!accept.includes('text/html')) return next();
+    let alive = false;
+    try {
+        alive = await getDbAliveCached();
+    } catch (e) {
+        alive = false;
+    }
+    if (alive) return next();
+    if (!startupWaitPage) return next();
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.type('html').status(200).send(startupWaitPage.replace(/__VERSION__/g, getAppVersion()));
+});
+
 // Static assets with ETag support for instant 304 Not Modified revalidation
 const staticOptions = {
     etag: true,
@@ -824,6 +862,13 @@ function startServer() {
 
             // Background mein SQL Server se connect karein bina port 3000 block kiye
             connectDbInBackground();
+
+            // Windows self-heal: PC boot par silent auto-start (task + startup entry)
+            // aur Desktop/Start Menu shortcut ensure karo. Purane installs par bhi
+            // update ke baad ye khud lag jata hai - user ko kuch karna nahi padta.
+            setTimeout(() => {
+                try { require('./utils/windows_autostart').ensureWindowsAutostart(); } catch (e) { }
+            }, 10000);
 
             // Automatic Silent Update from GitHub:
             // boot ke 5s baad ek check + har raat 2:30 AM (idle hone par hi restart).

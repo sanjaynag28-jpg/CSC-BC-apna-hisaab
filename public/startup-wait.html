@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>CSC &amp; BC Apna Hisaab - Please Wait</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: "Segoe UI", Roboto, Arial, sans-serif;
+            background: radial-gradient(circle at 20% 15%, #1e3a8a 0%, #0f172a 45%, #020617 100%);
+            color: #e2e8f0;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 460px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(96, 165, 250, 0.25);
+            border-radius: 18px;
+            padding: 34px 28px 28px;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+            text-align: center;
+        }
+
+        .brand {
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #60a5fa;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-bottom: 6px;
+        }
+
+        .sub {
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+
+        .spinner {
+            width: 54px;
+            height: 54px;
+            margin: 0 auto 22px;
+            border: 4px solid rgba(96, 165, 250, 0.18);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .status {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(71, 85, 105, 0.5);
+            border-radius: 12px;
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 13.5px;
+            line-height: 1.75;
+        }
+
+        .status .row { display: flex; align-items: center; gap: 8px; }
+
+        .dot-ok { color: #4ade80; font-size: 12px; }
+        .dot-wait { color: #fbbf24; font-size: 12px; }
+
+        .refresh {
+            margin-top: 20px;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .refresh b { color: #60a5fa; font-variant-numeric: tabular-nums; }
+
+        button {
+            margin-top: 16px;
+            width: 100%;
+            padding: 11px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            background: #2563eb;
+            border: 0;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        button:hover { background: #1d4ed8; }
+
+        .help {
+            display: none;
+            margin-top: 18px;
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 12.5px;
+            line-height: 1.8;
+            color: #fde68a;
+            background: rgba(120, 53, 15, 0.28);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            border-radius: 12px;
+        }
+
+        .help b { color: #fbbf24; }
+
+        .foot {
+            margin-top: 18px;
+            font-size: 11px;
+            color: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="brand">CSC &amp; BC Apna Hisaab</div>
+        <h1>Please wait...</h1>
+        <div class="sub">System start ho raha hai, thoda intezaar karein</div>
+
+        <div class="spinner"></div>
+
+        <div class="status">
+            <div class="row"><span class="dot-ok">&#9679;</span> App server chal raha hai (port 3000)</div>
+            <div class="row"><span class="dot-wait">&#9679;</span> Database (SQL Server) se connection ban raha hai...</div>
+            <div class="row"><span class="dot-wait">&#9679;</span> Pehli baar khulne par 10&ndash;20 second lag sakte hain</div>
+        </div>
+
+        <div class="refresh">Page khud refresh hoga: <b id="count">4</b>s</div>
+
+        <button type="button" onclick="location.reload()">Abhi try karein</button>
+
+        <div class="help" id="help">
+            <b>Zyada time lag raha hai?</b><br>
+            1. Desktop par <b>CSC BC Apna Hissab</b> shortcut dobara kholein.<br>
+            2. SQL Fix chalayein: <b>Desktop &rarr; SQL_FIX.bat</b> (right click &rarr; Run as administrator).<br>
+            3. PC restart karein &mdash; server khud silent start ho jayega.<br>
+            <span style="color:#fca5a5;">Aapka data safe hai, kuch delete nahi hota.</span>
+        </div>
+
+        <div class="foot">Version __VERSION__ &middot; Data local hai, internet ki zaroorat nahi</div>
+    </div>
+
+    <script>
+        (function () {
+            var secs = 4;
+            var count = document.getElementById('count');
+            var timer = setInterval(function () {
+                secs = secs - 1;
+                if (count) count.textContent = secs > 0 ? secs : 1;
+                if (secs <= 0) {
+                    clearInterval(timer);
+                    location.reload();
+                }
+            }, 1000);
+
+            setTimeout(function () {
+                var help = document.getElementById('help');
+                if (help) help.style.display = 'block';
+            }, 45000);
+        })();
+    </script>
+</body>
+
+</html>

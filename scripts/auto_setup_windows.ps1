@@ -859,24 +859,44 @@ function Setup-Database {
 function Install-AutoStart {
     Write-Step 6 8 "Configuring silent auto-start on every PC boot..."
     try {
-        $taskName = "CSC BC Apna Hisaab Server"
+        $taskName = "CSC BC Apna Hissab Server"
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
         $wscript = Join-Path $env:WINDIR "System32\wscript.exe"
         $action = "`"$wscript`" `"$vbs`""
         schtasks /Create /TN "$taskName" /TR $action /SC ONSTART /RL HIGHEST /F | Out-Null
+        # Login trigger bhi (laptop / fast-startup PCs par ONSTART kabhi miss hota hai)
+        schtasks /Create /TN "$taskName (Login)" /TR $action /SC ONLOGON /RL HIGHEST /F | Out-Null
         schtasks /Run /TN "$taskName" | Out-Null
-        Write-Ok "Auto-start task installed (PC on hote hi server silently chalu)."
+        Write-Ok "Auto-start tasks installed (PC on / login par server silently chalu)."
     } catch {
         Write-Warn "Auto-start task skipped: $($_.Exception.Message)"
         try {
             Start-Process -FilePath "wscript.exe" -ArgumentList "`"$(Join-Path $ProjectDir 'start-hidden.vbs')`"" -WindowStyle Hidden
         } catch { }
     }
+
+    # Startup folder entry + Desktop/Start Menu shortcut (admin ke bina bhi kaam karta hai)
+    try {
+        $autostartJs = Join-Path $ProjectDir 'utils\windows_autostart.js'
+        if (Test-Path $autostartJs) {
+            & node $autostartJs | Out-Null
+            Write-Ok "Startup entry ready (login par server khud start hoga)."
+        }
+    } catch {
+        Write-Warn "Startup entry note: $($_.Exception.Message)"
+    }
 }
 
 function Create-DesktopShortcut {
     Write-Step 7 8 "Creating Desktop Shortcut..."
     try {
+        $helper = Join-Path $ProjectDir 'utils\create_shortcuts.ps1'
+        if (Test-Path $helper) {
+            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -ProjectDir $ProjectDir | Out-Null
+            Write-Ok "Desktop + Start Menu shortcut ready: CSC BC Apna Hisaab"
+            return
+        }
+
         $desktop = [Environment]::GetFolderPath("Desktop")
         $shortcutPath = Join-Path $desktop "CSC BC Apna Hisaab.lnk"
         $wsh = New-Object -ComObject WScript.Shell
