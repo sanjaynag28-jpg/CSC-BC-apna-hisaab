@@ -552,6 +552,9 @@ BEGIN
         [GlobalSerialNo] INT NULL,
         [SNCode] VARCHAR(30) NULL,
         [ModuleCode] VARCHAR(30) NULL,
+        [SourceModule] VARCHAR(30) NULL,
+        [SourceID] INT NULL,
+        [LineType] VARCHAR(30) NULL,
         CONSTRAINT [PK_Transactions] PRIMARY KEY CLUSTERED ([TransactionID])
     );
 END
@@ -600,6 +603,44 @@ BEGIN
 END
 GO
 
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ApiIdempotencyRequests')
+BEGIN
+    CREATE TABLE [dbo].[ApiIdempotencyRequests] (
+        [UserID] INT NOT NULL,
+        [RequestKey] UNIQUEIDENTIFIER NOT NULL,
+        [RequestHash] CHAR(64) NOT NULL,
+        [State] NVARCHAR(16) NOT NULL,
+        [HttpStatus] INT NULL,
+        [ResponseBody] NVARCHAR(MAX) NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [CompletedAt] DATETIME2 NULL,
+        CONSTRAINT [PK_ApiIdempotencyRequests] PRIMARY KEY CLUSTERED ([UserID], [RequestKey])
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AppLicenses')
+BEGIN
+    CREATE TABLE [dbo].[AppLicenses] (
+        [LicenseID] INT IDENTITY(1,1) NOT NULL,
+        [LicenseKey] NVARCHAR(100) NOT NULL,
+        [CustomerShopName] NVARCHAR(200) NULL,
+        [OwnerName] NVARCHAR(150) NULL,
+        [MobileNumber] NVARCHAR(20) NULL,
+        [HardwareID] NVARCHAR(255) NULL,
+        [LicenseType] NVARCHAR(50) NOT NULL DEFAULT ('Lifetime'),
+        [ActivationDate] DATETIME NULL DEFAULT (getdate()),
+        [ExpiryDate] DATETIME NULL,
+        [MaxDevices] INT NOT NULL DEFAULT (1),
+        [IsActive] BIT NOT NULL DEFAULT (1),
+        [Notes] NVARCHAR(500) NULL,
+        [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        CONSTRAINT [PK_AppLicenses] PRIMARY KEY CLUSTERED ([LicenseID])
+    );
+END
+GO
+
 -- Stored Procedure: sp_BackupCashManagementDB
 CREATE OR ALTER PROCEDURE sp_BackupCashManagementDB     @BackupFolder NVARCHAR(500) = NULL
 AS
@@ -615,7 +656,7 @@ BEGIN
     BEGIN
         -- Default folder DB ke apne data path se derive karo (hardcoded dev path nahi)
         DECLARE @DbPath NVARCHAR(400);
-        SELECT @DbPath = LEFT(mf.physical_name, LEN(mf.physical_name) - LEN(REVERSE(SUBSTRING(REVERSE(mf.physical_name), CHARINDEX('\', REVERSE(mf.physical_name)), 260))) + 1)
+        SELECT @DbPath = LEFT(mf.physical_name, LEN(mf.physical_name) - CHARINDEX('\', REVERSE(mf.physical_name)) + 1)
         FROM sys.master_files mf
         WHERE mf.database_id = DB_ID('CashManagement') AND mf.type = 0;
         SET @TargetFolder = ISNULL(@DbPath, 'D:\Cash Managment BC\backups\');
@@ -844,6 +885,37 @@ BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
         THROW;
     END CATCH
+END
+GO
+
+-- Non-Clustered Performance Indexes
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_PaymentID' AND object_id = OBJECT_ID('KhataEntries'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_KhataEntries_PaymentID ON dbo.KhataEntries (PaymentID) WHERE PaymentID IS NOT NULL;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_ReferenceNo' AND object_id = OBJECT_ID('KhataEntries'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_KhataEntries_ReferenceNo ON dbo.KhataEntries (ReferenceNo) WHERE ReferenceNo IS NOT NULL;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Transactions_SourceModule_SourceID' AND object_id = OBJECT_ID('Transactions'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_Transactions_SourceModule_SourceID ON dbo.Transactions (SourceModule, SourceID, LineType) WHERE SourceModule IS NOT NULL;
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_InvoiceItems_InvoiceID' AND object_id = OBJECT_ID('InvoiceItems'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_InvoiceItems_InvoiceID ON dbo.InvoiceItems (InvoiceID);
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Documents_Customer_Entity' AND object_id = OBJECT_ID('Documents'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_Documents_Customer_Entity ON dbo.Documents (CustomerID, EntityType, EntityID);
 END
 GO
 
