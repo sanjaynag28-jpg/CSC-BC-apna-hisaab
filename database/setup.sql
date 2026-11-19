@@ -390,8 +390,8 @@ BEGIN
         ProviderName NVARCHAR(150) NULL,
         ConsumerNumber NVARCHAR(100) NULL,
         BillNumber NVARCHAR(100) NULL,
-        BillDate DATE NULL,
-        DueDate DATE NULL,
+        BillDate NVARCHAR(30) NULL,
+        DueDate NVARCHAR(30) NULL,
         TotalBillAmount DECIMAL(18,2) NOT NULL DEFAULT ((0)),
         BillAmount DECIMAL(18,2) NOT NULL DEFAULT ((0)),
         CustomerCharge DECIMAL(18,2) NOT NULL DEFAULT ((0)),
@@ -403,21 +403,30 @@ BEGIN
         PaymentMode NVARCHAR(50) NULL,
         WalletAccountID INT NULL,
         CashAccountID INT NULL,
-        Status NVARCHAR(30) NULL,
+        Status NVARCHAR(50) NULL,
         TxnReference NVARCHAR(100) NULL,
         PaymentDate DATE NOT NULL DEFAULT (CONVERT(date, GETDATE())),
-        PaymentTime NVARCHAR(10) NULL,
-        Notes NVARCHAR(1000) NULL,
+        PaymentTime NVARCHAR(20) NULL,
+        Notes NVARCHAR(MAX) NULL,
         ExtraFieldsJson NVARCHAR(MAX) NULL,
+        IsActive BIT NOT NULL DEFAULT ((1)),
         IsDeleted BIT NOT NULL DEFAULT ((0)),
         CreatedAt DATETIME NOT NULL DEFAULT (GETDATE()),
         UpdatedAt DATETIME NOT NULL DEFAULT (GETDATE()),
         UserID INT NOT NULL DEFAULT ((1)),
         GlobalSerialNo INT NULL,
-        SNCode VARCHAR(30) NULL,
-        ModuleCode VARCHAR(30) NULL,
+        SNCode NVARCHAR(30) NULL,
+        ModuleCode NVARCHAR(30) NULL,
         CONSTRAINT PK_BillPayments PRIMARY KEY CLUSTERED (PaymentID)
     );
+END
+GO
+
+-- Existing databases: BillPayments.IsActive (added Nov 2026, soft delete/restore support)
+IF COL_LENGTH('dbo.BillPayments', 'IsActive') IS NULL
+BEGIN
+    ALTER TABLE dbo.BillPayments
+        ADD IsActive BIT NOT NULL CONSTRAINT DF_BillPayments_IsActive DEFAULT ((1));
 END
 GO
 

@@ -695,6 +695,7 @@ app.use('/api/search', require('./routes/search'));
 app.use('/api/recyclebin', require('./routes/recyclebin'));
 app.use('/api/documents', require('./routes/documents'));
 app.use('/api/csc', require('./routes/csc'));
+app.use('/api/service', require('./routes/service_records'));
 app.use('/api/bill-payments', require('./routes/bill_payments'));
 app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/settings', require('./routes/settings'));

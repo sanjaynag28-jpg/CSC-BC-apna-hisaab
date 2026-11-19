@@ -165,7 +165,7 @@ router.get('/statement/:customerId', async (req, res) => {
                    a.AccountName
             FROM KhataEntries k
             LEFT JOIN Invoices i ON k.InvoiceID = i.InvoiceID
-            LEFT JOIN BillPayments bp ON k.PaymentID = bp.PaymentID OR (k.ReferenceNo LIKE 'BP-%' AND bp.PaymentID = TRY_CAST(REPLACE(REPLACE(k.ReferenceNo, 'BP-', ''), '-PAY', '') AS INT))
+            LEFT JOIN BillPayments bp ON bp.PaymentID = COALESCE(k.PaymentID, CASE WHEN k.SourceModule = 'BillPay' THEN k.SourceID END)
             LEFT JOIN Accounts a ON k.AccountID = a.AccountID
             WHERE k.CustomerID = @id AND k.UserID = @userId
             ORDER BY k.EntryDate ASC, ISNULL(k.EntryTime, CAST(k.CreatedAt AS TIME)) ASC, k.KhataID ASC

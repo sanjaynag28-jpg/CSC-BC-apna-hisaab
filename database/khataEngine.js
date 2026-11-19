@@ -60,12 +60,14 @@ async function addKhataEntry(tQuery, {
             CSCAppID, BCID, InvoiceID, PaymentID, AccountID, PaymentMode, Description, ReferenceNo, UserID,
             GlobalSerialNo, SNCode, ModuleCode, SourceModule, SourceID
         )
-        OUTPUT INSERTED.KhataID
         VALUES (
             @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), @type, @amt,
             @cscId, @bcId, @invId, @payId, @accId, @mode, @desc, @ref, @uid,
             @GlobalSerialNo, @SNCode, @ModuleCode, @sourceModule, @sourceId
-        )
+        );
+        -- NOTE: OUTPUT INSERTED KhataID use nahi kar sakte kyunki table par
+        -- AFTER INSERT trigger hai. SCOPE_IDENTITY() trigger scope se safe rehta hai.
+        SELECT CAST(SCOPE_IDENTITY() AS INT) AS KhataID;
     `, {
         custId: parseInt(CustomerID),
         date: EntryDate || todayLocal(),
@@ -241,12 +243,13 @@ async function syncBillPaymentToKhata(tQuery, {
                 PaymentID, PaymentMode, Description, ReferenceNo, UserID,
                 SourceModule, SourceID
             )
-            OUTPUT INSERTED.KhataID
             VALUES (
                 @custId, @date, @time, 'Gave', @amt,
                 @pid, @mode, @desc, @ref, @userId,
                 'BillPay', @pid
-            )
+            );
+            -- KhataEntries par AFTER INSERT trigger hai, isliye OUTPUT nahi (SCOPE_IDENTITY safe)
+            SELECT CAST(SCOPE_IDENTITY() AS INT) AS KhataID;
         `, {
             custId: parseInt(CustomerID),
             date,
@@ -286,12 +289,13 @@ async function syncBillPaymentToKhata(tQuery, {
                 PaymentID, PaymentMode, Description, ReferenceNo, UserID,
                 SourceModule, SourceID
             )
-            OUTPUT INSERTED.KhataID
             VALUES (
                 @custId, @date, @time, 'Got', @amt,
                 @pid, @mode, @desc, @ref, @userId,
                 'BillPay', @pid
-            )
+            );
+            -- KhataEntries par AFTER INSERT trigger hai, isliye OUTPUT nahi (SCOPE_IDENTITY safe)
+            SELECT CAST(SCOPE_IDENTITY() AS INT) AS KhataID;
         `, {
             custId: parseInt(CustomerID),
             date,
