@@ -801,6 +801,13 @@ async function connectDbInBackground() {
             connected = await isDbAlive();
             if (connected) {
                 console.log(`✅ SQL Server se successfully connect ho gaya (Attempt: ${attempts})!`);
+                // Self-Healing Dynamic Schema Bootstrapper: Ensures all tables, columns, dynamic fields exist automatically
+                try {
+                    const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
+                    await ensureAutoSchemaBootstrapped();
+                } catch (sErr) {
+                    console.error('⚠️ Schema bootstrap warning:', sErr.message);
+                }
                 // Recurring Transactions: startup par process karo (missed entries catch-up)
                 runRecurring();
                 // Har 1 ghante baad dobara check (server lambe time chalne par bhi due entries generate hoti rahein)
@@ -824,6 +831,12 @@ async function connectDbInBackground() {
                 if (await isDbAlive()) {
                     console.log('✅ SQL Server ab ready ho gaya hai!');
                     clearInterval(retryTimer);
+                    try {
+                        const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
+                        await ensureAutoSchemaBootstrapped();
+                    } catch (sErr) {
+                        console.error('⚠️ Schema bootstrap warning:', sErr.message);
+                    }
                     runRecurring();
                     setInterval(runRecurring, 60 * 60 * 1000);
                 }

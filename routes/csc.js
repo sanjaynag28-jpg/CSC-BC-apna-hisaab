@@ -591,7 +591,8 @@ router.post(['/', '/applications'], async (req, res) => {
                 ServiceType, ServiceSubtype, AckNumber, PortalName,
                 ApplyDate, ExpectedDate,
                 GovtFee, OperatorFee, TotalFee, PaidAmount, DueAmount,
-                PaymentStatus, PaymentMode, Status, StatusRemarks, CertificateDocNo, UserID
+                PaymentStatus, PaymentMode, Status, StatusRemarks, CertificateDocNo, UserID,
+                ExtraFieldsJson
             )
             OUTPUT INSERTED.AppID
             VALUES (
@@ -599,7 +600,8 @@ router.post(['/', '/applications'], async (req, res) => {
                 @serviceType, @serviceSubtype, @ackNumber, @portalName,
                 ISNULL(@applyDate, GETDATE()), @expectedDate,
                 @govtFee, @operatorFee, @totalFee, @paidAmount, @dueAmount,
-                @paymentStatus, @paymentMode, ISNULL(@status, 'Applied'), @statusRemarks, @certDocNo, @userId
+                @paymentStatus, @paymentMode, ISNULL(@status, 'Applied'), @statusRemarks, @certDocNo, @userId,
+                @extraFieldsJson
             )
         `;
 
@@ -638,6 +640,7 @@ router.post(['/', '/applications'], async (req, res) => {
                 status: isElectricity ? 'Delivered' : (status || 'Applied'),
                 statusRemarks: finalRemarks || null,
                 certDocNo: isElectricity && consumerNo ? consumerNo : null,
+                extraFieldsJson: req.body.ExtraFieldsJson ? (typeof req.body.ExtraFieldsJson === 'object' ? JSON.stringify(req.body.ExtraFieldsJson) : String(req.body.ExtraFieldsJson)) : null,
                 userId
             });
 

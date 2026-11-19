@@ -235,6 +235,7 @@ BEGIN
         [GlobalSerialNo] INT NULL,
         [SNCode] VARCHAR(30) NULL,
         [ModuleCode] VARCHAR(30) NULL,
+        [ExtraFieldsJson] NVARCHAR(MAX) NULL,
         CONSTRAINT [PK_CSCApplications] PRIMARY KEY CLUSTERED ([AppID])
     );
 END
@@ -254,6 +255,8 @@ BEGIN
         [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         [UserID] INT NOT NULL DEFAULT ((1)),
+        [Category] NVARCHAR(100) NULL DEFAULT ('General'),
+        [CustomFieldsSchema] NVARCHAR(MAX) NULL,
         CONSTRAINT [PK_CSCServices] PRIMARY KEY CLUSTERED ([ServiceID])
     );
 END
@@ -285,6 +288,7 @@ BEGIN
         [AadhaarNumber] NVARCHAR(20) NULL,
         [DateOfBirth] DATE NULL,
         [UserID] INT NOT NULL DEFAULT ((1)),
+        [ExtraFieldsJson] NVARCHAR(MAX) NULL,
         CONSTRAINT [PK_Customers] PRIMARY KEY CLUSTERED ([CustomerID])
     );
 END
