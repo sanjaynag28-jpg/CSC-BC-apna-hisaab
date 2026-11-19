@@ -26058,7 +26058,15 @@ async function refreshAppVersionBadge(showGlow) {
         badge.dataset.version = ver;
         badge.title = 'Current version: v' + ver + ' - auto-update hone par khud badal jata hai';
 
-        try { localStorage.setItem('cmbc_app_version', ver); } catch (e) { }
+        try { 
+            localStorage.setItem('cmbc_app_version', ver); 
+            const sPill = document.getElementById('settingsVersionPill');
+            if (sPill) sPill.textContent = 'v' + ver + ' Pro Enterprise';
+            const sBld = document.getElementById('settingsBuildRelease');
+            if (sBld) sBld.textContent = 'v' + ver + ' (Enterprise BC & Khatabook)';
+            const sTab = document.getElementById('tabBadgeSystemInfo');
+            if (sTab) sTab.textContent = 'v' + ver;
+        } catch (e) { }
 
         if (changed && showGlow) {
             badge.classList.add('updated');
@@ -26075,7 +26083,15 @@ async function refreshAppVersionBadge(showGlow) {
         // Pehle cached version turant dikhao (flash na ho), phir server se confirm karo
         try {
             const cached = localStorage.getItem('cmbc_app_version');
-            if (cached) badge.textContent = 'v' + cached;
+            if (cached) {
+                badge.textContent = 'v' + cached;
+                const sPill = document.getElementById('settingsVersionPill');
+                if (sPill) sPill.textContent = 'v' + cached + ' Pro Enterprise';
+                const sBld = document.getElementById('settingsBuildRelease');
+                if (sBld) sBld.textContent = 'v' + cached + ' (Enterprise BC & Khatabook)';
+                const sTab = document.getElementById('tabBadgeSystemInfo');
+                if (sTab) sTab.textContent = 'v' + cached;
+            }
         } catch (e) { }
 
         refreshAppVersionBadge(false);
