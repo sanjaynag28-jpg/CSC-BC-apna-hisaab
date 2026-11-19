@@ -51,6 +51,34 @@ function safeJson(value) {
 }
 
 /**
+ * Sacred Accounting Guard: Paisa, Date, aur Balance kabhi JSON me nahi.
+ * Strips any monetary/accounting keys from ExtraFieldsJson.
+ */
+function sanitizeExtraFields(extra) {
+    if (!extra) return null;
+    let obj = extra;
+    if (typeof extra === 'string') {
+        try { obj = JSON.parse(extra); } catch (_) { return JSON.stringify({ note: extra }); }
+    }
+    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return safeJson(obj);
+
+    const FORBIDDEN_MONEY_KEYS = new Set([
+        'amount', 'charge', 'charges', 'total', 'totalamount', 'totalfee',
+        'paid', 'paidamount', 'due', 'dueamount', 'balance', 'balanceamount',
+        'govtfee', 'operatorfee', 'fee', 'price', 'cost', 'netamount'
+    ]);
+
+    const clean = {};
+    for (const [k, v] of Object.entries(obj)) {
+        const normalizedKey = k.toLowerCase().replace(/[^a-z]/g, '');
+        if (!FORBIDDEN_MONEY_KEYS.has(normalizedKey)) {
+            clean[k] = v;
+        }
+    }
+    return Object.keys(clean).length > 0 ? JSON.stringify(clean) : null;
+}
+
+/**
  * Purane mirror rows (ledger + khata) hatao — sirf is record ke.
  * Registry entries pehle deactivate hoti hain, phir khata delete.
  */
@@ -258,7 +286,7 @@ async function createServiceRecord(input, userId) {
             govtFee, operatorFee, totalFee, paidAmount, balanceAmount,
             recordDate, status, paymentStatus, paymentMode,
             remarks: input.remarks || input.Remarks || null,
-            extra: safeJson(input.extraFields || input.ExtraFieldsJson)
+            extra: sanitizeExtraFields(input.extraFields || input.ExtraFieldsJson)
         });
 
         const recordId = ins.recordset[0].RecordID;
@@ -336,6 +364,10 @@ async function updateServiceRecord(recordId, input, userId) {
                 TotalFee = @totalFee,
                 PaidAmount = @paidAmount,
                 BalanceAmount = @balanceAmount,
+                Amount = @govtFee,
+                Charge = @operatorFee,
+                TotalAmount = @totalFee,
+                DueAmount = @balanceAmount,
                 Status = @status,
                 PaymentStatus = @paymentStatus,
                 PaymentMode = @paymentMode,
@@ -348,7 +380,7 @@ async function updateServiceRecord(recordId, input, userId) {
             status, paymentStatus,
             paymentMode: input.paymentMode || cur.PaymentMode || 'Cash',
             remarks: input.remarks !== undefined ? input.remarks : cur.Remarks,
-            extra: input.extraFields !== undefined ? safeJson(input.extraFields) : cur.ExtraFieldsJson,
+            extra: input.extraFields !== undefined ? sanitizeExtraFields(input.extraFields) : cur.ExtraFieldsJson,
             id, uid: userId
         });
 
