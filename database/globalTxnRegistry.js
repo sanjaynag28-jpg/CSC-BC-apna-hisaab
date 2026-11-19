@@ -1,5 +1,4 @@
 const { query, withTransaction } = require('./db');
-const { resolveModule } = require('./moduleRegistry');
 const moment = require('moment');
 
 const MODULE_PREFIXES = {
@@ -42,9 +41,8 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
 
     const q = (typeof executor === 'function') ? executor : query;
 
-    // Dynamic (DB-driven) module config; fallback hardcoded map moduleRegistry me hai.
-    const modConfig = await resolveModule(sourceModule);
-    const prefix = (modConfig && modConfig.prefix) || String(sourceModule).substring(0, 4).toUpperCase();
+    const modConfig = MODULE_TABLES[sourceModule] || null;
+    const prefix = MODULE_PREFIXES[sourceModule] || sourceModule.substring(0, 4).toUpperCase();
     const cleanDate = transDate ? new Date(transDate) : new Date();
     // Use local string format if createdAt explicitly provided, else use SQL Server GETDATE()
     const cleanCreated = createdAt ? moment(createdAt).format('YYYY-MM-DD HH:mm:ss') : null;
@@ -93,11 +91,10 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
         // Update source table (if dedicated table configured)
         if (modConfig && modConfig.table && modConfig.pk) {
             try {
-                // ServiceRecords me ModuleCode = module naam hota hai; serial code alag column me.
-                const serialColumn = (modConfig.table === 'ServiceRecords') ? 'ModuleCodeSerial' : 'ModuleCode';
+                const serialCol = (modConfig.table === 'ServiceRecords') ? 'DocCode = @ModuleCode, ModuleCodeSerial = @ModuleCode' : 'ModuleCode = @ModuleCode';
                 await tQ(`
                     UPDATE ${modConfig.table} 
-                    SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ${serialColumn} = @ModuleCode
+                    SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ${serialCol}
                     WHERE ${modConfig.pk} = @recordId
                 `, {
                     GlobalSerialNo,
@@ -171,11 +168,11 @@ async function lookupBySN(queryText, userId = null) {
     if (!res.recordset || res.recordset.length === 0) return null;
 
     const row = res.recordset[0];
-    const modConfig = await resolveModule(row.SourceModule);
+    const modConfig = MODULE_TABLES[row.SourceModule];
 
     // Fetch full details from source table (user-scoped — cross-tenant leak na ho)
     let details = null;
-    if (modConfig && modConfig.table && modConfig.pk) {
+    if (modConfig) {
         const detUserId = userId || row.UserID;
         const detRes = await query(
             `SELECT * FROM ${modConfig.table} WHERE ${modConfig.pk} = @id${detUserId ? ' AND UserID = @userId' : ''}`,
@@ -244,32 +241,11 @@ async function updateGlobalTransaction({ sourceModule, recordId, entityName, amo
  * @param {string} [config.table] - Table name (e.g. 'InsurancePolicies')
  * @param {string} [config.pk] - Primary key column (e.g. 'PolicyID')
  */
-async function registerModuleConfig(sourceModule, config = {}) {
-    if (!sourceModule || typeof sourceModule !== 'string') return null;
-
-    const prefix = config.prefix || sourceModule.substring(0, 4).toUpperCase();
-    const table = config.table || null;
-    const pk = config.pk || null;
-
-    // Legacy in-memory maps bhi sync rakho (agar DB unavailable ho to kaam aayein)
-    MODULE_PREFIXES[sourceModule] = prefix;
-    if (table && pk) MODULE_TABLES[sourceModule] = { table, pk };
-
-    try {
-        // Ek hi source of truth: TxnModules table
-        const { upsertModule } = require('./moduleRegistry');
-        return await upsertModule({
-            moduleCode: sourceModule,
-            moduleName: config.name || sourceModule,
-            prefix,
-            targetTable: table,
-            primaryKeyColumn: pk,
-            isCore: !!config.isCore,
-            displayOrder: config.displayOrder || 100
-        });
-    } catch (err) {
-        console.warn(`registerModuleConfig(${sourceModule}) DB sync warning:`, err.message);
-        return null;
+function registerModuleConfig(sourceModule, config = {}) {
+    if (!sourceModule || typeof sourceModule !== 'string') return;
+    if (config.prefix) MODULE_PREFIXES[sourceModule] = config.prefix;
+    if (config.table && config.pk) {
+        MODULE_TABLES[sourceModule] = { table: config.table, pk: config.pk };
     }
 }
 
