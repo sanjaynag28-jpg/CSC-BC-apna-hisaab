@@ -63,16 +63,27 @@ async function ensureAutoSchemaBootstrapped() {
         `);
         if (custExtraCheck.recordset[0]?.added) additions.push('Customers.ExtraFieldsJson');
 
-        // KhataEntries -> PaymentID
+        // KhataEntries -> PaymentID, SourceModule, SourceID
         const khataPayCheck = await query(`
+            DECLARE @added INT = 0;
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'PaymentID')
             BEGIN
                 ALTER TABLE dbo.KhataEntries ADD PaymentID INT NULL;
-                SELECT 1 AS added;
+                SET @added = 1;
             END
-            ELSE SELECT 0 AS added;
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'SourceModule')
+            BEGIN
+                ALTER TABLE dbo.KhataEntries ADD SourceModule VARCHAR(30) NULL;
+                SET @added = 1;
+            END
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'SourceID')
+            BEGIN
+                ALTER TABLE dbo.KhataEntries ADD SourceID INT NULL;
+                SET @added = 1;
+            END
+            SELECT @added AS added;
         `);
-        if (khataPayCheck.recordset[0]?.added) additions.push('KhataEntries.PaymentID');
+        if (khataPayCheck.recordset[0]?.added) additions.push('KhataEntries.PaymentID / SourceModule / SourceID');
 
         // Transactions -> SourceModule, SourceID, LineType
         const txnAuditCheck = await query(`
@@ -199,6 +210,79 @@ async function ensureAutoSchemaBootstrapped() {
             BEGIN
                 CREATE NONCLUSTERED INDEX IX_Documents_Customer_Entity ON dbo.Documents (CustomerID, EntityType, EntityID);
             END
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_SourceModule_SourceID' AND object_id = OBJECT_ID('KhataEntries'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_KhataEntries_SourceModule_SourceID ON dbo.KhataEntries (SourceModule, SourceID);
+            END
+        `);
+
+        // =====================================================================
+        // 4. INTEGRITY & POLYMORPHIC GUARANTEE TRIGGERS
+        // =====================================================================
+
+        // Ensure KhataEntries trigger for automatic polymorphic module linking
+        await query(`
+            CREATE OR ALTER TRIGGER trg_KhataEntries_SourcePolymorphism
+            ON KhataEntries
+            AFTER INSERT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                UPDATE k
+                SET SourceModule = CASE 
+                        WHEN k.SourceModule IS NOT NULL THEN k.SourceModule
+                        WHEN k.CSCAppID IS NOT NULL THEN 'CSC'
+                        WHEN k.BCID IS NOT NULL THEN 'BC'
+                        WHEN k.InvoiceID IS NOT NULL THEN 'Invoice'
+                        WHEN k.PaymentID IS NOT NULL THEN 'BillPay'
+                        WHEN k.ReferenceNo LIKE 'BP-%' THEN 'BillPay'
+                        ELSE 'Khata'
+                    END,
+                    SourceID = CASE
+                        WHEN k.SourceID IS NOT NULL THEN k.SourceID
+                        WHEN k.CSCAppID IS NOT NULL THEN k.CSCAppID
+                        WHEN k.BCID IS NOT NULL THEN k.BCID
+                        WHEN k.InvoiceID IS NOT NULL THEN k.InvoiceID
+                        WHEN k.PaymentID IS NOT NULL THEN k.PaymentID
+                        WHEN k.ReferenceNo LIKE 'BP-%' THEN TRY_CAST(REPLACE(REPLACE(k.ReferenceNo, 'BP-', ''), '-PAY', '') AS INT)
+                        ELSE k.KhataID
+                    END
+                FROM KhataEntries k
+                INNER JOIN inserted i ON k.KhataID = i.KhataID
+                WHERE k.SourceModule IS NULL OR k.SourceID IS NULL;
+            END;
+        `);
+
+        // Ensure Documents trigger for canonical casing and non-null normalization
+        await query(`
+            CREATE OR ALTER TRIGGER trg_Documents_Normalize
+            ON Documents
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                UPDATE d
+                SET EntityType = CASE 
+                        WHEN UPPER(d.EntityType) = 'CSC' THEN 'CSC'
+                        WHEN UPPER(d.EntityType) IN ('BILLPAY', 'BILLPAYMENT') THEN 'BillPay'
+                        WHEN UPPER(d.EntityType) = 'CUSTOMER' THEN 'Customer'
+                        WHEN UPPER(d.EntityType) IN ('INVOICE', 'INVOICES') THEN 'Invoice'
+                        WHEN UPPER(d.EntityType) = 'KHATA' THEN 'Khata'
+                        WHEN UPPER(d.EntityType) IN ('BC', 'TRANSACTION') THEN 'BC'
+                        WHEN UPPER(d.EntityType) = 'SHOP' THEN 'Shop'
+                        WHEN d.EntityType IS NULL AND d.CustomerID IS NOT NULL THEN 'Customer'
+                        WHEN d.EntityType IS NULL THEN 'Shop'
+                        ELSE d.EntityType
+                    END,
+                    EntityID = CASE
+                        WHEN d.EntityID IS NOT NULL THEN d.EntityID
+                        WHEN (d.EntityType IS NULL OR UPPER(d.EntityType) = 'CUSTOMER') AND d.CustomerID IS NOT NULL THEN d.CustomerID
+                        ELSE d.EntityID
+                    END
+                FROM Documents d
+                INNER JOIN inserted i ON d.DocumentID = i.DocumentID;
+            END;
         `);
 
         // Check active tables count

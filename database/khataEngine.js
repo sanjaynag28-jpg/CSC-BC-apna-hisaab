@@ -26,7 +26,8 @@ async function addKhataEntry(tQuery, {
     CustomerID, EntryType, Amount, EntryDate, CSCAppID = null, BCID = null,
     InvoiceID = null, PaymentID = null, AccountID = null, PaymentMode = 'Cash',
     Description = null, ReferenceNo = null, UserID = null,
-    GlobalSerialNo = null, SNCode = null, ModuleCode = null
+    GlobalSerialNo = null, SNCode = null, ModuleCode = null,
+    SourceModule = null, SourceID = null
 }) {
     let uid = UserID ? parseInt(UserID) : null;
     if (!uid && CustomerID) {
@@ -39,17 +40,31 @@ async function addKhataEntry(tQuery, {
         console.warn('⚠️ addKhataEntry: invalid entry skipped -', { CustomerID, EntryType, Amount });
         return null;
     }
+
+    let resolvedSourceModule = SourceModule || null;
+    let resolvedSourceID = SourceID ? parseInt(SourceID) : null;
+    if (!resolvedSourceModule) {
+        if (CSCAppID) { resolvedSourceModule = 'CSC'; resolvedSourceID = parseInt(CSCAppID); }
+        else if (BCID) { resolvedSourceModule = 'BC'; resolvedSourceID = parseInt(BCID); }
+        else if (InvoiceID) { resolvedSourceModule = 'Invoice'; resolvedSourceID = parseInt(InvoiceID); }
+        else if (PaymentID) { resolvedSourceModule = 'BillPay'; resolvedSourceID = parseInt(PaymentID); }
+        else if (ReferenceNo && ReferenceNo.startsWith('BP-')) {
+            resolvedSourceModule = 'BillPay';
+            resolvedSourceID = parseInt(ReferenceNo.replace(/[^0-9]/g, '')) || null;
+        }
+    }
+
     const res = await tQuery(`
         INSERT INTO KhataEntries (
             CustomerID, EntryDate, EntryTime, EntryType, Amount,
             CSCAppID, BCID, InvoiceID, PaymentID, AccountID, PaymentMode, Description, ReferenceNo, UserID,
-            GlobalSerialNo, SNCode, ModuleCode
+            GlobalSerialNo, SNCode, ModuleCode, SourceModule, SourceID
         )
         OUTPUT INSERTED.KhataID
         VALUES (
             @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), @type, @amt,
             @cscId, @bcId, @invId, @payId, @accId, @mode, @desc, @ref, @uid,
-            @GlobalSerialNo, @SNCode, @ModuleCode
+            @GlobalSerialNo, @SNCode, @ModuleCode, @sourceModule, @sourceId
         )
     `, {
         custId: parseInt(CustomerID),
@@ -67,7 +82,9 @@ async function addKhataEntry(tQuery, {
         uid: uid || 1,
         GlobalSerialNo: GlobalSerialNo || null,
         SNCode: SNCode || null,
-        ModuleCode: ModuleCode || null
+        ModuleCode: ModuleCode || null,
+        sourceModule: resolvedSourceModule,
+        sourceId: resolvedSourceID
     });
     return res.recordset[0] ? res.recordset[0].KhataID : null;
 }
@@ -221,12 +238,14 @@ async function syncBillPaymentToKhata(tQuery, {
         const gaveRes = await tQuery(`
             INSERT INTO KhataEntries (
                 CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                PaymentID, PaymentMode, Description, ReferenceNo, UserID
+                PaymentID, PaymentMode, Description, ReferenceNo, UserID,
+                SourceModule, SourceID
             )
             OUTPUT INSERTED.KhataID
             VALUES (
                 @custId, @date, @time, 'Gave', @amt,
-                @pid, @mode, @desc, @ref, @userId
+                @pid, @mode, @desc, @ref, @userId,
+                'BillPay', @pid
             )
         `, {
             custId: parseInt(CustomerID),
@@ -264,12 +283,14 @@ async function syncBillPaymentToKhata(tQuery, {
         const gotRes = await tQuery(`
             INSERT INTO KhataEntries (
                 CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                PaymentID, PaymentMode, Description, ReferenceNo, UserID
+                PaymentID, PaymentMode, Description, ReferenceNo, UserID,
+                SourceModule, SourceID
             )
             OUTPUT INSERTED.KhataID
             VALUES (
                 @custId, @date, @time, 'Got', @amt,
-                @pid, @mode, @desc, @ref, @userId
+                @pid, @mode, @desc, @ref, @userId,
+                'BillPay', @pid
             )
         `, {
             custId: parseInt(CustomerID),
@@ -524,11 +545,11 @@ async function autoSettleCustomerDues(tQuery, CustomerID) {
             await tQuery(`
                 INSERT INTO KhataEntries (
                     CustomerID, EntryDate, EntryTime, EntryType, Amount, CSCAppID, PaymentMode, Description, ReferenceNo, UserID,
-                    GlobalSerialNo, SNCode, ModuleCode
+                    GlobalSerialNo, SNCode, ModuleCode, SourceModule, SourceID
                 )
                 VALUES (
                     @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), 'Settlement', @amt, @cscId, 'Advance', @desc, @ref, @userId,
-                    @GlobalSerialNo, @SNCode, @ModuleCode
+                    @GlobalSerialNo, @SNCode, @ModuleCode, 'CSC', @cscId
                 )
             `, {
                 custId: parseInt(CustomerID), date: today, amt: payNow,
@@ -572,11 +593,11 @@ async function autoSettleCustomerDues(tQuery, CustomerID) {
             await tQuery(`
                 INSERT INTO KhataEntries (
                     CustomerID, EntryDate, EntryTime, EntryType, Amount, InvoiceID, PaymentMode, Description, ReferenceNo, UserID,
-                    GlobalSerialNo, SNCode, ModuleCode
+                    GlobalSerialNo, SNCode, ModuleCode, SourceModule, SourceID
                 )
                 VALUES (
                     @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), 'Settlement', @amt, @invId, 'Advance', @desc, @ref, @userId,
-                    @GlobalSerialNo, @SNCode, @ModuleCode
+                    @GlobalSerialNo, @SNCode, @ModuleCode, 'Invoice', @invId
                 )
             `, {
                 custId: parseInt(CustomerID), date: today, amt: payNow,

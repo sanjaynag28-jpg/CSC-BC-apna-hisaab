@@ -272,7 +272,7 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
                     UploadedBy, Description, IsArchived, CreatedAt, UpdatedAt, EntityType, EntityID
                 ) VALUES (
                     @userId, NULL, @fileName, @originalName, @fileType, @fileSize, @filePath,
-                    'shop', @description, 0, GETDATE(), GETDATE(), 'BillPayment', NULL
+                    'shop', @description, 0, GETDATE(), GETDATE(), 'BillPay', NULL
                 );
                 SELECT SCOPE_IDENTITY() AS DocumentID;
             `, {
@@ -684,7 +684,7 @@ router.post('/', async (req, res) => {
             try {
                 await query(`
                     UPDATE Documents 
-                    SET EntityType = 'BillPayment',
+                    SET EntityType = 'BillPay',
                         EntityID = @paymentId,
                         CustomerID = @customerId,
                         Description = @desc,

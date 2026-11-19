@@ -39,12 +39,8 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
 
     const q = (typeof executor === 'function') ? executor : query;
 
-    const modConfig = MODULE_TABLES[sourceModule];
-    if (!modConfig) {
-        throw new Error(`Unknown source module: ${sourceModule}`);
-    }
-
-    const prefix = MODULE_PREFIXES[sourceModule] || sourceModule;
+    const modConfig = MODULE_TABLES[sourceModule] || null;
+    const prefix = MODULE_PREFIXES[sourceModule] || sourceModule.substring(0, 4).toUpperCase();
     const cleanDate = transDate ? new Date(transDate) : new Date();
     // Use local string format if createdAt explicitly provided, else use SQL Server GETDATE()
     const cleanCreated = createdAt ? moment(createdAt).format('YYYY-MM-DD HH:mm:ss') : null;
@@ -90,17 +86,23 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
         const inserted = insertRes.recordset[0];
         const { GlobalSerialNo, SNCode, ModuleCode } = inserted;
 
-        // Update source table
-        await tQ(`
-            UPDATE ${modConfig.table} 
-            SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ModuleCode = @ModuleCode
-            WHERE ${modConfig.pk} = @recordId
-        `, {
-            GlobalSerialNo,
-            SNCode,
-            ModuleCode,
-            recordId
-        });
+        // Update source table (if dedicated table configured)
+        if (modConfig && modConfig.table && modConfig.pk) {
+            try {
+                await tQ(`
+                    UPDATE ${modConfig.table} 
+                    SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ModuleCode = @ModuleCode
+                    WHERE ${modConfig.pk} = @recordId
+                `, {
+                    GlobalSerialNo,
+                    SNCode,
+                    ModuleCode,
+                    recordId
+                });
+            } catch (updErr) {
+                console.warn(`Registry update source table warning for ${sourceModule} #${recordId}:`, updErr.message);
+            }
+        }
 
         return {
             globalSerialNo: GlobalSerialNo,
@@ -228,11 +230,28 @@ async function updateGlobalTransaction({ sourceModule, recordId, entityName, amo
     }
 }
 
+/**
+ * Dynamically register a new module or service so UniversalTxnRegistry can track it.
+ * @param {string} sourceModule - Module name (e.g. 'Insurance', 'FASTag')
+ * @param {Object} [config]
+ * @param {string} [config.prefix] - Short code (e.g. 'INS', 'FTG')
+ * @param {string} [config.table] - Table name (e.g. 'InsurancePolicies')
+ * @param {string} [config.pk] - Primary key column (e.g. 'PolicyID')
+ */
+function registerModuleConfig(sourceModule, config = {}) {
+    if (!sourceModule || typeof sourceModule !== 'string') return;
+    if (config.prefix) MODULE_PREFIXES[sourceModule] = config.prefix;
+    if (config.table && config.pk) {
+        MODULE_TABLES[sourceModule] = { table: config.table, pk: config.pk };
+    }
+}
+
 module.exports = {
     registerGlobalTransaction,
     updateGlobalTransaction,
     lookupBySN,
     deactivateGlobalTransaction,
+    registerModuleConfig,
     MODULE_PREFIXES,
     MODULE_TABLES
 };

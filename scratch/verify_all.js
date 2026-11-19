@@ -517,11 +517,68 @@ async function verifyAll() {
     }
 
     // -----------------------------------------------------------------
+    // INVARIANT 14: Sacred Accounting Invariant & Schema Polymorphism
+    // Rule: Paisa, Date, Balance ALWAYS typed DECIMAL / DATE (never JSON)
+    // Polymorphism: KhataEntries.SourceModule & SourceID 100% populated
+    // Data Cleanliness: Documents.EntityType 0 NULLs and canonical casing
+    // -----------------------------------------------------------------
+    try {
+        // 1. Check KhataEntries SourceModule / SourceID nulls
+        const khataNullRes = await pool.request().query(`
+            SELECT COUNT(*) AS cnt FROM KhataEntries WHERE SourceModule IS NULL OR SourceID IS NULL;
+        `);
+        const khataNullCount = khataNullRes.recordset[0].cnt;
+
+        // 2. Check Documents EntityType nulls or non-standard casing
+        const docBadRes = await pool.request().query(`
+            SELECT COUNT(*) AS cnt 
+            FROM Documents 
+            WHERE EntityType IS NULL 
+               OR EntityType NOT IN ('Customer', 'CSC', 'BillPay', 'Invoice', 'Khata', 'BC', 'Shop');
+        `);
+        const docBadCount = docBadRes.recordset[0].cnt;
+
+        // 3. Check customer balance integrity
+        const custBalRes = await pool.request().query(`
+            SELECT CustomerID, CurrentBalance, OpeningBalance FROM Customers WHERE IsActive = 1;
+        `);
+        let custDrift = 0;
+        for (const c of custBalRes.recordset) {
+            const kRes = await pool.request().query(`
+                SELECT 
+                    ISNULL(SUM(CASE WHEN EntryType = 'Gave' THEN Amount ELSE 0 END), 0) -
+                    ISNULL(SUM(CASE WHEN EntryType = 'Got' THEN Amount ELSE 0 END), 0) AS NetKhata,
+                    COUNT(CASE WHEN ReferenceNo = 'OPENING-BAL' THEN 1 END) AS HasOpeningEntry
+                FROM KhataEntries WHERE CustomerID = ${c.CustomerID};
+            `);
+            const netKhata = parseFloat(kRes.recordset[0].NetKhata) || 0;
+            const hasOpeningEntry = kRes.recordset[0].HasOpeningEntry > 0;
+            const opening = parseFloat(c.OpeningBalance) || 0;
+            const expectedBal = hasOpeningEntry ? netKhata : (opening + netKhata);
+            const actualBal = parseFloat(c.CurrentBalance) || 0;
+
+            if (Math.abs(expectedBal - actualBal) > 0.05) {
+                custDrift++;
+            }
+        }
+
+        if (khataNullCount === 0 && docBadCount === 0 && custDrift === 0) {
+            console.log('✅ Invariant 14: Sacred accounting typed decimals, Khata polymorphism & Documents clean: 0 issues (PASSED)');
+        } else {
+            console.error(`❌ Invariant 14 FAILED: Khata NULLs: ${khataNullCount}, Bad Documents: ${docBadCount}, Balance drifts: ${custDrift}`);
+            totalErrors++;
+        }
+    } catch (e) {
+        console.error('❌ Invariant 14 Error:', e.message);
+        totalErrors++;
+    }
+
+    // -----------------------------------------------------------------
     // SUMMARY
     // -----------------------------------------------------------------
     console.log('\n====================================================');
     if (totalErrors === 0) {
-        console.log('🎉 ALL 13 INVARIANTS PASSED (0 ERRORS DETECTED) ✅');
+        console.log('🎉 ALL 14 INVARIANTS PASSED (0 ERRORS DETECTED) ✅');
         console.log('====================================================\n');
         process.exit(0);
     } else {

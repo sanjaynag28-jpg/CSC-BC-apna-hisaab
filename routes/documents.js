@@ -121,6 +121,25 @@ async function ensureDocumentsTable() {
 }
 ensureDocumentsTable();
 
+// Helper to standardize EntityType casing and values across all uploads and modules
+function normalizeEntityType(rawType, customerId = null) {
+    if (!rawType) return customerId ? 'Customer' : 'Shop';
+    const lower = String(rawType).trim().toLowerCase();
+    switch (lower) {
+        case 'customer': return 'Customer';
+        case 'csc': return 'CSC';
+        case 'billpay':
+        case 'billpayment': return 'BillPay';
+        case 'invoice':
+        case 'invoices': return 'Invoice';
+        case 'khata': return 'Khata';
+        case 'transaction':
+        case 'bc': return 'BC';
+        case 'shop': return 'Shop';
+        default: return String(rawType).trim();
+    }
+}
+
 // ===========================================================================
 // POST /api/documents/upload — file upload (single/multiple, entity/customer linked)
 // ===========================================================================
@@ -132,24 +151,27 @@ router.post('/upload', upload.array('files', 15), async (req, res) => {
         }
 
         let customerId = req.body.CustomerID ? parseInt(req.body.CustomerID) : null;
-        let entityType = (req.body.EntityType || req.body.entityType || '').trim().toLowerCase() || (customerId ? 'customer' : 'shop');
-        let entityId = (req.body.EntityID || req.body.entityId) ? parseInt(req.body.EntityID || req.body.entityId) : (entityType === 'customer' ? customerId : null);
+        let entityType = normalizeEntityType(req.body.EntityType || req.body.entityType, customerId);
+        let entityId = (req.body.EntityID || req.body.entityId) ? parseInt(req.body.EntityID || req.body.entityId) : (entityType === 'Customer' ? customerId : null);
         const uploadedBy = (req.body.UploadedBy || 'shop').trim().substring(0, 50);
         const description = (req.body.Description || '').trim().substring(0, 500) || null;
 
         // Auto-resolve CustomerID from Entity if not directly provided
         if (!customerId && entityId) {
             try {
-                if (entityType === 'csc') {
+                if (entityType === 'CSC') {
                     const cscR = await query('SELECT CustomerID FROM CSCApplications WHERE AppID = @id AND UserID = @userId', { id: entityId, userId });
                     if (cscR.recordset.length && cscR.recordset[0].CustomerID) customerId = cscR.recordset[0].CustomerID;
-                } else if (entityType === 'invoice') {
+                } else if (entityType === 'Invoice') {
                     const invR = await query('SELECT CustomerID FROM Invoices WHERE InvoiceID = @id AND UserID = @userId', { id: entityId, userId });
                     if (invR.recordset.length && invR.recordset[0].CustomerID) customerId = invR.recordset[0].CustomerID;
-                } else if (entityType === 'khata') {
+                } else if (entityType === 'Khata') {
                     const khR = await query('SELECT CustomerID FROM KhataEntries WHERE KhataID = @id AND UserID = @userId', { id: entityId, userId });
                     if (khR.recordset.length && khR.recordset[0].CustomerID) customerId = khR.recordset[0].CustomerID;
-                } else if (entityType === 'transaction') {
+                } else if (entityType === 'BillPay') {
+                    const bpR = await query('SELECT CustomerID FROM BillPayments WHERE PaymentID = @id AND UserID = @userId', { id: entityId, userId });
+                    if (bpR.recordset.length && bpR.recordset[0].CustomerID) customerId = bpR.recordset[0].CustomerID;
+                } else if (entityType === 'BC') {
                     const txR = await query('SELECT CustomerID, PartyID FROM Transactions WHERE TransactionID = @id AND UserID = @userId', { id: entityId, userId });
                     if (txR.recordset.length) customerId = txR.recordset[0].CustomerID || txR.recordset[0].PartyID || null;
                 }
@@ -258,14 +280,15 @@ router.post('/upload', upload.array('files', 15), async (req, res) => {
 router.get('/by-entity/:entityType/:entityId', async (req, res) => {
     try {
         const userId = req.user?.UserID || 1;
-        const entityType = req.params.entityType.trim().toLowerCase();
+        const rawType = req.params.entityType;
+        const entityType = normalizeEntityType(rawType);
         const entityId = parseInt(req.params.entityId);
 
-        let whereClause = `d.EntityType = @entityType AND d.EntityID = @entityId AND d.IsArchived = 0 AND d.UserID = @userId`;
+        let whereClause = `(d.EntityType = @entityType OR (d.EntityType = 'BillPayment' AND @entityType = 'BillPay') OR (d.EntityType = 'csc' AND @entityType = 'CSC') OR (d.EntityType = 'customer' AND @entityType = 'Customer')) AND d.EntityID = @entityId AND d.IsArchived = 0 AND d.UserID = @userId`;
         const params = { entityType, entityId, userId };
 
-        if (entityType === 'customer') {
-            whereClause = `((d.EntityType = 'customer' AND d.EntityID = @entityId) OR (d.CustomerID = @entityId AND (d.EntityType IS NULL OR d.EntityType = 'customer'))) AND d.IsArchived = 0 AND d.UserID = @userId`;
+        if (entityType === 'Customer') {
+            whereClause = `((d.EntityType IN ('Customer', 'customer') AND d.EntityID = @entityId) OR (d.CustomerID = @entityId AND (d.EntityType IS NULL OR d.EntityType IN ('Customer', 'customer')))) AND d.IsArchived = 0 AND d.UserID = @userId`;
         }
 
         const result = await query(`
@@ -328,10 +351,11 @@ router.get('/customer/:customerId', async (req, res) => {
                     ELSE 'other'
                    END AS Category,
                    CASE
-                    WHEN d.EntityType = 'csc' THEN 'CSC Aavedan #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType = 'invoice' THEN 'Bill / Invoice #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType = 'khata' THEN 'Khata Parchi #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType = 'transaction' THEN 'BC Banking Txn #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN d.EntityType IN ('CSC', 'csc') THEN 'CSC Aavedan #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN d.EntityType IN ('Invoice', 'invoice') THEN 'Bill / Invoice #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN d.EntityType IN ('Khata', 'khata') THEN 'Khata Parchi #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN d.EntityType IN ('BC', 'bc', 'transaction') THEN 'BC Banking Txn #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN d.EntityType IN ('BillPay', 'BillPayment', 'billpay') THEN 'Bill Payment #' + CAST(d.EntityID AS NVARCHAR(20))
                     ELSE 'Customer Profile'
                    END AS SourceLabel
             FROM Documents d
@@ -339,11 +363,12 @@ router.get('/customer/:customerId', async (req, res) => {
             WHERE d.IsArchived = 0 AND d.UserID = @userId
               AND (
                   d.CustomerID = @custId
-                  OR (d.EntityType = 'customer' AND d.EntityID = @custId)
-                  OR (d.EntityType = 'csc' AND d.EntityID IN (SELECT csc.AppID FROM CSCApplications csc WHERE csc.CustomerID = @custId AND csc.UserID = @userId))
-                  OR (d.EntityType = 'invoice' AND d.EntityID IN (SELECT inv.InvoiceID FROM Invoices inv WHERE inv.CustomerID = @custId AND inv.UserID = @userId))
-                  OR (d.EntityType = 'khata' AND d.EntityID IN (SELECT ke.KhataID FROM KhataEntries ke WHERE ke.CustomerID = @custId AND ke.UserID = @userId))
-                  OR (d.EntityType IN ('transaction', 'bc') AND (
+                  OR (d.EntityType IN ('Customer', 'customer') AND d.EntityID = @custId)
+                  OR (d.EntityType IN ('CSC', 'csc') AND d.EntityID IN (SELECT csc.AppID FROM CSCApplications csc WHERE csc.CustomerID = @custId AND csc.UserID = @userId))
+                  OR (d.EntityType IN ('Invoice', 'invoice') AND d.EntityID IN (SELECT inv.InvoiceID FROM Invoices inv WHERE inv.CustomerID = @custId AND inv.UserID = @userId))
+                  OR (d.EntityType IN ('Khata', 'khata') AND d.EntityID IN (SELECT ke.KhataID FROM KhataEntries ke WHERE ke.CustomerID = @custId AND ke.UserID = @userId))
+                  OR (d.EntityType IN ('BillPay', 'BillPayment', 'billpay') AND d.EntityID IN (SELECT bp.PaymentID FROM BillPayments bp WHERE bp.CustomerID = @custId AND bp.UserID = @userId))
+                  OR (d.EntityType IN ('transaction', 'bc', 'BC') AND (
                       d.EntityID IN (SELECT tx.TransactionID FROM Transactions tx WHERE tx.PartyID = @custId AND tx.UserID = @userId)
                       OR d.EntityID IN (SELECT bc.BCID FROM BCTransactions bc WHERE bc.CustomerID = @custId AND bc.UserID = @userId)
                   ))

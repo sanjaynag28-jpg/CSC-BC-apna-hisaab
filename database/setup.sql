@@ -450,6 +450,8 @@ BEGIN
         [CSCAppID] INT NULL,
         [BCID] INT NULL,
         [PaymentID] INT NULL,
+        [SourceModule] VARCHAR(30) NULL,
+        [SourceID] INT NULL,
         [UserID] INT NOT NULL DEFAULT ((1)),
         [GlobalSerialNo] INT NULL,
         [SNCode] VARCHAR(30) NULL,
@@ -921,5 +923,12 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Documents_Customer_Ent
 BEGIN
     CREATE NONCLUSTERED INDEX IX_Documents_Customer_Entity ON dbo.Documents (CustomerID, EntityType, EntityID);
 END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_SourceModule_SourceID' AND object_id = OBJECT_ID('KhataEntries'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_KhataEntries_SourceModule_SourceID ON dbo.KhataEntries (SourceModule, SourceID);
+END
+GO
 GO
 
