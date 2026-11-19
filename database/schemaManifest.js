@@ -49,7 +49,7 @@ module.exports = {
         { table: 'TxnModules', name: 'DocPrefix', type: 'VARCHAR(10) NULL' },
         { table: 'TxnModules', name: 'RecordTable', type: 'NVARCHAR(128) NULL' },
         { table: 'TxnModules', name: 'IsLedgerLinked', type: 'BIT NOT NULL DEFAULT(1)' },
-        { table: 'FieldDefinitions', name: 'ModuleCode', type: 'VARCHAR(20) NULL' },
+        { table: 'FieldDefinitions', name: 'ModuleCode', type: 'VARCHAR(30) NULL' },
         { table: 'ServiceRecords', name: 'CustomerName', type: 'NVARCHAR(150) NULL' },
         { table: 'ServiceRecords', name: 'CustomerPhone', type: 'NVARCHAR(20) NULL' },
         { table: 'ServiceRecords', name: 'ReferenceNo', type: 'NVARCHAR(100) NULL' },

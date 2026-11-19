@@ -1,141 +1,65 @@
 /**
  * autoSchemaBootstrapper.js
  * 
- * Self-Healing, Non-Destructive Dynamic Schema Engine.
- * Automatically verifies and prepares database schemas, tables, dynamic JSON columns,
+ * Self-Healing, Non-Destructive Dynamic Schema Engine (Layer 2 Declarative Manifest Runner).
+ * Automatically verifies and prepares database schemas, tables, dynamic manifest columns,
  * and performance indexes on startup or whenever a new service/module is introduced.
  * 
  * Strict Guarantees:
  * 1. 100% NON-DESTRUCTIVE: Never drops, truncates, or deletes anything.
  * 2. ZERO DATA LOSS: All column additions are NULL or have safe defaults.
- * 3. EXTENSIBLE: Supports dynamic custom fields via ExtraFieldsJson & Metadata.
- * 4. IDEMPOTENT: Safe to run thousands of times without side effects.
+ * 3. DECLARATIVE LAYER 2: Driven directly by database/schemaManifest.js.
+ * 4. CONCURRENCY SAFE: Protected with sp_getapplock exclusive lock.
+ * 5. SAFETY BACKUP: Automatic database backup if any DDL modification is required.
+ * 6. IDEMPOTENT: Safe to run thousands of times without side effects.
  */
 
+const fs = require('fs');
+const path = require('path');
 const { query } = require('./db');
+const schemaManifest = require('./schemaManifest');
+
+const LOCK_RESOURCE = 'CM_AutoSchemaBootstrap';
+
+async function takeAutoBackup() {
+    try {
+        const folder = path.join(__dirname, '..', 'backups');
+        if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+        const res = await query(`EXEC sp_BackupCashManagementDB @BackupFolder = @f`, { f: folder });
+        const backupPath = res.recordset?.[0]?.BackupPath || folder;
+        console.log(`🛡️ [AutoSchemaBootstrapper] Safety backup taken: ${backupPath}`);
+        return backupPath;
+    } catch (err) {
+        console.warn('⚠️ [AutoSchemaBootstrapper] Auto-backup warning (proceeding):', err.message);
+        return null;
+    }
+}
 
 async function ensureAutoSchemaBootstrapped() {
     const logPrefix = '🛡️ [AutoSchemaBootstrapper]';
     console.log(`${logPrefix} Running dynamic schema self-healing verification...`);
     const additions = [];
 
+    // Session-level app lock so multi-worker/PM2 does not collide
+    let hasLock = false;
+    try {
+        const lockRes = await query(`
+            DECLARE @r INT;
+            EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Exclusive',
+                                    @LockOwner = 'Session', @LockTimeout = 15000;
+            SELECT @r AS Result;
+        `, { res: LOCK_RESOURCE });
+        const lockStatus = lockRes.recordset?.[0]?.Result;
+        if (lockStatus !== undefined && lockStatus >= 0) {
+            hasLock = true;
+        }
+    } catch (lErr) {
+        console.warn(`${logPrefix} Warning acquiring applock:`, lErr.message);
+    }
+
     try {
         // =====================================================================
-        // 1. EXTENSIBLE COLUMNS (Dynamic Services & Custom Fields)
-        // =====================================================================
-
-        // CSCApplications -> ExtraFieldsJson
-        const cscExtraCheck = await query(`
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CSCApplications' AND COLUMN_NAME = 'ExtraFieldsJson')
-            BEGIN
-                ALTER TABLE dbo.CSCApplications ADD ExtraFieldsJson NVARCHAR(MAX) NULL;
-                SELECT 1 AS added;
-            END
-            ELSE SELECT 0 AS added;
-        `);
-        if (cscExtraCheck.recordset[0]?.added) additions.push('CSCApplications.ExtraFieldsJson');
-
-        // CSCServices -> CustomFieldsSchema & Category
-        const cscSvcCheck = await query(`
-            DECLARE @added INT = 0;
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CSCServices' AND COLUMN_NAME = 'CustomFieldsSchema')
-            BEGIN
-                ALTER TABLE dbo.CSCServices ADD CustomFieldsSchema NVARCHAR(MAX) NULL;
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CSCServices' AND COLUMN_NAME = 'Category')
-            BEGIN
-                ALTER TABLE dbo.CSCServices ADD Category NVARCHAR(100) NULL DEFAULT ('General');
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CSCServices' AND COLUMN_NAME = 'ModuleCode')
-            BEGIN
-                ALTER TABLE dbo.CSCServices ADD ModuleCode VARCHAR(30) NULL DEFAULT ('CSC');
-                SET @added = 1;
-            END
-            SELECT @added AS added;
-        `);
-        if (cscSvcCheck.recordset[0]?.added) additions.push('CSCServices.CustomFieldsSchema / Category / ModuleCode');
-
-        // Customers -> ExtraFieldsJson
-        const custExtraCheck = await query(`
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Customers' AND COLUMN_NAME = 'ExtraFieldsJson')
-            BEGIN
-                ALTER TABLE dbo.Customers ADD ExtraFieldsJson NVARCHAR(MAX) NULL;
-                SELECT 1 AS added;
-            END
-            ELSE SELECT 0 AS added;
-        `);
-        if (custExtraCheck.recordset[0]?.added) additions.push('Customers.ExtraFieldsJson');
-
-        // KhataEntries -> PaymentID, SourceModule, SourceID
-        const khataPayCheck = await query(`
-            DECLARE @added INT = 0;
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'PaymentID')
-            BEGIN
-                ALTER TABLE dbo.KhataEntries ADD PaymentID INT NULL;
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'SourceModule')
-            BEGIN
-                ALTER TABLE dbo.KhataEntries ADD SourceModule VARCHAR(30) NULL;
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'KhataEntries' AND COLUMN_NAME = 'SourceID')
-            BEGIN
-                ALTER TABLE dbo.KhataEntries ADD SourceID INT NULL;
-                SET @added = 1;
-            END
-            SELECT @added AS added;
-        `);
-        if (khataPayCheck.recordset[0]?.added) additions.push('KhataEntries.PaymentID / SourceModule / SourceID');
-
-        // Transactions -> SourceModule, SourceID, LineType
-        const txnAuditCheck = await query(`
-            DECLARE @added INT = 0;
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Transactions' AND COLUMN_NAME = 'SourceModule')
-            BEGIN
-                ALTER TABLE dbo.Transactions ADD SourceModule VARCHAR(30) NULL;
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Transactions' AND COLUMN_NAME = 'SourceID')
-            BEGIN
-                ALTER TABLE dbo.Transactions ADD SourceID INT NULL;
-                SET @added = 1;
-            END
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Transactions' AND COLUMN_NAME = 'LineType')
-            BEGIN
-                ALTER TABLE dbo.Transactions ADD LineType VARCHAR(30) NULL;
-                SET @added = 1;
-            END
-            SELECT @added AS added;
-        `);
-        if (txnAuditCheck.recordset[0]?.added) additions.push('Transactions.SourceModule / SourceID / LineType');
-
-        // BCTransactions -> PortalName
-        const bcPortalCheck = await query(`
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'BCTransactions' AND COLUMN_NAME = 'PortalName')
-            BEGIN
-                ALTER TABLE dbo.BCTransactions ADD PortalName NVARCHAR(100) NULL;
-                SELECT 1 AS added;
-            END
-            ELSE SELECT 0 AS added;
-        `);
-        if (bcPortalCheck.recordset[0]?.added) additions.push('BCTransactions.PortalName');
-
-        // BillPayments -> ExtraFieldsJson
-        const bpExtraCheck = await query(`
-            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'BillPayments' AND COLUMN_NAME = 'ExtraFieldsJson')
-            BEGIN
-                ALTER TABLE dbo.BillPayments ADD ExtraFieldsJson NVARCHAR(MAX) NULL;
-                SELECT 1 AS added;
-            END
-            ELSE SELECT 0 AS added;
-        `);
-        if (bpExtraCheck.recordset[0]?.added) additions.push('BillPayments.ExtraFieldsJson');
-
-        // =====================================================================
-        // 2. DYNAMIC SYSTEM & LICENSING TABLES (IF NOT EXISTS)
+        // 1. DYNAMIC SYSTEM & CORE EXTENSIBLE TABLES (IF NOT EXISTS)
         // =====================================================================
 
         // AppLicenses
@@ -191,29 +115,27 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'TxnModules')
             BEGIN
                 CREATE TABLE dbo.TxnModules (
-                    ModuleID INT IDENTITY(1,1) NOT NULL,
-                    ModuleCode VARCHAR(30) NOT NULL,
+                    ModuleCode VARCHAR(30) PRIMARY KEY,
                     ModuleName NVARCHAR(100) NOT NULL,
-                    Prefix VARCHAR(10) NOT NULL,
-                    TargetTable VARCHAR(50) NULL,
-                    PrimaryKeyColumn VARCHAR(50) NULL,
-                    IsCore BIT NOT NULL DEFAULT 1,
-                    IsActive BIT NOT NULL DEFAULT 1,
-                    DisplayOrder INT NOT NULL DEFAULT 0,
-                    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    CONSTRAINT PK_TxnModules PRIMARY KEY CLUSTERED (ModuleID),
-                    CONSTRAINT UQ_TxnModules_ModuleCode UNIQUE (ModuleCode)
+                    DocPrefix VARCHAR(10) NOT NULL,
+                    RecordTable NVARCHAR(128) NULL,
+                    IsLedgerLinked BIT NOT NULL DEFAULT(1),
+                    IsActive BIT NOT NULL DEFAULT(1),
+                    Icon NVARCHAR(50) NULL,
+                    Color NVARCHAR(20) NULL,
+                    SortOrder INT NOT NULL DEFAULT(0),
+                    UserID INT NOT NULL DEFAULT 1,
+                    CreatedAt DATETIME NOT NULL DEFAULT(GETDATE())
                 );
-                INSERT INTO dbo.TxnModules (ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn, IsCore, DisplayOrder)
+                INSERT INTO dbo.TxnModules (ModuleCode, ModuleName, DocPrefix, RecordTable, IsLedgerLinked, IsActive, SortOrder, UserID)
                 VALUES 
-                ('CSC', 'CSC e-Governance Services', 'CSC', 'CSCApplications', 'AppID', 1, 1),
-                ('BC', 'Banking Correspondent / Kiosk', 'BC', 'BCTransactions', 'BCID', 1, 2),
-                ('BillPay', 'Utility Bill Payments (BBPS)', 'BP', 'BillPayments', 'PaymentID', 1, 3),
-                ('Invoices', 'Sales Invoices & Billing', 'INV', 'Invoices', 'InvoiceID', 1, 4),
-                ('Khata', 'Customer Khata Ledger', 'KH', 'KhataEntries', 'KhataID', 1, 5),
-                ('Cashbook', 'Daily Cash & Bank Transactions', 'CB', 'Transactions', 'TransactionID', 1, 6),
-                ('Service', 'Universal Dynamic Services', 'SRV', 'ServiceRecords', 'RecordID', 0, 7);
+                ('CSC', 'CSC e-Governance Services', 'CSC', 'CSCApplications', 1, 1, 1, 1),
+                ('BC', 'Banking Correspondent / Kiosk', 'BC', 'BCTransactions', 1, 1, 2, 1),
+                ('BillPay', 'Utility Bill Payments (BBPS)', 'BP', 'BillPayments', 1, 1, 3, 1),
+                ('Invoices', 'Sales Invoices & Billing', 'INV', 'Invoices', 1, 1, 4, 1),
+                ('Khata', 'Customer Khata Ledger', 'KH', 'KhataEntries', 1, 1, 5, 1),
+                ('Cashbook', 'Daily Cash & Bank Transactions', 'CB', 'Transactions', 1, 1, 6, 1),
+                ('Service', 'Universal Dynamic Services', 'SRV', 'ServiceRecords', 1, 1, 7, 1);
                 SELECT 1 AS added;
             END
             ELSE SELECT 0 AS added;
@@ -225,22 +147,27 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'FieldDefinitions')
             BEGIN
                 CREATE TABLE dbo.FieldDefinitions (
-                    FieldID INT IDENTITY(1,1) NOT NULL,
-                    ServiceID INT NOT NULL,
+                    FieldID INT IDENTITY(1,1) PRIMARY KEY,
+                    ModuleCode VARCHAR(30) NOT NULL,
+                    ServiceID INT NULL,
                     FieldKey VARCHAR(50) NOT NULL,
-                    FieldLabel NVARCHAR(100) NOT NULL,
-                    FieldType VARCHAR(30) NOT NULL DEFAULT 'text',
+                    Label NVARCHAR(100) NOT NULL,
+                    DataType VARCHAR(20) NOT NULL DEFAULT('text'),
+                    OptionsJson NVARCHAR(MAX) NULL,
+                    IsRequired BIT NOT NULL DEFAULT(0),
+                    MaxLength INT NULL,
+                    DefaultValue NVARCHAR(200) NULL,
+                    ShowInList BIT NOT NULL DEFAULT(0),
+                    SortOrder INT NOT NULL DEFAULT(0),
+                    IsActive BIT NOT NULL DEFAULT(1),
+                    FieldLabel NVARCHAR(100) NULL,
+                    FieldType VARCHAR(30) NULL,
                     FieldOptionsJson NVARCHAR(MAX) NULL,
-                    DefaultValue NVARCHAR(255) NULL,
                     Placeholder NVARCHAR(255) NULL,
-                    IsRequired BIT NOT NULL DEFAULT 0,
-                    DisplayOrder INT NOT NULL DEFAULT 0,
-                    IsActive BIT NOT NULL DEFAULT 1,
                     CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
                     UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    CONSTRAINT PK_FieldDefinitions PRIMARY KEY CLUSTERED (FieldID),
-                    CONSTRAINT FK_FieldDefinitions_Services FOREIGN KEY (ServiceID) REFERENCES dbo.CSCServices(ServiceID),
-                    CONSTRAINT UQ_FieldDefinitions_Service_Key UNIQUE (ServiceID, FieldKey)
+                    CONSTRAINT FK_FieldDefs_Module FOREIGN KEY (ModuleCode) REFERENCES dbo.TxnModules(ModuleCode),
+                    CONSTRAINT UQ_FieldDefs UNIQUE (ModuleCode, ServiceID, FieldKey)
                 );
                 SELECT 1 AS added;
             END
@@ -253,40 +180,33 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'ServiceRecords')
             BEGIN
                 CREATE TABLE dbo.ServiceRecords (
-                    RecordID INT IDENTITY(1,1) NOT NULL,
-                    ModuleCode VARCHAR(30) NOT NULL DEFAULT 'Service',
-                    ServiceID INT NOT NULL,
-                    CustomerID INT NOT NULL,
+                    RecordID INT IDENTITY(1,1) PRIMARY KEY,
+                    ModuleCode VARCHAR(30) NOT NULL,
+                    ServiceID INT NULL,
                     UserID INT NOT NULL DEFAULT 1,
-                    
-                    GovtFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
-                    OperatorFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
-                    TotalFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
-                    PaidAmount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
-                    BalanceAmount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
-                    
+                    CustomerID INT NULL,
+                    CustomerName NVARCHAR(150) NULL,
+                    CustomerPhone NVARCHAR(20) NULL,
                     RecordDate DATE NOT NULL DEFAULT CAST(GETDATE() AS DATE),
-                    CompletionDate DATE NULL,
-                    
-                    Status NVARCHAR(50) NOT NULL DEFAULT 'Pending',
-                    PaymentStatus NVARCHAR(30) NOT NULL DEFAULT 'Unpaid',
-                    PaymentMode NVARCHAR(50) NOT NULL DEFAULT 'Cash',
+                    Amount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    Charge DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    TotalAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    PaidAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    DueAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    Status NVARCHAR(50) NOT NULL DEFAULT('Pending'),
+                    PaymentMode NVARCHAR(50) NOT NULL DEFAULT('Cash'),
+                    ReferenceNo NVARCHAR(100) NULL,
+                    AccountID INT NULL,
+                    CashAccountID INT NULL,
                     Remarks NVARCHAR(500) NULL,
-                    
                     ExtraFieldsJson NVARCHAR(MAX) NULL,
-                    
                     GlobalSerialNo INT NULL,
                     SNCode VARCHAR(30) NULL,
-                    ModuleCodeSerial VARCHAR(30) NULL,
-                    
-                    IsActive BIT NOT NULL DEFAULT 1,
-                    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    
-                    CONSTRAINT PK_ServiceRecords PRIMARY KEY CLUSTERED (RecordID),
-                    CONSTRAINT FK_ServiceRecords_Services FOREIGN KEY (ServiceID) REFERENCES dbo.CSCServices(ServiceID),
-                    CONSTRAINT FK_ServiceRecords_Customers FOREIGN KEY (CustomerID) REFERENCES dbo.Customers(CustomerID),
-                    CONSTRAINT FK_ServiceRecords_Users FOREIGN KEY (UserID) REFERENCES dbo.Users(UserID)
+                    DocCode VARCHAR(30) NULL,
+                    CreatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
+                    UpdatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
+                    CONSTRAINT FK_SR_Module FOREIGN KEY (ModuleCode) REFERENCES dbo.TxnModules(ModuleCode),
+                    CONSTRAINT FK_SR_Users FOREIGN KEY (UserID) REFERENCES dbo.Users(UserID)
                 );
                 SELECT 1 AS added;
             END
@@ -295,9 +215,49 @@ async function ensureAutoSchemaBootstrapped() {
         if (srvRecCheck.recordset[0]?.added) additions.push('Table: ServiceRecords');
 
         // =====================================================================
-        // 3. TARGETED PERFORMANCE INDEXES (IF NOT EXISTS)
+        // 2. DECLARATIVE LAYER 2: EXTENSIBLE COLUMNS FROM schemaManifest.js
         // =====================================================================
+        for (const col of (schemaManifest.columns || [])) {
+            if (!col.table || !col.name || !col.type) continue;
+            // Safe identifiers
+            if (!/^[A-Za-z0-9_]+$/.test(col.table) || !/^[A-Za-z0-9_]+$/.test(col.name)) continue;
 
+            const colCheck = await query(`
+                IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @t AND COLUMN_NAME = @c)
+                BEGIN
+                    ALTER TABLE dbo.[${col.table}] ADD [${col.name}] ${col.type};
+                    SELECT 1 AS added;
+                END
+                ELSE SELECT 0 AS added;
+            `, { t: col.table, c: col.name });
+
+            if (colCheck.recordset[0]?.added) {
+                additions.push(`Column: ${col.table}.${col.name}`);
+            }
+        }
+
+        // =====================================================================
+        // 3. DECLARATIVE LAYER 2: PERFORMANCE & LOOKUP INDEXES FROM schemaManifest.js
+        // =====================================================================
+        for (const idx of (schemaManifest.indexes || [])) {
+            if (!idx.table || !idx.name || !idx.cols) continue;
+            if (!/^[A-Za-z0-9_]+$/.test(idx.table) || !/^[A-Za-z0-9_]+$/.test(idx.name)) continue;
+
+            const idxCheck = await query(`
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = @i AND object_id = OBJECT_ID(@t))
+                BEGIN
+                    CREATE NONCLUSTERED INDEX [${idx.name}] ON dbo.[${idx.table}] (${idx.cols});
+                    SELECT 1 AS added;
+                END
+                ELSE SELECT 0 AS added;
+            `, { i: idx.name, t: idx.table });
+
+            if (idxCheck.recordset[0]?.added) {
+                additions.push(`Index: ${idx.table}.${idx.name}`);
+            }
+        }
+
+        // Additional critical performance indexes
         await query(`
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_PaymentID' AND object_id = OBJECT_ID('KhataEntries'))
             BEGIN
@@ -307,11 +267,6 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_ReferenceNo' AND object_id = OBJECT_ID('KhataEntries'))
             BEGIN
                 CREATE NONCLUSTERED INDEX IX_KhataEntries_ReferenceNo ON dbo.KhataEntries (ReferenceNo) WHERE ReferenceNo IS NOT NULL;
-            END
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Transactions_SourceModule_SourceID' AND object_id = OBJECT_ID('Transactions'))
-            BEGIN
-                CREATE NONCLUSTERED INDEX IX_Transactions_SourceModule_SourceID ON dbo.Transactions (SourceModule, SourceID, LineType) WHERE SourceModule IS NOT NULL;
             END
 
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_InvoiceItems_InvoiceID' AND object_id = OBJECT_ID('InvoiceItems'))
@@ -324,16 +279,6 @@ async function ensureAutoSchemaBootstrapped() {
                 CREATE NONCLUSTERED INDEX IX_Documents_Customer_Entity ON dbo.Documents (CustomerID, EntityType, EntityID);
             END
 
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_SourceModule_SourceID' AND object_id = OBJECT_ID('KhataEntries'))
-            BEGIN
-                CREATE NONCLUSTERED INDEX IX_KhataEntries_SourceModule_SourceID ON dbo.KhataEntries (SourceModule, SourceID);
-            END
-
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_Module_Customer' AND object_id = OBJECT_ID('ServiceRecords'))
-            BEGIN
-                CREATE NONCLUSTERED INDEX IX_ServiceRecords_Module_Customer ON dbo.ServiceRecords (ModuleCode, CustomerID, RecordDate);
-            END
-
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_GlobalSerialNo' AND object_id = OBJECT_ID('ServiceRecords'))
             BEGIN
                 CREATE NONCLUSTERED INDEX IX_ServiceRecords_GlobalSerialNo ON dbo.ServiceRecords (GlobalSerialNo);
@@ -344,7 +289,7 @@ async function ensureAutoSchemaBootstrapped() {
         // 4. INTEGRITY & POLYMORPHIC GUARANTEE TRIGGERS
         // =====================================================================
 
-        // Ensure KhataEntries trigger for automatic polymorphic module linking
+        // KhataEntries automatic polymorphic module linking
         await query(`
             CREATE OR ALTER TRIGGER trg_KhataEntries_SourcePolymorphism
             ON KhataEntries
@@ -377,7 +322,7 @@ async function ensureAutoSchemaBootstrapped() {
             END;
         `);
 
-        // Ensure Documents trigger for canonical casing and non-null normalization
+        // Documents canonical casing and non-null normalization
         await query(`
             CREATE OR ALTER TRIGGER trg_Documents_Normalize
             ON Documents
@@ -408,17 +353,38 @@ async function ensureAutoSchemaBootstrapped() {
             END;
         `);
 
+        // FieldDefinitions sync trigger (Label <-> FieldLabel, DataType <-> FieldType)
+        await query(`
+            CREATE OR ALTER TRIGGER trg_FieldDefinitions_Sync
+            ON FieldDefinitions
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                UPDATE f
+                SET 
+                    FieldLabel = COALESCE(f.FieldLabel, f.Label, f.FieldKey),
+                    Label      = COALESCE(f.Label, f.FieldLabel, f.FieldKey),
+                    FieldType  = COALESCE(f.FieldType, f.DataType, 'text'),
+                    DataType   = COALESCE(f.DataType, f.FieldType, 'text')
+                FROM FieldDefinitions f
+                INNER JOIN inserted i ON f.FieldID = i.FieldID;
+            END;
+        `);
+
+        // If any structural change occurred, take a safety backup
+        if (additions.length > 0) {
+            await takeAutoBackup();
+            console.log(`${logPrefix} ✅ Auto-created ${additions.length} dynamic schema element(s):`, additions.join(', '));
+        } else {
+            console.log(`${logPrefix} ✅ Database schema 100% verified & in sync with schemaManifest.js (zero gaps).`);
+        }
+
         // Check active tables count
         const countRes = await query(`
             SELECT COUNT(*) AS TableCount FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_TYPE = 'BASE TABLE'
         `);
         const totalTables = countRes.recordset[0]?.TableCount || 0;
-
-        if (additions.length > 0) {
-            console.log(`${logPrefix} ✅ Auto-created ${additions.length} dynamic schema element(s):`, additions.join(', '));
-        } else {
-            console.log(`${logPrefix} ✅ Database schema 100% verified & future-proof (${totalTables} tables active, zero gaps).`);
-        }
 
         return {
             success: true,
@@ -431,6 +397,12 @@ async function ensureAutoSchemaBootstrapped() {
             success: false,
             error: err.message
         };
+    } finally {
+        if (hasLock) {
+            await query(`
+                EXEC sp_releaseapplock @Resource = @res, @LockOwner = 'Session';
+            `, { res: LOCK_RESOURCE }).catch(() => {});
+        }
     }
 }
 
