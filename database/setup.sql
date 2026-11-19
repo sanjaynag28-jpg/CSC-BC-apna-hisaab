@@ -241,6 +241,26 @@ BEGIN
 END
 GO
 
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TxnModules')
+BEGIN
+    CREATE TABLE [dbo].[TxnModules] (
+        [ModuleID] INT IDENTITY(1,1) NOT NULL,
+        [ModuleCode] VARCHAR(30) NOT NULL,
+        [ModuleName] NVARCHAR(100) NOT NULL,
+        [Prefix] VARCHAR(10) NOT NULL,
+        [TargetTable] VARCHAR(50) NULL,
+        [PrimaryKeyColumn] VARCHAR(50) NULL,
+        [IsCore] BIT NOT NULL DEFAULT ((1)),
+        [IsActive] BIT NOT NULL DEFAULT ((1)),
+        [DisplayOrder] INT NOT NULL DEFAULT ((0)),
+        [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        CONSTRAINT [PK_TxnModules] PRIMARY KEY CLUSTERED ([ModuleID]),
+        CONSTRAINT [UQ_TxnModules_ModuleCode] UNIQUE ([ModuleCode])
+    );
+END
+GO
+
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'CSCServices')
 BEGIN
     CREATE TABLE [dbo].[CSCServices] (
@@ -256,8 +276,66 @@ BEGIN
         [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         [UserID] INT NOT NULL DEFAULT ((1)),
         [Category] NVARCHAR(100) NULL DEFAULT ('General'),
+        [ModuleCode] VARCHAR(30) NULL DEFAULT ('CSC'),
         [CustomFieldsSchema] NVARCHAR(MAX) NULL,
         CONSTRAINT [PK_CSCServices] PRIMARY KEY CLUSTERED ([ServiceID])
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'FieldDefinitions')
+BEGIN
+    CREATE TABLE [dbo].[FieldDefinitions] (
+        [FieldID] INT IDENTITY(1,1) NOT NULL,
+        [ServiceID] INT NOT NULL,
+        [FieldKey] VARCHAR(50) NOT NULL,
+        [FieldLabel] NVARCHAR(100) NOT NULL,
+        [FieldType] VARCHAR(30) NOT NULL DEFAULT ('text'),
+        [FieldOptionsJson] NVARCHAR(MAX) NULL,
+        [DefaultValue] NVARCHAR(255) NULL,
+        [Placeholder] NVARCHAR(255) NULL,
+        [IsRequired] BIT NOT NULL DEFAULT ((0)),
+        [DisplayOrder] INT NOT NULL DEFAULT ((0)),
+        [IsActive] BIT NOT NULL DEFAULT ((1)),
+        [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        CONSTRAINT [PK_FieldDefinitions] PRIMARY KEY CLUSTERED ([FieldID]),
+        CONSTRAINT [FK_FieldDefinitions_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID]),
+        CONSTRAINT [UQ_FieldDefinitions_Service_Key] UNIQUE ([ServiceID], [FieldKey])
+    );
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ServiceRecords')
+BEGIN
+    CREATE TABLE [dbo].[ServiceRecords] (
+        [RecordID] INT IDENTITY(1,1) NOT NULL,
+        [ModuleCode] VARCHAR(30) NOT NULL DEFAULT ('Service'),
+        [ServiceID] INT NOT NULL,
+        [CustomerID] INT NOT NULL,
+        [UserID] INT NOT NULL DEFAULT ((1)),
+        [GovtFee] DECIMAL(18,2) NOT NULL DEFAULT ((0.00)),
+        [OperatorFee] DECIMAL(18,2) NOT NULL DEFAULT ((0.00)),
+        [TotalFee] DECIMAL(18,2) NOT NULL DEFAULT ((0.00)),
+        [PaidAmount] DECIMAL(18,2) NOT NULL DEFAULT ((0.00)),
+        [BalanceAmount] DECIMAL(18,2) NOT NULL DEFAULT ((0.00)),
+        [RecordDate] DATE NOT NULL DEFAULT (CAST(getdate() AS DATE)),
+        [CompletionDate] DATE NULL,
+        [Status] NVARCHAR(50) NOT NULL DEFAULT ('Pending'),
+        [PaymentStatus] NVARCHAR(30) NOT NULL DEFAULT ('Unpaid'),
+        [PaymentMode] NVARCHAR(50) NOT NULL DEFAULT ('Cash'),
+        [Remarks] NVARCHAR(500) NULL,
+        [ExtraFieldsJson] NVARCHAR(MAX) NULL,
+        [GlobalSerialNo] INT NULL,
+        [SNCode] VARCHAR(30) NULL,
+        [ModuleCodeSerial] VARCHAR(30) NULL,
+        [IsActive] BIT NOT NULL DEFAULT ((1)),
+        [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
+        CONSTRAINT [PK_ServiceRecords] PRIMARY KEY CLUSTERED ([RecordID]),
+        CONSTRAINT [FK_ServiceRecords_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID]),
+        CONSTRAINT [FK_ServiceRecords_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [dbo].[Customers]([CustomerID]),
+        CONSTRAINT [FK_ServiceRecords_Users] FOREIGN KEY ([UserID]) REFERENCES [dbo].[Users]([UserID])
     );
 END
 GO
@@ -930,5 +1008,16 @@ BEGIN
     CREATE NONCLUSTERED INDEX IX_KhataEntries_SourceModule_SourceID ON dbo.KhataEntries (SourceModule, SourceID);
 END
 GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_Module_Customer' AND object_id = OBJECT_ID('ServiceRecords'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_ServiceRecords_Module_Customer ON dbo.ServiceRecords (ModuleCode, CustomerID, RecordDate);
+END
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_GlobalSerialNo' AND object_id = OBJECT_ID('ServiceRecords'))
+BEGIN
+    CREATE NONCLUSTERED INDEX IX_ServiceRecords_GlobalSerialNo ON dbo.ServiceRecords (GlobalSerialNo);
+END
 GO
 

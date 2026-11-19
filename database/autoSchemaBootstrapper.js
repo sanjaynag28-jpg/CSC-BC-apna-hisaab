@@ -48,9 +48,14 @@ async function ensureAutoSchemaBootstrapped() {
                 ALTER TABLE dbo.CSCServices ADD Category NVARCHAR(100) NULL DEFAULT ('General');
                 SET @added = 1;
             END
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CSCServices' AND COLUMN_NAME = 'ModuleCode')
+            BEGIN
+                ALTER TABLE dbo.CSCServices ADD ModuleCode VARCHAR(30) NULL DEFAULT ('CSC');
+                SET @added = 1;
+            END
             SELECT @added AS added;
         `);
-        if (cscSvcCheck.recordset[0]?.added) additions.push('CSCServices.CustomFieldsSchema / Category');
+        if (cscSvcCheck.recordset[0]?.added) additions.push('CSCServices.CustomFieldsSchema / Category / ModuleCode');
 
         // Customers -> ExtraFieldsJson
         const custExtraCheck = await query(`
@@ -181,6 +186,114 @@ async function ensureAutoSchemaBootstrapped() {
         `);
         if (idempCheck.recordset[0]?.added) additions.push('Table: ApiIdempotencyRequests');
 
+        // TxnModules (Dynamic Module Catalog)
+        const txnModCheck = await query(`
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'TxnModules')
+            BEGIN
+                CREATE TABLE dbo.TxnModules (
+                    ModuleID INT IDENTITY(1,1) NOT NULL,
+                    ModuleCode VARCHAR(30) NOT NULL,
+                    ModuleName NVARCHAR(100) NOT NULL,
+                    Prefix VARCHAR(10) NOT NULL,
+                    TargetTable VARCHAR(50) NULL,
+                    PrimaryKeyColumn VARCHAR(50) NULL,
+                    IsCore BIT NOT NULL DEFAULT 1,
+                    IsActive BIT NOT NULL DEFAULT 1,
+                    DisplayOrder INT NOT NULL DEFAULT 0,
+                    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    CONSTRAINT PK_TxnModules PRIMARY KEY CLUSTERED (ModuleID),
+                    CONSTRAINT UQ_TxnModules_ModuleCode UNIQUE (ModuleCode)
+                );
+                INSERT INTO dbo.TxnModules (ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn, IsCore, DisplayOrder)
+                VALUES 
+                ('CSC', 'CSC e-Governance Services', 'CSC', 'CSCApplications', 'AppID', 1, 1),
+                ('BC', 'Banking Correspondent / Kiosk', 'BC', 'BCTransactions', 'BCID', 1, 2),
+                ('BillPay', 'Utility Bill Payments (BBPS)', 'BP', 'BillPayments', 'PaymentID', 1, 3),
+                ('Invoices', 'Sales Invoices & Billing', 'INV', 'Invoices', 'InvoiceID', 1, 4),
+                ('Khata', 'Customer Khata Ledger', 'KH', 'KhataEntries', 'KhataID', 1, 5),
+                ('Cashbook', 'Daily Cash & Bank Transactions', 'CB', 'Transactions', 'TransactionID', 1, 6),
+                ('Service', 'Universal Dynamic Services', 'SRV', 'ServiceRecords', 'RecordID', 0, 7);
+                SELECT 1 AS added;
+            END
+            ELSE SELECT 0 AS added;
+        `);
+        if (txnModCheck.recordset[0]?.added) additions.push('Table: TxnModules');
+
+        // FieldDefinitions (Dynamic Form Fields)
+        const fieldDefCheck = await query(`
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'FieldDefinitions')
+            BEGIN
+                CREATE TABLE dbo.FieldDefinitions (
+                    FieldID INT IDENTITY(1,1) NOT NULL,
+                    ServiceID INT NOT NULL,
+                    FieldKey VARCHAR(50) NOT NULL,
+                    FieldLabel NVARCHAR(100) NOT NULL,
+                    FieldType VARCHAR(30) NOT NULL DEFAULT 'text',
+                    FieldOptionsJson NVARCHAR(MAX) NULL,
+                    DefaultValue NVARCHAR(255) NULL,
+                    Placeholder NVARCHAR(255) NULL,
+                    IsRequired BIT NOT NULL DEFAULT 0,
+                    DisplayOrder INT NOT NULL DEFAULT 0,
+                    IsActive BIT NOT NULL DEFAULT 1,
+                    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    CONSTRAINT PK_FieldDefinitions PRIMARY KEY CLUSTERED (FieldID),
+                    CONSTRAINT FK_FieldDefinitions_Services FOREIGN KEY (ServiceID) REFERENCES dbo.CSCServices(ServiceID),
+                    CONSTRAINT UQ_FieldDefinitions_Service_Key UNIQUE (ServiceID, FieldKey)
+                );
+                SELECT 1 AS added;
+            END
+            ELSE SELECT 0 AS added;
+        `);
+        if (fieldDefCheck.recordset[0]?.added) additions.push('Table: FieldDefinitions');
+
+        // ServiceRecords (Universal Polymorphic Service Execution)
+        const srvRecCheck = await query(`
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'ServiceRecords')
+            BEGIN
+                CREATE TABLE dbo.ServiceRecords (
+                    RecordID INT IDENTITY(1,1) NOT NULL,
+                    ModuleCode VARCHAR(30) NOT NULL DEFAULT 'Service',
+                    ServiceID INT NOT NULL,
+                    CustomerID INT NOT NULL,
+                    UserID INT NOT NULL DEFAULT 1,
+                    
+                    GovtFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    OperatorFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    TotalFee DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    PaidAmount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    BalanceAmount DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+                    
+                    RecordDate DATE NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+                    CompletionDate DATE NULL,
+                    
+                    Status NVARCHAR(50) NOT NULL DEFAULT 'Pending',
+                    PaymentStatus NVARCHAR(30) NOT NULL DEFAULT 'Unpaid',
+                    PaymentMode NVARCHAR(50) NOT NULL DEFAULT 'Cash',
+                    Remarks NVARCHAR(500) NULL,
+                    
+                    ExtraFieldsJson NVARCHAR(MAX) NULL,
+                    
+                    GlobalSerialNo INT NULL,
+                    SNCode VARCHAR(30) NULL,
+                    ModuleCodeSerial VARCHAR(30) NULL,
+                    
+                    IsActive BIT NOT NULL DEFAULT 1,
+                    CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
+                    
+                    CONSTRAINT PK_ServiceRecords PRIMARY KEY CLUSTERED (RecordID),
+                    CONSTRAINT FK_ServiceRecords_Services FOREIGN KEY (ServiceID) REFERENCES dbo.CSCServices(ServiceID),
+                    CONSTRAINT FK_ServiceRecords_Customers FOREIGN KEY (CustomerID) REFERENCES dbo.Customers(CustomerID),
+                    CONSTRAINT FK_ServiceRecords_Users FOREIGN KEY (UserID) REFERENCES dbo.Users(UserID)
+                );
+                SELECT 1 AS added;
+            END
+            ELSE SELECT 0 AS added;
+        `);
+        if (srvRecCheck.recordset[0]?.added) additions.push('Table: ServiceRecords');
+
         // =====================================================================
         // 3. TARGETED PERFORMANCE INDEXES (IF NOT EXISTS)
         // =====================================================================
@@ -214,6 +327,16 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_KhataEntries_SourceModule_SourceID' AND object_id = OBJECT_ID('KhataEntries'))
             BEGIN
                 CREATE NONCLUSTERED INDEX IX_KhataEntries_SourceModule_SourceID ON dbo.KhataEntries (SourceModule, SourceID);
+            END
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_Module_Customer' AND object_id = OBJECT_ID('ServiceRecords'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_ServiceRecords_Module_Customer ON dbo.ServiceRecords (ModuleCode, CustomerID, RecordDate);
+            END
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_ServiceRecords_GlobalSerialNo' AND object_id = OBJECT_ID('ServiceRecords'))
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_ServiceRecords_GlobalSerialNo ON dbo.ServiceRecords (GlobalSerialNo);
             END
         `);
 

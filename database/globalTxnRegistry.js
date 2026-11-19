@@ -8,7 +8,8 @@ const MODULE_PREFIXES = {
     Khata: 'KH',
     Invoices: 'INV',
     Bills: 'BIL',
-    BillPay: 'BP'
+    BillPay: 'BP',
+    Service: 'SRV'
 };
 
 const MODULE_TABLES = {
@@ -18,7 +19,8 @@ const MODULE_TABLES = {
     Khata: { table: 'KhataEntries', pk: 'KhataID' },
     Invoices: { table: 'Invoices', pk: 'InvoiceID' },
     Bills: { table: 'Bills', pk: 'BillID' },
-    BillPay: { table: 'BillPayments', pk: 'PaymentID' }
+    BillPay: { table: 'BillPayments', pk: 'PaymentID' },
+    Service: { table: 'ServiceRecords', pk: 'RecordID' }
 };
 
 /**
