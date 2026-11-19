@@ -42,13 +42,13 @@ async function addKhataEntry(tQuery, {
     const res = await tQuery(`
         INSERT INTO KhataEntries (
             CustomerID, EntryDate, EntryTime, EntryType, Amount,
-            CSCAppID, BCID, InvoiceID, AccountID, PaymentMode, Description, ReferenceNo, UserID,
+            CSCAppID, BCID, InvoiceID, PaymentID, AccountID, PaymentMode, Description, ReferenceNo, UserID,
             GlobalSerialNo, SNCode, ModuleCode
         )
         OUTPUT INSERTED.KhataID
         VALUES (
             @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), @type, @amt,
-            @cscId, @bcId, @invId, @accId, @mode, @desc, @ref, @uid,
+            @cscId, @bcId, @invId, @payId, @accId, @mode, @desc, @ref, @uid,
             @GlobalSerialNo, @SNCode, @ModuleCode
         )
     `, {
@@ -59,6 +59,7 @@ async function addKhataEntry(tQuery, {
         cscId: CSCAppID ? parseInt(CSCAppID) : null,
         bcId: BCID ? parseInt(BCID) : null,
         invId: InvoiceID ? parseInt(InvoiceID) : null,
+        payId: PaymentID ? parseInt(PaymentID) : null,
         accId: AccountID ? parseInt(AccountID) : null,
         mode: PaymentMode,
         desc: Description,
@@ -173,6 +174,137 @@ async function syncCSCToKhata(tQuery, { CustomerID, CSCAppID, TotalFee, PaidAmou
     }
 
     await refreshCustomerBalance(tQuery, CustomerID);
+}
+
+// --------------------------------------------------------------------------
+// Sync ek Bill Payment ke charges/payments to Khatabook (idempotent).
+//   - TotalPayable  -> 'Gave' entry (customer ka bill + dukan charge)
+//   - TotalCollected-> 'Got' entry (customer se prapt cash/payment)
+// Pehle se linked entries hata kar reconcile karta hai, taaki edit par
+// purani entries duplicate na hon.
+// --------------------------------------------------------------------------
+async function syncBillPaymentToKhata(tQuery, {
+    CustomerID, PaymentID, BillCategory, ProviderName, ConsumerNumber,
+    TotalPayable, TotalCollected, EntryDate, EntryTime, PaymentMode, UserID, TxnReference
+}) {
+    if (!CustomerID || !PaymentID) return [];
+    const userId = parseInt(UserID) || 1;
+    const numPayable = parseFloat(TotalPayable) || 0;
+    const numCollected = parseFloat(TotalCollected) || 0;
+    const date = EntryDate || todayLocal();
+    const time = EntryTime ? EntryTime.slice(0, 5) : '12:00';
+    const bpRef = `BP-${PaymentID}`;
+    const payRef = `BP-${PaymentID}-PAY`;
+
+    // 1. Purani auto-linked BP entries ki registry deactivate karo, phir delete karo
+    const oldKhataRes = await tQuery(`
+        SELECT KhataID FROM KhataEntries
+        WHERE UserID = @userId 
+          AND (PaymentID = @pid OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
+    `, { userId, pid: parseInt(PaymentID), ref1: bpRef, ref2: payRef });
+
+    for (const row of oldKhataRes.recordset) {
+        await deactivateGlobalTransaction('Khata', row.KhataID, tQuery);
+    }
+
+    await tQuery(`
+        DELETE FROM KhataEntries
+        WHERE UserID = @userId 
+          AND (PaymentID = @pid OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
+    `, { userId, pid: parseInt(PaymentID), ref1: bpRef, ref2: payRef });
+
+    const createdEntries = [];
+
+    // 2. Entry 1: Bill Payable ('Gave' - Shop ne customer ka bill bhara + fee)
+    if (numPayable > 0) {
+        const desc = `⚡ Bill Bhugtan — ${BillCategory || 'Bill'} (${ProviderName || ''}) [Consumer: ${ConsumerNumber || ''}]`;
+        const gaveRes = await tQuery(`
+            INSERT INTO KhataEntries (
+                CustomerID, EntryDate, EntryTime, EntryType, Amount,
+                PaymentID, PaymentMode, Description, ReferenceNo, UserID
+            )
+            OUTPUT INSERTED.KhataID
+            VALUES (
+                @custId, @date, @time, 'Gave', @amt,
+                @pid, @mode, @desc, @ref, @userId
+            )
+        `, {
+            custId: parseInt(CustomerID),
+            date,
+            time,
+            amt: numPayable,
+            pid: parseInt(PaymentID),
+            mode: PaymentMode || 'Bill',
+            desc,
+            ref: bpRef,
+            userId
+        });
+        const gaveId = gaveRes.recordset[0]?.KhataID;
+        if (gaveId) {
+            createdEntries.push({ id: gaveId, amount: numPayable, type: 'Gave' });
+            try {
+                await registerGlobalTransaction({
+                    sourceModule: 'Khata',
+                    recordId: gaveId,
+                    entityName: `${BillCategory || 'Bill'} #${PaymentID}`,
+                    amount: numPayable,
+                    transDate: date,
+                    createdAt: new Date(),
+                    userId
+                }, tQuery);
+            } catch (e) {
+                console.error('Bill Gave SN reg error:', e);
+            }
+        }
+    }
+
+    // 3. Entry 2: Payment Received ('Got' - Customer se cash/payment mila)
+    if (numCollected > 0) {
+        const desc = `💵 Bill Bhugtan Prapt (${PaymentMode || 'Cash'}) — ${BillCategory || 'Bill'} [Consumer: ${ConsumerNumber || ''}]`;
+        const gotRes = await tQuery(`
+            INSERT INTO KhataEntries (
+                CustomerID, EntryDate, EntryTime, EntryType, Amount,
+                PaymentID, PaymentMode, Description, ReferenceNo, UserID
+            )
+            OUTPUT INSERTED.KhataID
+            VALUES (
+                @custId, @date, @time, 'Got', @amt,
+                @pid, @mode, @desc, @ref, @userId
+            )
+        `, {
+            custId: parseInt(CustomerID),
+            date,
+            time,
+            amt: numCollected,
+            pid: parseInt(PaymentID),
+            mode: PaymentMode || 'Cash',
+            desc,
+            ref: payRef,
+            userId
+        });
+        const gotId = gotRes.recordset[0]?.KhataID;
+        if (gotId) {
+            createdEntries.push({ id: gotId, amount: numCollected, type: 'Got' });
+            try {
+                await registerGlobalTransaction({
+                    sourceModule: 'Khata',
+                    recordId: gotId,
+                    entityName: `${BillCategory || 'Bill'} #${PaymentID}`,
+                    amount: numCollected,
+                    transDate: date,
+                    createdAt: new Date(),
+                    userId
+                }, tQuery);
+            } catch (e) {
+                console.error('Bill Got SN reg error:', e);
+            }
+        }
+    }
+
+    // 4. Update customer balance in real time
+    await refreshCustomerBalance(tQuery, CustomerID);
+
+    return createdEntries;
 }
 
 // --------------------------------------------------------------------------
@@ -534,6 +666,7 @@ module.exports = {
     addKhataEntry,
     refreshCustomerBalance,
     syncCSCToKhata,
+    syncBillPaymentToKhata,
     syncBCFlowToKhata,
     getBCFlowLines,
     autoSettleCustomerDues,

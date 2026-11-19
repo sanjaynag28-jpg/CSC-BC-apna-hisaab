@@ -11,6 +11,7 @@ const { resolveOrCreateCustomer } = require('../database/customerAutoRegister');
 const { registerGlobalTransaction, deactivateGlobalTransaction, updateGlobalTransaction } = require('../database/globalTxnRegistry');
 const { writeBillPayLedger } = require('../database/billPayLedger');
 const { resolveTenantBillAccounts } = require('../utils/billPaymentAccounts');
+const { syncBillPaymentToKhata, refreshCustomerBalance } = require('../database/khataEngine');
 
 // ---------------------------------------------------------------------------
 // Document Upload Directory Setup
@@ -658,77 +659,22 @@ router.post('/', async (req, res) => {
                 ModuleCode: globalTxn?.moduleCode
             }, 'CREATE');
 
-            // 4. Khatabook Ledger (If past due was recovered or current shortfall occurred)
-            if (resolvedCustomerId && numRecoveredPastDue > 0) {
-                const khataGotRes = await tQuery(`
-                    INSERT INTO KhataEntries (
-                        CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                        AccountID, PaymentMode, Description, ReferenceNo, UserID
-                    )
-                    OUTPUT INSERTED.KhataID
-                    VALUES (
-                        @cId, @date, @time, 'Got', @amount,
-                        @accId, 'Cash', @desc, @ref, @userId
-                    )
-                `, {
-                    cId: resolvedCustomerId,
-                    date: payDate,
-                    time: payTime ? payTime.slice(0, 5) : '12:00',
-                    amount: numRecoveredPastDue,
-                    accId: effCashId,
-                    desc: `Pichhla Bakaya Wasuli via Bill Payment [Ref: ${TxnReference || bpRef}] (${BillCategory})`,
-                    ref: bpRef,
-                    userId
+            // 4. Khatabook Ledger Integration (Idempotent: Gave + Got entries in Khata for complete audit passbook)
+            if (resolvedCustomerId) {
+                await syncBillPaymentToKhata(tQuery, {
+                    CustomerID: resolvedCustomerId,
+                    PaymentID: newPaymentId,
+                    BillCategory,
+                    ProviderName,
+                    ConsumerNumber,
+                    TotalPayable: numPayable,
+                    TotalCollected: numTotalCollected,
+                    EntryDate: payDate,
+                    EntryTime: payTime,
+                    PaymentMode: PaymentMode || 'Cash',
+                    UserID: userId,
+                    TxnReference: TxnReference || bpRef
                 });
-                if (khataGotRes.recordset[0]?.KhataID) {
-                    createdKhataEntries.push({ id: khataGotRes.recordset[0].KhataID, amount: numRecoveredPastDue, type: 'Got' });
-                }
-            }
-
-            if (resolvedCustomerId && numCustomerDue > 0) {
-                const khataGaveRes = await tQuery(`
-                    INSERT INTO KhataEntries (
-                        CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                        AccountID, PaymentMode, Description, ReferenceNo, UserID
-                    )
-                    OUTPUT INSERTED.KhataID
-                    VALUES (
-                        @cId, @date, @time, 'Gave', @amount,
-                        @accId, 'Due', @desc, @ref, @userId
-                    )
-                `, {
-                    cId: resolvedCustomerId,
-                    date: payDate,
-                    time: payTime ? payTime.slice(0, 5) : '12:00',
-                    amount: numCustomerDue,
-                    accId: effCashId,
-                    desc: `Bill Payment Bakiya - ${BillCategory} (${ProviderName || ''}) [Consumer: ${ConsumerNumber}]`,
-                    ref: bpRef,
-                    userId
-                });
-                if (khataGaveRes.recordset[0]?.KhataID) {
-                    createdKhataEntries.push({ id: khataGaveRes.recordset[0].KhataID, amount: numCustomerDue, type: 'Gave' });
-                }
-            }
-
-            if (resolvedCustomerId && (numRecoveredPastDue > 0 || numCustomerDue > 0)) {
-                await tQuery('EXEC sp_UpdateCustomerBalance @CustomerID = @cId', { cId: resolvedCustomerId });
-            }
-
-            // Register linked Khata entries into Universal SN Registry
-            for (const ke of createdKhataEntries) {
-                try {
-                    await registerGlobalTransaction({
-                        sourceModule: 'Khata',
-                        recordId: ke.id,
-                        entityName: `${cleanCustName} (Bill Bakiya)`,
-                        amount: ke.amount,
-                        transDate: payDate,
-                        userId
-                    }, tQuery);
-                } catch (kErr) {
-                    console.error('Failed to register global transaction for Bill Khata entry:', kErr);
-                }
             }
         });
 
@@ -937,80 +883,40 @@ router.put('/:id', async (req, res) => {
             // -------------------------------------------------------------
             // IMPACT 3: Customer Udhaar / Khatabook Recalculation (KhataEntries)
             // -------------------------------------------------------------
-            // Deactivate old Khata entries from UniversalTxnRegistry
-            await tQuery(`
-                UPDATE UniversalTxnRegistry
-                SET IsActive = 0
-                WHERE SourceModule = 'Khata'
-                  AND RecordID IN (
-                      SELECT KhataID FROM KhataEntries
-                      WHERE UserID = @userId AND ReferenceNo = @ref1
-                  )
-            `, { userId, ref1: bpRef });
+            if (oldCustomerId && oldCustomerId !== resolvedCustomerId) {
+                await tQuery(`
+                    UPDATE UniversalTxnRegistry
+                    SET IsActive = 0
+                    WHERE SourceModule = 'Khata'
+                      AND RecordID IN (
+                          SELECT KhataID FROM KhataEntries
+                          WHERE UserID = @userId AND (PaymentID = @id OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
+                      )
+                `, { userId, id, ref1: bpRef, ref2: `${bpRef}-PAY` });
 
-            await tQuery(`
-                DELETE FROM KhataEntries
-                WHERE UserID = @userId AND ReferenceNo = @ref1
-            `, { userId, ref1: bpRef });
+                await tQuery(`
+                    DELETE FROM KhataEntries
+                    WHERE UserID = @userId AND (PaymentID = @id OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
+                `, { userId, id, ref1: bpRef, ref2: `${bpRef}-PAY` });
 
-            if (oldCustomerId) {
-                await tQuery('EXEC sp_UpdateCustomerBalance @CustomerID = @cId', { cId: oldCustomerId });
+                await refreshCustomerBalance(tQuery, oldCustomerId);
             }
 
-            if (resolvedCustomerId && numRecoveredPastDue > 0) {
-                const khataGotRes = await tQuery(`
-                    INSERT INTO KhataEntries (
-                        CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                        AccountID, PaymentMode, Description, ReferenceNo, UserID
-                    )
-                    OUTPUT INSERTED.KhataID
-                    VALUES (
-                        @cId, @date, @time, 'Got', @amount,
-                        @accId, 'Cash', @desc, @ref, @userId
-                    )
-                `, {
-                    cId: resolvedCustomerId,
-                    date: payDate,
-                    time: payTime ? payTime.slice(0, 5) : '12:00',
-                    amount: numRecoveredPastDue,
-                    accId: effCashId,
-                    desc: `Pichhla Bakaya Wasuli via Bill Payment [Ref: ${cleanTxnRef || bpRef}] (${BillCategory})`,
-                    ref: bpRef,
-                    userId
+            if (resolvedCustomerId) {
+                await syncBillPaymentToKhata(tQuery, {
+                    CustomerID: resolvedCustomerId,
+                    PaymentID: id,
+                    BillCategory,
+                    ProviderName,
+                    ConsumerNumber,
+                    TotalPayable: numPayable,
+                    TotalCollected: numTotalCollected,
+                    EntryDate: payDate,
+                    EntryTime: payTime,
+                    PaymentMode: PaymentMode || 'Cash',
+                    UserID: userId,
+                    TxnReference: cleanTxnRef || bpRef
                 });
-                if (khataGotRes.recordset[0]?.KhataID) {
-                    updatedKhataEntries.push({ id: khataGotRes.recordset[0].KhataID, amount: numRecoveredPastDue, type: 'Got' });
-                }
-            }
-
-            if (resolvedCustomerId && numCustomerDue > 0) {
-                const khataGaveRes = await tQuery(`
-                    INSERT INTO KhataEntries (
-                        CustomerID, EntryDate, EntryTime, EntryType, Amount,
-                        AccountID, PaymentMode, Description, ReferenceNo, UserID
-                    )
-                    OUTPUT INSERTED.KhataID
-                    VALUES (
-                        @cId, @date, @time, 'Gave', @amount,
-                        @accId, 'Due', @desc, @ref, @userId
-                    )
-                `, {
-                    cId: resolvedCustomerId,
-                    date: payDate,
-                    time: payTime ? payTime.slice(0, 5) : '12:00',
-                    amount: numCustomerDue,
-                    accId: effCashId,
-                    desc: `Bill Payment Bakiya - ${BillCategory} (${ProviderName || ''}) [Consumer: ${ConsumerNumber}]`,
-                    ref: bpRef,
-                    userId
-                });
-                if (khataGaveRes.recordset[0]?.KhataID) {
-                    updatedKhataEntries.push({ id: khataGaveRes.recordset[0].KhataID, amount: numCustomerDue, type: 'Gave' });
-                }
-            }
-
-            if (resolvedCustomerId && (numRecoveredPastDue > 0 || numCustomerDue > 0)) {
-                await tQuery('EXEC sp_UpdateCustomerBalance @CustomerID = @cId', { cId: resolvedCustomerId });
             }
 
             // -------------------------------------------------------------
@@ -1098,23 +1004,6 @@ router.put('/:id', async (req, res) => {
                 console.error('UniversalTxnRegistry update warning:', gErr.message);
             }
 
-            // Register any new/updated Khata entries into Universal SN Registry
-            for (const ke of updatedKhataEntries) {
-                try {
-                    await registerGlobalTransaction({
-                        sourceModule: 'Khata',
-                        recordId: ke.id,
-                        entityName: `${cleanCustName} (Bill Bakiya)`,
-                        amount: ke.amount,
-                        transDate: payDate,
-                        createdAt: new Date(),
-                        userId
-                    }, tQuery);
-                } catch (kErr) {
-                    console.error('Failed to register global transaction for updated Bill Khata entry:', kErr);
-                }
-            }
-
             // Propagate Universal SN to child Cashbook Transactions on Edit
             try {
                 const bpSnRes = await tQuery(`SELECT GlobalSerialNo, SNCode, ModuleCode FROM BillPayments WHERE PaymentID = @id`, { id });
@@ -1193,23 +1082,25 @@ router.delete('/:id', async (req, res) => {
             // 2. Reverse Ledger Transactions via Single writeBillPayLedger Helper (Rule 1)
             await writeBillPayLedger(tQuery, bp, 'DELETE');
 
-            // 4. Reverse Customer Due in Khata
-            if (bp.CustomerID && bp.CustomerDue > 0) {
+            // 4. Reverse Customer Bill Entries in Khata
+            if (bp.CustomerID) {
                 await tQuery(`
                     UPDATE UniversalTxnRegistry
                     SET IsActive = 0
                     WHERE SourceModule = 'Khata'
                       AND RecordID IN (
                           SELECT KhataID FROM KhataEntries
-                          WHERE CustomerID = @cId AND UserID = @userId AND ReferenceNo = @ref1
+                          WHERE CustomerID = @cId AND UserID = @userId 
+                            AND (PaymentID = @id OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
                       )
-                `, { cId: bp.CustomerID, userId, ref1: `BP-${id}` });
+                `, { cId: bp.CustomerID, userId, id, ref1: `BP-${id}`, ref2: `BP-${id}-PAY` });
 
                 await tQuery(`
                     DELETE FROM KhataEntries
-                    WHERE CustomerID = @cId AND UserID = @userId AND ReferenceNo = @ref1
-                `, { cId: bp.CustomerID, userId, ref1: `BP-${id}` });
-                await tQuery('EXEC sp_UpdateCustomerBalance @CustomerID = @cId', { cId: bp.CustomerID });
+                    WHERE CustomerID = @cId AND UserID = @userId 
+                      AND (PaymentID = @id OR ReferenceNo = @ref1 OR ReferenceNo = @ref2)
+                `, { cId: bp.CustomerID, userId, id, ref1: `BP-${id}`, ref2: `BP-${id}-PAY` });
+                await refreshCustomerBalance(tQuery, bp.CustomerID);
             }
 
             await deactivateGlobalTransaction('BillPay', id, tQuery);

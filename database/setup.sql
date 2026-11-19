@@ -445,6 +445,7 @@ BEGIN
         [UpdatedAt] DATETIME NULL DEFAULT (getdate()),
         [CSCAppID] INT NULL,
         [BCID] INT NULL,
+        [PaymentID] INT NULL,
         [UserID] INT NOT NULL DEFAULT ((1)),
         [GlobalSerialNo] INT NULL,
         [SNCode] VARCHAR(30) NULL,

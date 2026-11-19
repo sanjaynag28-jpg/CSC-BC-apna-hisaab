@@ -161,9 +161,11 @@ router.get('/statement/:customerId', async (req, res) => {
         const entriesResult = await query(`
             SELECT k.*, 
                    i.InvoiceNumber, i.TotalAmount as InvoiceTotal, i.PaymentStatus as InvoiceStatus,
+                   bp.BillCategory, bp.ProviderName, bp.ConsumerNumber, bp.BillAmount as BPBillAmount,
                    a.AccountName
             FROM KhataEntries k
             LEFT JOIN Invoices i ON k.InvoiceID = i.InvoiceID
+            LEFT JOIN BillPayments bp ON k.PaymentID = bp.PaymentID OR (k.ReferenceNo LIKE 'BP-%' AND bp.PaymentID = TRY_CAST(REPLACE(REPLACE(k.ReferenceNo, 'BP-', ''), '-PAY', '') AS INT))
             LEFT JOIN Accounts a ON k.AccountID = a.AccountID
             WHERE k.CustomerID = @id AND k.UserID = @userId
             ORDER BY k.EntryDate ASC, ISNULL(k.EntryTime, CAST(k.CreatedAt AS TIME)) ASC, k.KhataID ASC
@@ -471,7 +473,7 @@ router.delete('/entry/:id', async (req, res) => {
             if (oldEntry.InvoiceID) {
                 throw Object.assign(new Error('Yeh entry Bill/Invoice se auto-linked hai. Isko Invoices module se hi manage ya delete karein.'), { status: 400 });
             }
-            if (oldEntry.ModuleCode === 'BP' || (oldEntry.ReferenceNo && String(oldEntry.ReferenceNo).startsWith('BP-'))) {
+            if (oldEntry.PaymentID || oldEntry.ModuleCode === 'BP' || (oldEntry.ReferenceNo && String(oldEntry.ReferenceNo).startsWith('BP-'))) {
                 throw Object.assign(new Error('Yeh entry Bill & EMI Payment se auto-linked hai. Isko Bill Payments module se hi manage ya delete karein.'), { status: 400 });
             }
             if (oldEntry.EntryType === 'Opening' || (oldEntry.PaymentMode === 'Opening' && !oldEntry.Description)) {
