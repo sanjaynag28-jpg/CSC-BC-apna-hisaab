@@ -24,7 +24,7 @@ const { randomUUID } = require('crypto');
 // Insert ek Khata entry (charge = 'Gave', payment = 'Got')
 async function addKhataEntry(tQuery, {
     CustomerID, EntryType, Amount, EntryDate, CSCAppID = null, BCID = null,
-    InvoiceID = null, AccountID = null, PaymentMode = 'Cash',
+    InvoiceID = null, PaymentID = null, AccountID = null, PaymentMode = 'Cash',
     Description = null, ReferenceNo = null, UserID = null,
     GlobalSerialNo = null, SNCode = null, ModuleCode = null
 }) {
@@ -323,50 +323,50 @@ function getBCFlowLines(ServiceType, QROperation) {
     if (st.includes('withdrawal') || st.includes('aeps')) {
         // Customer ka bank se paisa nikala, counter ne cash diya
         return {
-            in:  { mode: 'Cash In',  desc: 'Bank se aaya' },
+            in: { mode: 'Cash In', desc: 'Bank se aaya' },
             out: { mode: 'Cash Out', desc: 'Cash Diya (customer ko)' }
         };
     }
     if (st.includes('deposit')) {
         // Customer ne cash diya, bank mein jama
         return {
-            in:  { mode: 'Cash In',  desc: 'Cash Liya (customer se)' },
+            in: { mode: 'Cash In', desc: 'Cash Liya (customer se)' },
             out: { mode: 'Cash Out', desc: 'Bank mein jama' }
         };
     }
     if (st.includes('transfer') || st.includes('dmt') || st.includes('send')) {
         return {
-            in:  { mode: 'Cash In',  desc: 'Cash Liya (customer se)' },
+            in: { mode: 'Cash In', desc: 'Cash Liya (customer se)' },
             out: { mode: 'Cash Out', desc: 'Beneficiary ko transfer' }
         };
     }
     if (st.includes('qr') || st.includes('upi')) {
         if (cashGiven) {
             return {
-                in:  { mode: 'Cash In',  desc: 'QR/UPI se aaya' },
+                in: { mode: 'Cash In', desc: 'QR/UPI se aaya' },
                 out: { mode: 'Cash Out', desc: 'Cash Diya (customer ko)' }
             };
         }
         if (QROperation === 'Send - Cash Taken from Customer') {
             return {
-                in:  { mode: 'Cash In',  desc: 'Cash Liya (customer se)' },
+                in: { mode: 'Cash In', desc: 'Cash Liya (customer se)' },
                 out: { mode: 'Cash Out', desc: 'Customer ke QR/UPI par bheja' }
             };
         }
         if (QROperation === 'Send - Direct Transfer') {
             return {
-                in:  { mode: 'Cash In',  desc: 'Direct UPI/QR transfer' },
+                in: { mode: 'Cash In', desc: 'Direct UPI/QR transfer' },
                 out: { mode: 'Cash Out', desc: 'Customer ke QR/UPI par bheja' }
             };
         }
         return {
-            in:  { mode: 'Cash In',  desc: 'QR/UPI payment aaya' },
+            in: { mode: 'Cash In', desc: 'QR/UPI payment aaya' },
             out: { mode: 'Cash Out', desc: 'Counter account mein credit' }
         };
     }
     // Default / any other service
     return {
-        in:  { mode: 'Cash In',  desc: 'Counter mein aaya' },
+        in: { mode: 'Cash In', desc: 'Counter mein aaya' },
         out: { mode: 'Cash Out', desc: 'Customer/Beneficiary ko diya' }
     };
 }
@@ -388,7 +388,7 @@ async function syncBCFlowToKhata(tQuery, {
                 effSNCode = bcRes.recordset[0].SNCode;
                 effModCode = bcRes.recordset[0].ModuleCode;
             }
-        } catch (_) {}
+        } catch (_) { }
     }
 
     // Idempotency: deactivate any registry records and delete old BC-Flow entries
@@ -519,7 +519,7 @@ async function autoSettleCustomerDues(tQuery, CustomerID) {
                     cscSNCode = cRes.recordset[0].SNCode;
                     cscModCode = cRes.recordset[0].ModuleCode;
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             await tQuery(`
                 INSERT INTO KhataEntries (
@@ -567,7 +567,7 @@ async function autoSettleCustomerDues(tQuery, CustomerID) {
                     invSNCode = iRes.recordset[0].SNCode;
                     invModCode = iRes.recordset[0].ModuleCode;
                 }
-            } catch (_) {}
+            } catch (_) { }
 
             await tQuery(`
                 INSERT INTO KhataEntries (
