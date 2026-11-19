@@ -64,10 +64,25 @@ module.exports = {
     indexes: [
         { table: 'CSCServices', name: 'IX_CSCServices_Module', cols: 'ModuleCode, IsActive, SortOrder' },
         { table: 'KhataEntries', name: 'IX_KhataEntries_SourceModule_SourceID', cols: 'SourceModule, SourceID' },
+        { table: 'KhataEntries', name: 'IX_KhataEntries_AccountID', cols: 'AccountID' },
         { table: 'Transactions', name: 'IX_Transactions_SourceModule_SourceID', cols: 'SourceModule, SourceID, LineType' },
         { table: 'ServiceRecords', name: 'IX_SR_Module_Date', cols: 'ModuleCode, RecordDate DESC' },
         { table: 'ServiceRecords', name: 'IX_SR_Customer_Date', cols: 'CustomerID, RecordDate DESC' },
         { table: 'ServiceRecords', name: 'IX_SR_Ref', cols: 'ReferenceNo' },
-        { table: 'ServiceRecords', name: 'UQ_SR_Doc', cols: 'ModuleCode, DocCode' }
+        { table: 'ServiceRecords', name: 'UQ_SR_Doc', cols: 'ModuleCode, DocCode' },
+        { table: 'ServiceRecords', name: 'IX_ServiceRecords_ServiceID', cols: 'ServiceID' },
+        { table: 'ServiceRecords', name: 'IX_ServiceRecords_UserID', cols: 'UserID' },
+        { table: 'Bills', name: 'IX_Bills_AccountID', cols: 'AccountID' },
+        { table: 'Bills', name: 'IX_Bills_CategoryID', cols: 'CategoryID' },
+        { table: 'Bills', name: 'IX_Bills_PartyID', cols: 'PartyID' },
+        { table: 'Budgets', name: 'IX_Budgets_CategoryID', cols: 'CategoryID' },
+        { table: 'Categories', name: 'IX_Categories_ParentID', cols: 'ParentID' },
+        { table: 'Customers', name: 'IX_Customers_ParentCustomerID', cols: 'ParentCustomerID' },
+        { table: 'Invoices', name: 'IX_Invoices_AccountID', cols: 'AccountID' },
+        { table: 'RecurringTransactions', name: 'IX_RecTxn_AccountID', cols: 'AccountID' },
+        { table: 'RecurringTransactions', name: 'IX_RecTxn_CategoryID', cols: 'CategoryID' },
+        { table: 'RecurringTransactions', name: 'IX_RecTxn_PartyID', cols: 'PartyID' },
+        { table: 'RecurringTransactions', name: 'IX_RecTxn_ToAccountID', cols: 'ToAccountID' },
+        { table: 'TxnModules', name: 'IX_TxnModules_UserID', cols: 'UserID' }
     ]
 };
