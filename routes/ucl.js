@@ -633,19 +633,171 @@ router.put('/:id', async (req, res) => {
     try {
         const userId = req.user?.UserID || 1;
         const id = parseInt(req.params.id);
-        const { status, notes, pacCode } = req.body;
+        const body = req.body;
 
-        await query(`
-            UPDATE UCLUpdates
-            SET Status = ISNULL(@status, Status),
-                Notes = ISNULL(@notes, Notes),
-                PACCode = ISNULL(@pacCode, PACCode),
-                UpdatedAt = GETDATE()
-            WHERE UCLID = @id AND UserID = @userId AND IsDeleted = 0
-        `, { id, userId, status: status || null, notes: notes || null, pacCode: pacCode || null });
+        const customerName = (body.customerName || body.CustomerName || '').trim();
+        const phone = (body.customerPhone || body.CustomerPhone || '').trim();
+        const rawAadhaar = (body.aadhaarLast4 || body.AadhaarLast4 || '').trim();
+        const aadhaarDigits = rawAadhaar.replace(/\D/g, '');
+        const aadhaarLast4 = aadhaarDigits.length >= 4 ? aadhaarDigits.slice(-4) : (rawAadhaar || null);
+        const sid = (body.sid || body.SID || '').trim();
+        const updateType = (body.updateType || body.UpdateType || 'Demographics Update').trim();
+        const biometrics = body.biometricsUpdate || body.BiometricsUpdate || 'No';
+        const status = body.status || body.Status || 'Generated';
+        const notes = body.notes || body.Notes || null;
 
-        res.json({ success: true, message: 'UCL record update ho gaya' });
+        const totalFee = parseFloat(body.totalFee ?? body.TotalFee ?? 50.00);
+        const operatorFee = parseFloat(body.operatorFee ?? body.OperatorFee ?? 0.00);
+        const totalAmount = parseFloat((totalFee + operatorFee).toFixed(2));
+        const paidAmount = parseFloat(body.paidAmount ?? body.PaidAmount ?? totalAmount);
+        const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
+        const paymentMode = body.paymentMode || body.PaymentMode || (balanceAmount > 0 ? 'Khata' : 'Cash');
+
+        await withTransaction(async (tQuery) => {
+            const curRes = await tQuery(`SELECT * FROM UCLUpdates WHERE UCLID = @id AND UserID = @userId AND IsDeleted = 0`, { id, userId });
+            if (!curRes.recordset?.length) {
+                throw new Error('UCL Update record nahi mila');
+            }
+            const old = curRes.recordset[0];
+            const effCustomerId = old.CustomerID;
+            const finalCustName = customerName || old.CustomerName;
+
+            // 1. Update UCL Record
+            await tQuery(`
+                UPDATE UCLUpdates
+                SET CustomerName = @customerName,
+                    CustomerPhone = @phone,
+                    AadhaarLast4 = @aadhaarLast4,
+                    AadhaarMasked = CASE WHEN @aadhaarLast4 IS NOT NULL THEN 'XXXX-XXXX-' + @aadhaarLast4 ELSE AadhaarMasked END,
+                    SID = @sid,
+                    UpdateType = @updateType,
+                    BiometricsUpdate = @biometrics,
+                    TotalFee = @totalFee,
+                    OperatorFee = @operatorFee,
+                    TotalAmount = @totalAmount,
+                    PaidAmount = @paidAmount,
+                    BalanceAmount = @balanceAmount,
+                    PaymentMode = @paymentMode,
+                    Status = @status,
+                    Notes = @notes,
+                    UpdatedAt = GETDATE()
+                WHERE UCLID = @id AND UserID = @userId
+            `, {
+                id,
+                userId,
+                customerName: finalCustName,
+                phone: phone || old.CustomerPhone || null,
+                aadhaarLast4: aadhaarLast4 || old.AadhaarLast4 || null,
+                sid: sid || old.SID || null,
+                updateType,
+                biometrics,
+                totalFee,
+                operatorFee,
+                totalAmount,
+                paidAmount,
+                balanceAmount,
+                paymentMode,
+                status,
+                notes
+            });
+
+            // 2. Update Global Transaction Registry
+            try {
+                await updateGlobalTransaction({
+                    sourceModule: 'UCL',
+                    recordId: id,
+                    entityName: finalCustName,
+                    amount: totalAmount
+                }, tQuery);
+            } catch (err) {
+                console.warn('[UCL Global Registry Update Warning]:', err.message);
+            }
+
+            // 3. Transactions Mirror Update
+            const oldPaid = parseFloat(old.PaidAmount || 0);
+            const paidDiff = paidAmount - oldPaid;
+            if (paidDiff !== 0) {
+                const mRes = await tQuery(`SELECT TOP 1 TransactionID, AccountID FROM Transactions WHERE SourceModule = 'UCL' AND SourceID = @id`, { id });
+                if (mRes.recordset?.length) {
+                    const accId = mRes.recordset[0].AccountID;
+                    await tQuery(`UPDATE Transactions SET Amount = @amt, Description = @desc WHERE TransactionID = @txId`, {
+                        amt: paidAmount,
+                        desc: `UCL Shulk Jama: ${finalCustName} (${updateType})`,
+                        txId: mRes.recordset[0].TransactionID
+                    });
+                    await tQuery(`UPDATE Accounts SET CurrentBalance = CurrentBalance + @diff, UpdatedAt = GETDATE() WHERE AccountID = @accId`, {
+                        accId,
+                        diff: paidDiff
+                    });
+                }
+            }
+
+            // 4. Khatabook sync if customer linked
+            if (effCustomerId) {
+                const kRes = await tQuery(`SELECT KhataID, EntryType FROM KhataEntries WHERE SourceModule = 'UCL' AND SourceID = @id`, { id });
+                if (kRes.recordset?.length) {
+                    for (const ke of kRes.recordset) {
+                        if (ke.EntryType === 'Gave') {
+                            await tQuery(`UPDATE KhataEntries SET Amount = @amt, Description = @desc WHERE KhataID = @kid`, {
+                                amt: totalAmount,
+                                desc: `Aadhaar UCL Update Shulk (${updateType}) [${old.SerialNo || 'UCL-' + id}]`,
+                                kid: ke.KhataID
+                            });
+                        } else if (ke.EntryType === 'Got') {
+                            await tQuery(`UPDATE KhataEntries SET Amount = @amt, Description = @desc WHERE KhataID = @kid`, {
+                                amt: paidAmount,
+                                desc: `UCL Jama (${paymentMode}) [${old.SerialNo || 'UCL-' + id}]`,
+                                kid: ke.KhataID
+                            });
+                        }
+                    }
+                    await refreshCustomerBalance(tQuery, effCustomerId);
+                } else if (balanceAmount > 0 || paymentMode === 'Khata') {
+                    await addKhataEntry(tQuery, {
+                        CustomerID: effCustomerId,
+                        EntryType: 'Gave',
+                        Amount: totalAmount,
+                        PaymentMode: paymentMode,
+                        Description: `Aadhaar UCL Update Shulk (${updateType}) [${old.SerialNo || 'UCL-' + id}]`,
+                        ReferenceNo: old.SerialNo || `UCL-${id}`,
+                        UserID: userId,
+                        GlobalSerialNo: old.GlobalSerialNo,
+                        SNCode: old.SerialNo,
+                        ModuleCode: 'UCL',
+                        SourceModule: 'UCL',
+                        SourceID: id
+                    });
+                    if (paidAmount > 0) {
+                        await addKhataEntry(tQuery, {
+                            CustomerID: effCustomerId,
+                            EntryType: 'Got',
+                            Amount: paidAmount,
+                            PaymentMode: paymentMode,
+                            Description: `UCL Jama (${paymentMode}) [${old.SerialNo || 'UCL-' + id}]`,
+                            ReferenceNo: `${old.SerialNo || 'UCL-' + id}-PAY`,
+                            UserID: userId,
+                            GlobalSerialNo: old.GlobalSerialNo,
+                            SNCode: old.SerialNo,
+                            ModuleCode: 'UCL',
+                            SourceModule: 'UCL',
+                            SourceID: id
+                        });
+                    }
+                    await refreshCustomerBalance(tQuery, effCustomerId);
+                }
+            }
+        });
+
+        await logAudit(userId, 'UPDATE', 'UCLUpdates', id, null, {
+            customerName: customerName,
+            totalAmount,
+            paidAmount,
+            status
+        });
+
+        res.json({ success: true, message: 'UCL record safaltapoorvak update ho gaya' });
     } catch (err) {
+        console.error('[UCL Update Error]:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });

@@ -1524,14 +1524,6 @@ function formatMoneyCompact(amount) {
     return `${sign}₹${abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function formatNumber(num) {
-    if (num === null || num === undefined || isNaN(num)) return '0.00';
-    return parseFloat(num).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-window.formatNumber = formatNumber;
-window.formatMoney = formatMoney;
-window.formatMoneyCompact = formatMoneyCompact;
-
 // ==========================================================================
 // UNIVERSAL GLOBAL AMOUNT FORMATTER (RED: -, GREEN: +)
 // Applies project-wide consistent - Red / + Green rules across all tables & views
@@ -21745,7 +21737,7 @@ function renderUniversalDueAlert(custOrId, containerId, moduleType = 'GEN') {
     `;
     container.style.display = 'block';
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
-        try { lucide.createIcons({ root: container }); } catch (e) {}
+        try { lucide.createIcons({ root: container }); } catch (e) { }
     }
 }
 window.renderUniversalDueAlert = renderUniversalDueAlert;
@@ -22469,7 +22461,7 @@ function openNewBillPaymentModal(prefill = null) {
                         addBPCustomFieldRow(k, v);
                     }
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         // Edit Mode specific prefill
@@ -22553,42 +22545,42 @@ async function handleBillPaymentFormSubmit(event) {
     }
 
     try {
-            const numBill = parseFloat(document.getElementById('bpModalBillAmount')?.value) || 0;
-            const numCharge = parseFloat(document.getElementById('bpModalCustomerCharge')?.value) || 0;
-            const numRecovered = parseFloat(document.getElementById('bpModalRecoveredPastDue')?.value) || 0;
-            const numPayable = parseFloat((numBill + numCharge + numRecovered).toFixed(2));
-            const cashRecEl = document.getElementById('bpModalCashReceived');
-            const parsedCash = cashRecEl ? parseFloat(cashRecEl.value) : NaN;
-            const numCollected = !isNaN(parsedCash) && parsedCash >= 0 && cashRecEl.value !== '' ? parsedCash : numPayable;
-            const numDue = parseFloat(document.getElementById('bpModalCustomerDue')?.value) || Math.max(0, parseFloat((numPayable - numCollected).toFixed(2)));
+        const numBill = parseFloat(document.getElementById('bpModalBillAmount')?.value) || 0;
+        const numCharge = parseFloat(document.getElementById('bpModalCustomerCharge')?.value) || 0;
+        const numRecovered = parseFloat(document.getElementById('bpModalRecoveredPastDue')?.value) || 0;
+        const numPayable = parseFloat((numBill + numCharge + numRecovered).toFixed(2));
+        const cashRecEl = document.getElementById('bpModalCashReceived');
+        const parsedCash = cashRecEl ? parseFloat(cashRecEl.value) : NaN;
+        const numCollected = !isNaN(parsedCash) && parsedCash >= 0 && cashRecEl.value !== '' ? parsedCash : numPayable;
+        const numDue = parseFloat(document.getElementById('bpModalCustomerDue')?.value) || Math.max(0, parseFloat((numPayable - numCollected).toFixed(2)));
 
-            const extraFields = getBPCustomFieldsObject();
-            const body = {
-                PaymentID: document.getElementById('bpPaymentId')?.value || undefined,
-                DocumentID: document.getElementById('bpModalAttachedDocId')?.value || undefined,
-                ExtraFieldsJson: Object.keys(extraFields).length > 0 ? extraFields : undefined,
-                BillCategory: document.getElementById('bpModalCategory')?.value || 'Electricity',
-                ProviderName: document.getElementById('bpModalProvider')?.value || '',
-                ConsumerNumber: document.getElementById('bpModalConsumerNo')?.value?.trim() || '',
-                BillNumber: document.getElementById('bpModalBillNo')?.value?.trim() || '',
-                CustomerName: cleanCustomerName(document.getElementById('bpModalCustName')?.value || ''),
-                CustomerPhone: document.getElementById('bpModalCustPhone')?.value?.trim() || '',
-                SkipFamilyLink: document.getElementById('bpModalCustPhone')?._skipFamilyLink === true,
-                TotalBillAmount: parseFloat(document.getElementById('bpModalTotalBill')?.value) || numBill,
-                BillAmount: numBill,
-                CustomerCharge: numCharge,
-                RecoveredPastDue: numRecovered,
-                CashReceived: numCollected,
-                TotalCollected: numCollected,
-                CustomerDue: numDue,
-                CommissionEarned: parseFloat(document.getElementById('bpModalCommission')?.value) || 0,
-                RemainingArrear: parseFloat(document.getElementById('bpModalRemainingArrear')?.value) || 0,
-                WalletAccountID: parseInt(document.getElementById('bpModalWalletAcc')?.value) || 2,
-                CashAccountID: parseInt(document.getElementById('bpModalCashAcc')?.value) || 1,
-                TxnReference: document.getElementById('bpModalTxnRef')?.value?.trim() || '',
-                PaymentDate: document.getElementById('bpModalPaymentDate')?.value || new Date().toISOString().split('T')[0],
-                Notes: document.getElementById('bpModalNotes')?.value?.trim() || ''
-            };
+        const extraFields = getBPCustomFieldsObject();
+        const body = {
+            PaymentID: document.getElementById('bpPaymentId')?.value || undefined,
+            DocumentID: document.getElementById('bpModalAttachedDocId')?.value || undefined,
+            ExtraFieldsJson: Object.keys(extraFields).length > 0 ? extraFields : undefined,
+            BillCategory: document.getElementById('bpModalCategory')?.value || 'Electricity',
+            ProviderName: document.getElementById('bpModalProvider')?.value || '',
+            ConsumerNumber: document.getElementById('bpModalConsumerNo')?.value?.trim() || '',
+            BillNumber: document.getElementById('bpModalBillNo')?.value?.trim() || '',
+            CustomerName: cleanCustomerName(document.getElementById('bpModalCustName')?.value || ''),
+            CustomerPhone: document.getElementById('bpModalCustPhone')?.value?.trim() || '',
+            SkipFamilyLink: document.getElementById('bpModalCustPhone')?._skipFamilyLink === true,
+            TotalBillAmount: parseFloat(document.getElementById('bpModalTotalBill')?.value) || numBill,
+            BillAmount: numBill,
+            CustomerCharge: numCharge,
+            RecoveredPastDue: numRecovered,
+            CashReceived: numCollected,
+            TotalCollected: numCollected,
+            CustomerDue: numDue,
+            CommissionEarned: parseFloat(document.getElementById('bpModalCommission')?.value) || 0,
+            RemainingArrear: parseFloat(document.getElementById('bpModalRemainingArrear')?.value) || 0,
+            WalletAccountID: parseInt(document.getElementById('bpModalWalletAcc')?.value) || 2,
+            CashAccountID: parseInt(document.getElementById('bpModalCashAcc')?.value) || 1,
+            TxnReference: document.getElementById('bpModalTxnRef')?.value?.trim() || '',
+            PaymentDate: document.getElementById('bpModalPaymentDate')?.value || new Date().toISOString().split('T')[0],
+            Notes: document.getElementById('bpModalNotes')?.value?.trim() || ''
+        };
 
         if (!body.ConsumerNumber) {
             if (typeof showToast === 'function') showToast('⚠️ Kripya Consumer / Account Number bharein', 'warning');
@@ -22698,13 +22690,13 @@ async function openBillReceiptModal(paymentId) {
                         </div>
                     `).join('');
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         const s = window.currentShopSettings || {};
         const u = window.currentUser || {};
         let userSettings = {};
-        try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) {}
+        try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) { }
 
         const shopName = s.ShopName || userSettings.ShopName || u.ShopName || 'CSC & BC Kendra';
         const shopSubtitle = s.ShopSubtitle || userSettings.ShopSubtitle || 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra';
@@ -22799,7 +22791,7 @@ async function openBillReceiptModal(paymentId) {
         `;
 
         if (window.lucide) {
-            try { lucide.createIcons({ root: document.getElementById('billReceiptModal') }); } catch (e) {}
+            try { lucide.createIcons({ root: document.getElementById('billReceiptModal') }); } catch (e) { }
         }
     } catch (e) {
         area.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error: ${e.message}</div>`;
@@ -22839,7 +22831,7 @@ function shareBillReceiptWhatsApp() {
     const s = window.currentShopSettings || {};
     const u = window.currentUser || {};
     let userSettings = {};
-    try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) {}
+    try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) { }
     const shopName = s.ShopName || userSettings.ShopName || u.ShopName || 'CSC & BC Kendra';
     const shopSubtitle = s.ShopSubtitle || userSettings.ShopSubtitle || 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra';
     const shopPhone = s.ShopPhone || userSettings.ShopPhone || u.MobileNumber || '';
@@ -22970,7 +22962,7 @@ async function loadUCLPage(page = 1) {
         const json = await res.json();
         if (json.success) {
             allUCLUpdates = json.data || [];
-            
+
             // Update KPI cards
             const stats = json.stats || {};
             const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
@@ -22993,6 +22985,61 @@ async function loadUCLPage(page = 1) {
 }
 window.loadUCLPage = loadUCLPage;
 
+function copyUCLSID(text, btn) {
+    if (!text) return;
+    const onSuccess = () => {
+        if (typeof showToast === 'function') showToast('📋 SID/URN Copy ho gaya!', 'success');
+        if (btn) {
+            const orig = btn.innerHTML;
+            btn.innerHTML = '<i data-lucide="check" style="width: 13px; height: 13px; color: #10b981;"></i>';
+            if (window.lucide && lucide.createIcons) lucide.createIcons();
+            setTimeout(() => {
+                btn.innerHTML = orig;
+                if (window.lucide && lucide.createIcons) lucide.createIcons();
+            }, 1500);
+        }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+            onSuccess();
+        });
+    } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        onSuccess();
+    }
+}
+window.copyUCLSID = copyUCLSID;
+
+function handleUCLAadhaarInput(el) {
+    if (!el) return;
+    formatAadhaarInput(el);
+    autoFillCustomerFromAadhaar({
+        inputId: 'uclCustAadhaar',
+        nameId: 'uclCustName',
+        phoneId: 'uclCustPhone',
+        customerSelectId: 'uclCustomerSelect',
+        chipId: 'uclAadhaarChip'
+    });
+}
+window.handleUCLAadhaarInput = handleUCLAadhaarInput;
+
 function renderUCLTable(rows) {
     const tbody = document.getElementById('uclTableBody');
     if (!tbody) return;
@@ -23000,7 +23047,7 @@ function renderUCLTable(rows) {
     if (!rows || rows.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="10" style="text-align: center; padding: 48px; color: var(--text-muted);">
+                <td colspan="9" style="text-align: center; padding: 48px; color: var(--text-muted);">
                     <div style="font-size: 32px; margin-bottom: 8px;">🪪</div>
                     <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Koi UCL Update Record Nahi Mila</div>
                     <div style="font-size: 13px; margin-bottom: 16px;">Naya aavedan darz karne ke liye upar "+ Naya UCL Update" button par click karein.</div>
@@ -23020,9 +23067,15 @@ function renderUCLTable(rows) {
         const custName = escapeHtml(row.CustomerName || '-');
         const phone = row.CustomerPhone ? `<div style="font-size: 12px; color: var(--text-muted);">📞 ${escapeHtml(row.CustomerPhone)}</div>` : '';
         const aadhaar = row.AadhaarLast4 ? `<div style="font-size: 11.5px; color: #0891b2; font-family: monospace;">Aadhaar: XXXX-${escapeHtml(row.AadhaarLast4)}</div>` : '';
-        const sid = row.SID ? `<span style="font-family: monospace; font-size: 12px; font-weight: 700; color: #0e7490;" title="${escapeHtml(row.SID)}">${escapeHtml(row.SID.length > 20 ? row.SID.substring(0, 18) + '...' : row.SID)}</span>` : '<span style="color: var(--text-muted);">-</span>';
+        const sid = row.SID ? `
+            <div style="display: inline-flex; align-items: center; gap: 5px; background: rgba(8, 145, 178, 0.08); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(8, 145, 178, 0.25); max-width: 100%;">
+                <span style="font-family: monospace; font-size: 11.5px; font-weight: 700; color: #0e7490; word-break: break-all;" title="${escapeHtml(row.SID)}">${escapeHtml(row.SID)}</span>
+                <button type="button" class="btn-ghost btn-xs" onclick="copyUCLSID('${escapeHtml(row.SID)}', this)" title="SID/URN Copy Karein" style="padding: 2px 4px; height: auto; border: none; background: transparent; cursor: pointer; color: #0891b2; display: inline-flex; align-items: center;">
+                    <i data-lucide="copy" style="width: 13px; height: 13px;"></i>
+                </button>
+            </div>
+        ` : '<span style="color: var(--text-muted);">-</span>';
         const uType = escapeHtml(row.UpdateType || 'Demographics');
-        const pac = row.PACCode ? `<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #7c3aed; font-family: monospace; font-weight: 700;">${escapeHtml(row.PACCode)}</span>` : '<span style="color: var(--text-muted);">-</span>';
         const total = parseFloat(row.TotalAmount || 0);
         const paid = parseFloat(row.PaidAmount || 0);
         const balance = parseFloat(row.BalanceAmount || 0);
@@ -23062,14 +23115,16 @@ function renderUCLTable(rows) {
                 </td>
                 <td>${sid}</td>
                 <td><span style="font-size: 12.5px; font-weight: 600;">${uType}</span></td>
-                <td>${pac}</td>
                 <td>${feeCol}</td>
                 <td><span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">${escapeHtml(row.PaymentMode || 'Cash')}</span></td>
                 <td>${statusBadge}</td>
                 <td style="text-align: right; white-space: nowrap;">
                     ${receiptBtn}
-                    <button class="btn-ghost btn-sm" onclick="printUCLSlip(${row.UCLID})" title="Parchi Print Karein" style="padding: 4px 7px;">
-                        <i data-lucide="printer" style="width: 14px; height: 14px; color: #059669;"></i>
+                    <button class="btn-ghost btn-sm" onclick="openEditUCLModal(${row.UCLID})" title="Edit Karein" style="padding: 4px 7px; color: #0891b2;">
+                        <i data-lucide="pencil" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    <button class="btn-ghost btn-sm" onclick="printUCLSlip(${row.UCLID})" title="Parchi Print Karein" style="padding: 4px 7px; color: #059669;">
+                        <i data-lucide="printer" style="width: 14px; height: 14px;"></i>
                     </button>
                     <button class="btn-ghost btn-sm" onclick="deleteUCLUpdate(${row.UCLID})" title="Delete Karein" style="padding: 4px 7px; color: #ef4444;">
                         <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
@@ -23128,7 +23183,15 @@ async function openNewUCLModal() {
     const form = document.getElementById('uclForm');
     if (form) form.reset();
 
-    document.getElementById('uclEditId').value = '';
+    const editIdEl = document.getElementById('uclEditId');
+    if (editIdEl) editIdEl.value = '';
+    const titleEl = document.getElementById('uclModalTitle');
+    if (titleEl) titleEl.textContent = 'Naya UCL Update (आधार संशोधन एंट्री)';
+    const chip = document.getElementById('uclAadhaarChip');
+    if (chip) chip.innerHTML = '';
+    const pacEl = document.getElementById('uclPACSelect');
+    if (pacEl) pacEl.value = '';
+
     document.getElementById('uclReceiptDocId').value = '';
     document.getElementById('uclReceiptFilePath').value = '';
 
@@ -23150,23 +23213,6 @@ async function openNewUCLModal() {
             });
         }
         custSel.innerHTML = optHtml;
-    }
-
-    // Populate available PAC Codes
-    const pacSel = document.getElementById('uclPACSelect');
-    if (pacSel) {
-        pacSel.innerHTML = '<option value="">-- PAC Code Chunein (Optional) --</option>';
-        try {
-            const pRes = await fetch(`${API}/pac?status=Available&_t=${Date.now()}`);
-            const pJson = await pRes.json();
-            if (pJson.success && Array.isArray(pJson.data)) {
-                pJson.data.forEach(p => {
-                    pacSel.innerHTML += `<option value="${escapeHtml(p.PACCode)}">
-                        ${escapeHtml(p.PACCode)} (₹${p.WalletDeduction})
-                    </option>`;
-                });
-            }
-        } catch (e) { }
     }
 
     // Populate active accounts
@@ -23192,6 +23238,75 @@ async function openNewUCLModal() {
     if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
 }
 window.openNewUCLModal = openNewUCLModal;
+
+async function openEditUCLModal(id) {
+    try {
+        const res = await fetch(`${API}/ucl/${id}`);
+        const json = await res.json();
+        if (!json.success || !json.data) {
+            alert('UCL record nahi mila: ' + (json.error || ''));
+            return;
+        }
+        const row = json.data;
+        await openNewUCLModal();
+
+        const editInput = document.getElementById('uclEditId');
+        if (editInput) editInput.value = row.UCLID;
+
+        const titleEl = document.getElementById('uclModalTitle');
+        if (titleEl) titleEl.textContent = `UCL Update Badlein (${row.SerialNo || 'UCL-' + row.UCLID})`;
+
+        const nameInput = document.getElementById('uclCustName');
+        if (nameInput) nameInput.value = row.CustomerName || '';
+
+        const phoneInput = document.getElementById('uclCustPhone');
+        if (phoneInput) phoneInput.value = row.CustomerPhone || '';
+
+        const aadhaarInput = document.getElementById('uclCustAadhaar');
+        if (aadhaarInput) {
+            aadhaarInput.value = row.AadhaarMasked || row.AadhaarLast4 || '';
+            handleUCLAadhaarInput(aadhaarInput);
+        }
+
+        const sidInput = document.getElementById('uclSID');
+        if (sidInput) sidInput.value = row.SID || '';
+
+        const typeSelect = document.getElementById('uclUpdateType');
+        if (typeSelect) typeSelect.value = row.UpdateType || 'Demographics (Name)';
+
+        const bioSelect = document.getElementById('uclBiometrics');
+        if (bioSelect) bioSelect.value = row.BiometricsUpdate || 'No';
+
+        const feeInput = document.getElementById('uclFee');
+        if (feeInput) feeInput.value = row.TotalFee ?? 50;
+
+        const opFeeInput = document.getElementById('uclOpFee');
+        if (opFeeInput) opFeeInput.value = row.OperatorFee ?? 0;
+
+        const paidInput = document.getElementById('uclPaidAmt');
+        if (paidInput) paidInput.value = row.PaidAmount ?? 50;
+
+        const payModeSelect = document.getElementById('uclPayMode');
+        if (payModeSelect) payModeSelect.value = row.PaymentMode || 'Cash';
+
+        const statusSelect = document.getElementById('uclStatus');
+        if (statusSelect) statusSelect.value = row.Status || 'Generated';
+
+        const notesInput = document.getElementById('uclNotes');
+        if (notesInput) notesInput.value = row.Notes || '';
+
+        if (row.CustomerID) {
+            const custSelect = document.getElementById('uclCustomerSelect');
+            if (custSelect) custSelect.value = row.CustomerID;
+        }
+
+        calculateUCLFees();
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+window.openEditUCLModal = openEditUCLModal;
 
 function onUCLCustomerSelectChange() {
     const sel = document.getElementById('uclCustomerSelect');
@@ -23340,6 +23455,10 @@ async function saveUCLUpdate(printSlip = false) {
         return;
     }
 
+    const editId = document.getElementById('uclEditId')?.value;
+    const url = editId ? `${API}/ucl/${editId}` : `${API}/ucl`;
+    const method = editId ? 'PUT' : 'POST';
+
     const payload = {
         customerId: document.getElementById('uclCustomerSelect')?.value || null,
         customerName: custName,
@@ -23356,12 +23475,13 @@ async function saveUCLUpdate(printSlip = false) {
         accountId: document.getElementById('uclAccountSelect')?.value || null,
         status: document.getElementById('uclStatus')?.value || 'Generated',
         receiptDocumentId: document.getElementById('uclReceiptDocId')?.value || null,
-        receiptPath: document.getElementById('uclReceiptFilePath')?.value || null
+        receiptPath: document.getElementById('uclReceiptFilePath')?.value || null,
+        notes: document.getElementById('uclNotes')?.value || null
     };
 
     try {
-        const res = await fetch(`${API}/ucl`, {
-            method: 'POST',
+        const res = await fetch(url, {
+            method,
             headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(true) : { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
@@ -23371,11 +23491,12 @@ async function saveUCLUpdate(printSlip = false) {
                 showToast(`✅ ${json.message || 'UCL Update darz ho gaya!'}`, 'success');
             }
             closeModal('uclModal');
-            loadUCLPage(1);
+            loadUCLPage(currentUCLPage || 1);
             if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
 
-            if (printSlip && json.data?.uclId) {
-                printUCLSlip(json.data.uclId);
+            const finalUclId = editId || json.data?.uclId;
+            if (printSlip && finalUclId) {
+                printUCLSlip(finalUclId);
             }
         } else {
             alert('❌ ' + (json.error || 'Save nahi ho saka'));
@@ -23526,7 +23647,7 @@ async function loadPACPage() {
         const json = await res.json();
         if (json.success) {
             allPACEntries = json.data || [];
-            
+
             const stats = json.stats || {};
             const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
             setTxt('pacKpiAvailable', stats.available ?? 0);
@@ -23568,7 +23689,7 @@ function renderPACTable(rows) {
     rows.forEach(row => {
         const dateStr = row.GenerationDate ? formatDate(row.GenerationDate) : '-';
         const expiryStr = row.ExpiryDate ? formatDate(row.ExpiryDate) : '<span style="color: var(--text-muted);">-</span>';
-        
+
         let statusBadge = '';
         if (row.Status === 'Available') {
             statusBadge = `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">🟢 Available</span>`;
@@ -24127,17 +24248,17 @@ function updateReportTableStats(total, sumAmount, sumProfit) {
     const sumChip = document.getElementById('repTableSumChip');
     if (sumChip) {
         const curModule = document.getElementById('reportModuleFilter')?.value || 'all';
-        const label = curModule === 'all' 
-            ? 'Kul Karobar (Gross Volume)' 
+        const label = curModule === 'all'
+            ? 'Kul Karobar (Gross Volume)'
             : (curModule === 'transactions' ? 'Kul Len-Den' :
-               curModule === 'bc' ? 'Kul BC Turnover' :
-               curModule === 'csc' ? 'Kul CSC Shulk' :
-               curModule === 'khata' ? 'Kul Khata Rashi' :
-               curModule === 'invoices' ? 'Kul Bill Rashi' :
-               curModule === 'billpay' ? 'Kul Bill Bhugtan' : 'Kul Rashi');
+                curModule === 'bc' ? 'Kul BC Turnover' :
+                    curModule === 'csc' ? 'Kul CSC Shulk' :
+                        curModule === 'khata' ? 'Kul Khata Rashi' :
+                            curModule === 'invoices' ? 'Kul Bill Rashi' :
+                                curModule === 'billpay' ? 'Kul Bill Bhugtan' : 'Kul Rashi');
         sumChip.textContent = `${label}: ${formatMoney(sumAmount || 0)}`;
-        sumChip.title = curModule === 'all' 
-            ? 'Sabhi modules ka milakar kul len-den volume (Turnover)' 
+        sumChip.title = curModule === 'all'
+            ? 'Sabhi modules ka milakar kul len-den volume (Turnover)'
             : label;
     }
 
@@ -26832,8 +26953,8 @@ async function refreshAppVersionBadge(showGlow) {
         badge.dataset.version = ver;
         badge.title = 'Current version: v' + ver + ' - auto-update hone par khud badal jata hai';
 
-        try { 
-            localStorage.setItem('cmbc_app_version', ver); 
+        try {
+            localStorage.setItem('cmbc_app_version', ver);
             const sPill = document.getElementById('settingsVersionPill');
             if (sPill) sPill.textContent = 'v' + ver + ' Pro Enterprise';
             const sBld = document.getElementById('settingsBuildRelease');

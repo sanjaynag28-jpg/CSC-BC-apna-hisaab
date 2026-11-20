@@ -3805,7 +3805,6 @@
                             <th>Grahak Jankari</th>
                             <th>SID / URN Number</th>
                             <th>Update Type</th>
-                            <th>PAC Code</th>
                             <th>Shulk (₹)</th>
                             <th>Payment</th>
                             <th>Status</th>
@@ -3814,7 +3813,7 @@
                     </thead>
                     <tbody id="uclTableBody">
                         <tr>
-                            <td colspan="10" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            <td colspan="9" style="text-align: center; padding: 40px; color: var(--text-muted);">
                                 UCL data load ho raha hai...
                             </td>
                         </tr>
@@ -11647,17 +11646,20 @@
                                     <input type="text" id="uclCustPhone" class="form-control" placeholder="10-digit mobile" maxlength="10" style="height: 40px; border-radius: 8px;">
                                 </div>
                                 <div class="form-group">
-                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Aadhaar (Last 4 / Masked)</label>
-                                    <input type="text" id="uclCustAadhaar" class="form-control" placeholder="e.g. 1047 ya XXXXXXXX1047" style="height: 40px; border-radius: 8px; font-family: monospace;">
+                                    <label style="font-weight: 600; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                                        <span>Aadhaar (12-Digit ya Last 4)</span>
+                                        <span id="uclAadhaarChip"></span>
+                                    </label>
+                                    <input type="text" id="uclCustAadhaar" class="form-control" placeholder="12-digit Aadhaar / Last 4" maxlength="14" oninput="handleUCLAadhaarInput(this)" style="height: 40px; border-radius: 8px; font-family: monospace;">
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Right Column: UCL Update & PAC Code Details -->
+                        <!-- Right Column: UCL Update Aavedan Details -->
                         <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
-                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #7c3aed; display: flex; align-items: center; gap: 8px;">
-                                <i data-lucide="key" style="width: 18px; height: 18px;"></i>
-                                <span>UCL Packet & PAC Code Details</span>
+                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+                                <span>UCL Update Aavedan Jankari</span>
                             </div>
 
                             <!-- SID / Acknowledgement No -->
@@ -11690,15 +11692,7 @@
                                 </div>
                             </div>
 
-                            <!-- PAC Code Link -->
-                            <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">
-                                    PAC Code (Packet Authentication Code)
-                                </label>
-                                <select id="uclPACSelect" class="form-control" style="height: 40px; border-radius: 8px;">
-                                    <option value="">-- PAC Code Chunein (Optional) --</option>
-                                </select>
-                            </div>
+                            <input type="hidden" id="uclPACSelect" value="">
                         </div>
                     </div>
 
