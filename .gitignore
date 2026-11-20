@@ -66,3 +66,4 @@ scripts/*
 !scripts/reconcile_and_backfill_all_sn.js
 !scripts/create_project_zip.js
 !scripts/gdrive_backup.js
+!scripts/youtube_uploader.js
