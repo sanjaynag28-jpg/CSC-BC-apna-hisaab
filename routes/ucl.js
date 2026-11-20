@@ -19,6 +19,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const Tesseract = require('tesseract.js');
+const sharp = require('sharp');
 
 const { query, withTransaction, sql } = require('../database/db');
 const { logAudit } = require('../utils/auditLogger');
@@ -70,45 +71,42 @@ function parseUCLReceipt(text) {
     };
 
     // 1. SID / Enrollment number (e.g. S325112317949020261120155058)
-    const sidMatch = text.match(/(?:SID|नामांकन\s*संख्या)[^\n\r]*?([S\d][\d\s]{18,35})/i) || text.match(/\b(S\d{20,32})\b/i);
+    const sidMatch = text.match(/(?:SID|नामांकन|URN)[^\n\r]*?([S§$5\d][\d\s]{18,35})/i) || text.match(/\b([S§$][\d\s]{20,32})\b/i);
     if (sidMatch) {
-        res.sid = sidMatch[1].replace(/\s+/g, '');
+        res.sid = sidMatch[1].replace(/[§$]/g, 'S').replace(/\s+/g, '');
     }
 
     // 2. Date & Time (e.g. 20/11/2026 15:50:58)
-    const dateMatch = text.match(/(?:Date|तिथि)[^\n\r]*?(\d{2})[\/\.\-]?(\d{2})[\/\.\-]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
+    const dateMatch = text.match(/(?:Date|तिथि)[^\n\r]*?(\d{2})[\/\.\-0]?(\d{2})[\/\.\-0]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
         || text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);
-    if (dateMatch) {
-        if (dateMatch[3] && dateMatch[3].length === 4) {
-            res.date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
-        }
+    if (dateMatch && dateMatch[3] && dateMatch[3].length === 4) {
+        res.date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
         if (dateMatch[4]) res.time = dateMatch[4];
     }
     if (!res.date) {
-        const today = new Date().toISOString().split('T')[0];
-        res.date = today;
+        res.date = new Date().toISOString().split('T')[0];
     }
 
     // 3. Mobile Number (10 digits starting with 6, 7, 8, 9)
-    const phoneMatch = text.match(/(?:Mobile|मोबाईल|Phone)[^\d]*?([6-9]\d{9})/i) || text.match(/\b([6-9]\d{9})\b/);
+    const phoneMatch = text.match(/(?:Mobile|मोबाईल|Phone)[^\d\n\r]*?([6-9][\d\s]{9,12})/i) || text.match(/\b([6-9]\d{9})\b/);
     if (phoneMatch) {
-        res.customerPhone = phoneMatch[1];
+        res.customerPhone = phoneMatch[1].replace(/\D/g, '').slice(0, 10);
     }
 
-    // 4. Resident Name (after Name: or नाम:)
-    const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i);
+    // 4. Resident Name (after Name: or नाम: or Update(s) made as per request)
+    const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i) ||
+                     text.match(/(?:Update\(s\)\s*made[^\n\r]*?[:\-]\s*)([A-Za-z\s]{2,30})/i);
     if (nameMatch) {
-        let n = nameMatch[1].trim();
+        let n = nameMatch[1].trim().split('\n')[0].trim();
         n = n.replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
         if (n.length >= 2) res.customerName = n;
     }
 
     // 5. Masked Aadhaar / Last 4 Digits (e.g. XXXXXXXX1047)
-    const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?([X\d]{8,14})/i) || text.match(/([X]{4,8}\s*\d{4})/i);
+    const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?(?:[X\dO0]{4,14}\s*)(\d{3,4})/i) ||
+                         text.match(/(?:[X\dO0]{6,14}\s*)(\d{3,4})/i);
     if (aadhaarMatch) {
-        const raw = aadhaarMatch[1].replace(/\s+/g, '');
-        const digits = raw.match(/\d{4}$/);
-        if (digits) res.aadhaarLast4 = digits[0];
+        res.aadhaarLast4 = aadhaarMatch[1];
         res.aadhaarMasked = 'XXXX-XXXX-' + (res.aadhaarLast4 || 'XXXX');
     }
 
@@ -158,10 +156,24 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
         const fileSize = req.file.size || 0;
         const relativePath = `/uploads/documents/${fileName}`;
 
-        // Run OCR on the receipt
+        // Run Sharp preprocessing + Tesseract OCR on the receipt
         let ocrText = '';
         try {
-            const ocrResult = await Tesseract.recognize(filePath, 'eng');
+            let imageSource = filePath;
+            if (fileType.startsWith('image/')) {
+                try {
+                    const meta = await sharp(filePath).metadata();
+                    const targetWidth = meta.width && meta.width < 1800 ? 1800 : meta.width;
+                    imageSource = await sharp(filePath)
+                        .resize({ width: targetWidth, kernel: sharp.kernel.lanczos3 })
+                        .png()
+                        .toBuffer();
+                } catch (sharpErr) {
+                    console.warn('[UCL Sharp Preprocess Warning]:', sharpErr.message);
+                    imageSource = filePath;
+                }
+            }
+            const ocrResult = await Tesseract.recognize(imageSource, 'eng');
             ocrText = ocrResult?.data?.text || '';
         } catch (ocrErr) {
             console.error('[UCL OCR Error]:', ocrErr.message);
@@ -169,6 +181,76 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
 
         // Parse extracted text
         const parsed = parseUCLReceipt(ocrText);
+
+        // Targeted Aadhaar Crop Fallback if Aadhaar not cleanly detected
+        if (fileType.startsWith('image/') && (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4)) {
+            try {
+                const meta = await sharp(filePath).metadata();
+                const cropBuf = await sharp(filePath)
+                    .extract({
+                        left: Math.round(meta.width * 0.05),
+                        top: Math.round(meta.height * 0.28),
+                        width: Math.round(meta.width * 0.55),
+                        height: Math.round(meta.height * 0.08)
+                    })
+                    .resize({ width: 1200 })
+                    .grayscale()
+                    .png()
+                    .toBuffer();
+                const aadhRes = await Tesseract.recognize(cropBuf, 'eng');
+                const aadhM = aadhRes.data.text.match(/(?:[X\dO0]{4,14}\s*)(\d{4})/i) || aadhRes.data.text.match(/(\d{4})\s*$/m);
+                if (aadhM) {
+                    parsed.aadhaarLast4 = aadhM[1];
+                    parsed.aadhaarMasked = `XXXX-XXXX-${aadhM[1]}`;
+                }
+            } catch (aadhErr) {
+                console.warn('[UCL Aadhaar Crop Fallback Warning]:', aadhErr.message);
+            }
+        }
+
+        // Database Candidate Enrichment (Direct match or OCR digit confusions like 3 <-> 9)
+        if (parsed.customerPhone) {
+            try {
+                const dbRes = await query(`
+                    SELECT CustomerID, CustomerName, Phone, AadhaarNumber 
+                    FROM Customers 
+                    WHERE Phone = @p AND UserID = @userId
+                `, { p: parsed.customerPhone, userId });
+                if (dbRes.recordset?.length > 0) {
+                    parsed.matchedCustomerId = dbRes.recordset[0].CustomerID;
+                    parsed.customerName = dbRes.recordset[0].CustomerName || parsed.customerName;
+                    if (dbRes.recordset[0].AadhaarNumber && (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4)) {
+                        const cleanAad = String(dbRes.recordset[0].AadhaarNumber).replace(/\D/g, '');
+                        if (cleanAad.length >= 4) {
+                            parsed.aadhaarLast4 = cleanAad.slice(-4);
+                            parsed.aadhaarMasked = `XXXX-XXXX-${parsed.aadhaarLast4}`;
+                        }
+                    }
+                } else {
+                    const cand1 = parsed.customerPhone.replace(/3/g, '9');
+                    const cand2 = parsed.customerPhone.replace(/9/g, '3');
+                    const altRes = await query(`
+                        SELECT CustomerID, CustomerName, Phone, AadhaarNumber 
+                        FROM Customers 
+                        WHERE Phone IN (@c1, @c2) AND UserID = @userId
+                    `, { c1: cand1, c2: cand2, userId });
+                    if (altRes.recordset?.length > 0) {
+                        parsed.matchedCustomerId = altRes.recordset[0].CustomerID;
+                        parsed.customerPhone = altRes.recordset[0].Phone;
+                        parsed.customerName = altRes.recordset[0].CustomerName || parsed.customerName;
+                        if (altRes.recordset[0].AadhaarNumber && (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4)) {
+                            const cleanAad = String(altRes.recordset[0].AadhaarNumber).replace(/\D/g, '');
+                            if (cleanAad.length >= 4) {
+                                parsed.aadhaarLast4 = cleanAad.slice(-4);
+                                parsed.aadhaarMasked = `XXXX-XXXX-${parsed.aadhaarLast4}`;
+                            }
+                        }
+                    }
+                }
+            } catch (candErr) {
+                console.warn('[UCL DB Candidate Warning]:', candErr.message);
+            }
+        }
 
         // Save entry in Documents table
         let documentId = null;

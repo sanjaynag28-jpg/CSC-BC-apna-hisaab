@@ -23480,16 +23480,20 @@ async function uploadAndScanUCLReceipt(file) {
             }
 
             // Auto-fill fields from scanned receipt
-            if (p.customerName) {
-                const nameInp = document.getElementById('uclCustName');
-                if (nameInp) nameInp.value = p.customerName;
-            }
             if (p.customerPhone) {
                 const phoneInp = document.getElementById('uclCustPhone');
                 if (phoneInp) {
                     phoneInp.value = p.customerPhone;
                     handleUCLPhoneInput(phoneInp);
                 }
+            }
+            if (p.customerName) {
+                const nameInp = document.getElementById('uclCustName');
+                if (nameInp) nameInp.value = p.customerName;
+            }
+            if (p.matchedCustomerId) {
+                const custSel = document.getElementById('uclCustomerSelect');
+                if (custSel) custSel.value = p.matchedCustomerId;
             }
             if (p.aadhaarLast4) {
                 const aadhaarInp = document.getElementById('uclCustAadhaar');

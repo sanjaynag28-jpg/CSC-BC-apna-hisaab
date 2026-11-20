@@ -534,7 +534,7 @@ async function verifyAll() {
             SELECT COUNT(*) AS cnt 
             FROM Documents 
             WHERE EntityType IS NULL 
-               OR EntityType NOT IN ('Customer', 'CSC', 'BillPay', 'Invoice', 'Khata', 'BC', 'Shop');
+               OR EntityType NOT IN ('Customer', 'CSC', 'BillPay', 'Invoice', 'Khata', 'BC', 'Shop', 'UCL', 'PAC');
         `);
         const docBadCount = docBadRes.recordset[0].cnt;
 
