@@ -1041,6 +1041,20 @@
                 <span class="nav-badge" id="badge-billpayments"
                     style="background: rgba(16, 185, 129, 0.2); color: #059669; font-weight: 800;">0</span>
             </a>
+            <a href="#ucl" class="nav-item" onclick="showPage('ucl', this); return false;" id="nav-ucl"
+                title="Aadhaar UCL Update / यूसीएल आधार संशोधन सेवा">
+                <i data-lucide="fingerprint" style="color: #06b6d4;"></i>
+                <span>UCL Update</span>
+                <span class="nav-badge" id="badge-ucl"
+                    style="background: rgba(6, 182, 212, 0.18); color: #0891b2; font-weight: 700;">0</span>
+            </a>
+            <a href="#pac" class="nav-item" onclick="showPage('pac', this); return false;" id="nav-pac"
+                title="PAC Code Management / ऑपरेटर पीएसी कोड व वॉलेट">
+                <i data-lucide="key" style="color: #8b5cf6;"></i>
+                <span>PAC Code</span>
+                <span class="nav-badge" id="badge-pac"
+                    style="background: rgba(139, 92, 246, 0.18); color: #7c3aed; font-weight: 700;">0</span>
+            </a>
 
             <div class="nav-section-title">Planning</div>
             <a href="#budgets" class="nav-item" onclick="showPage('budgets', this); return false;" id="nav-budgets"
@@ -3685,6 +3699,167 @@
                 </div>
             </div>
         </div><!-- /page-billpayments -->
+
+        <!-- ============================================================== -->
+        <!-- AADHAAR UCL UPDATE PAGE (यूसीएल आधार संशोधन)                     -->
+        <!-- ============================================================== -->
+        <div id="page-ucl" class="page">
+            <div class="page-header"
+                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+                <div class="page-header-info">
+                    <div class="page-header-badge"
+                        style="background: rgba(6, 182, 212, 0.12); color: #0891b2; border-color: rgba(6, 182, 212, 0.3);">
+                        <i data-lucide="fingerprint"></i> AADHAAR UCL SEVA
+                    </div>
+                    <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
+                        <span>UCL Update (आधार संशोधन सेवा)</span>
+                    </h1>
+                    <p class="page-header-sub">Aadhaar Demographic Update (Name, DOB, Mobile, Address, Document POI/POA), EID Tracking & Customer Slips</p>
+                </div>
+                <div class="page-header-actions"
+                    style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <button class="btn-ghost" onclick="loadUCLPage()" title="List refresh karein">
+                        <i data-lucide="refresh-cw"></i> Refresh
+                    </button>
+                    <button class="btn-secondary" onclick="alert('Export functionality jald hi active hogi')" title="Excel download karein">
+                        <i data-lucide="file-spreadsheet"></i> Export Excel
+                    </button>
+                    <button class="btn-primary" id="btn-ucl-new" onclick="alert('Naya UCL Update form requirements ke anusaar jald hi open hoga')"
+                        title="Naya UCL Aavedan Darz Karein">
+                        <i data-lucide="plus-circle"></i> + Naya UCL Update
+                    </button>
+                </div>
+            </div>
+
+            <!-- UCL KPI Summary Cards -->
+            <div class="csc-stats-grid" id="uclStatsGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
+                <div class="csc-stat-card total active-card">
+                    <div class="csc-stat-icon" style="background: #0891b2; color: #fff;"><i data-lucide="fingerprint"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Total Updates (कुल)</div>
+                        <div class="csc-stat-val" id="uclKpiTotal">0</div>
+                        <div class="csc-stat-sub">Sabhi UCL aavedan</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card pending">
+                    <div class="csc-stat-icon" style="background: #f59e0b; color: #fff;"><i data-lucide="clock"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">In-Process / Pending</div>
+                        <div class="csc-stat-val" id="uclKpiPending">0</div>
+                        <div class="csc-stat-sub">Packet upload / Approval</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card approved">
+                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="check-circle-2"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Generated / Success</div>
+                        <div class="csc-stat-val" id="uclKpiApproved">0</div>
+                        <div class="csc-stat-sub">Aadhaar updated</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card delivered">
+                    <div class="csc-stat-icon" style="background: #6366f1; color: #fff;"><i data-lucide="wallet"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Total Fees Collected</div>
+                        <div class="csc-stat-val" id="uclKpiFees">₹0</div>
+                        <div class="csc-stat-sub">Shulk & Hisaab</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UCL Main Panel / Placeholder -->
+            <div class="card" style="padding: 28px; text-align: center; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg-card); margin-top: 10px;">
+                <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: #0891b2;">
+                    <i data-lucide="fingerprint" style="width: 32px; height: 32px;"></i>
+                </div>
+                <h3 style="margin-bottom: 8px; font-weight: 700;">UCL Update Service Sidebar Me Add Ho Gayi Hai!</h3>
+                <p style="color: var(--text-secondary); max-width: 620px; margin: 0 auto 16px; font-size: 14px; line-height: 1.6;">
+                    Aap bataiye isme kaun-kaun se fields, status, slip format aur hisaab rakhna hai (jaise Resident Name, Aadhaar/EID No, Update Type [Mobile/Name/Address/DOB/Doc], PAC Code Link, Fees ₹50, Operator Name, aur Thermal Receipt Print).
+                </p>
+                <div style="display: inline-flex; gap: 8px; font-size: 13px; color: #0891b2; background: rgba(6, 182, 212, 0.08); padding: 8px 16px; border-radius: 20px; font-weight: 600;">
+                    <i data-lucide="info" style="width: 16px; height: 16px;"></i> Ready for your custom requirements
+                </div>
+            </div>
+        </div><!-- /page-ucl -->
+
+        <!-- ============================================================== -->
+        <!-- CSC PAC CODE MANAGEMENT PAGE (ऑपरेटर पीएसी कोड)                  -->
+        <!-- ============================================================== -->
+        <div id="page-pac" class="page">
+            <div class="page-header"
+                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+                <div class="page-header-info">
+                    <div class="page-header-badge"
+                        style="background: rgba(139, 92, 246, 0.12); color: #7c3aed; border-color: rgba(139, 92, 246, 0.3);">
+                        <i data-lucide="key"></i> CSC AADHAAR PAC SYSTEM
+                    </div>
+                    <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
+                        <span>PAC Code (Packet Authentication Code)</span>
+                    </h1>
+                    <p class="page-header-sub">CSC UCL Operator PAC Code Generation, Wallet Deduction Tracking, Used / Unused Stock & Validity</p>
+                </div>
+                <div class="page-header-actions"
+                    style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <button class="btn-ghost" onclick="loadPACPage()" title="List refresh karein">
+                        <i data-lucide="refresh-cw"></i> Refresh
+                    </button>
+                    <button class="btn-primary" id="btn-pac-new" onclick="alert('Naya PAC Code entry form requirements ke anusaar jald hi open hoga')"
+                        title="Naya PAC Code Darz Karein">
+                        <i data-lucide="plus-circle"></i> + Naya PAC Code
+                    </button>
+                </div>
+            </div>
+
+            <!-- PAC KPI Summary Cards -->
+            <div class="csc-stats-grid" id="pacStatsGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
+                <div class="csc-stat-card total active-card">
+                    <div class="csc-stat-icon" style="background: #7c3aed; color: #fff;"><i data-lucide="key"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Available (Unused) PAC</div>
+                        <div class="csc-stat-val" id="pacKpiAvailable">0</div>
+                        <div class="csc-stat-sub">Ready to use in UCL</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card pending">
+                    <div class="csc-stat-icon" style="background: #3b82f6; color: #fff;"><i data-lucide="list"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Total Generated</div>
+                        <div class="csc-stat-val" id="pacKpiTotal">0</div>
+                        <div class="csc-stat-sub">All PAC codes</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card approved">
+                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="check-circle-2"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Used / Consumed</div>
+                        <div class="csc-stat-val" id="pacKpiUsed">0</div>
+                        <div class="csc-stat-sub">Attached to packets</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card delivered">
+                    <div class="csc-stat-icon" style="background: #f43f5e; color: #fff;"><i data-lucide="credit-card"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">CSC Wallet Spent</div>
+                        <div class="csc-stat-val" id="pacKpiWallet">₹0</div>
+                        <div class="csc-stat-sub">Wallet deduction hisaab</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAC Main Panel / Placeholder -->
+            <div class="card" style="padding: 28px; text-align: center; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg-card); margin-top: 10px;">
+                <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(139, 92, 246, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: #7c3aed;">
+                    <i data-lucide="key" style="width: 32px; height: 32px;"></i>
+                </div>
+                <h3 style="margin-bottom: 8px; font-weight: 700;">PAC Code Service Sidebar Me Add Ho Gayi Hai!</h3>
+                <p style="color: var(--text-secondary); max-width: 620px; margin: 0 auto 16px; font-size: 14px; line-height: 1.6;">
+                    Aap bataiye isme kya workflow chahiye (jaise PAC Code number, Generation Date, CSC Wallet Katoti ₹50, Status: Available / Used / Expired, aur Kis Grahak / EID par PAC use hua uska tracking).
+                </p>
+                <div style="display: inline-flex; gap: 8px; font-size: 13px; color: #7c3aed; background: rgba(139, 92, 246, 0.08); padding: 8px 16px; border-radius: 20px; font-weight: 600;">
+                    <i data-lucide="info" style="width: 16px; height: 16px;"></i> Ready for your custom requirements
+                </div>
+            </div>
+        </div><!-- /page-pac -->
 
         <!-- Database Explorer has been moved into Settings (pane-settings-database) -->
         <div id="page-database" class="page" style="display:none;"></div>

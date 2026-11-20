@@ -3025,6 +3025,8 @@ function updateBreadcrumb() {
         database: 'Database Explorer (डेटाबेस)',
         recyclebin: 'Recycle Bin',
         csc: 'CSC Work Tracker (सेवा ट्रैकर)',
+        ucl: 'UCL Update (आधार संशोधन)',
+        pac: 'PAC Code (ऑपरेटर पीएसी)',
         settings: 'Settings'
     };
     document.getElementById('breadcrumb').textContent = names[currentPage] || currentPage;
@@ -3168,6 +3170,8 @@ function showPage(page, navEl) {
         documents: loadDocumentsPage,
         csc: loadCSCPage,
         billpayments: loadBillPaymentsPage,
+        ucl: loadUCLPage,
+        pac: loadPACPage,
         history: loadHistoryPage,
         settings: loadSettingsPage
     };
@@ -3176,6 +3180,8 @@ function showPage(page, navEl) {
         customers: 'Grahak Directory Load Ho Rahi Hai...',
         csc: 'CSC Sewayein Load Ho Rahi Hain...',
         billpayments: 'Bill & EMI Payments Load Ho Rahi Hain...',
+        ucl: 'Aadhaar UCL Update Service Load Ho Rahi Hai...',
+        pac: 'PAC Code Management Load Ho Raha Hai...',
         transactions: 'Transactions & Rokad Bahi Load Ho Rahi Hai...',
         reports: 'Reports & Analytics Load Ho Rahi Hain...',
         daybook: 'Day Book Load Ho Rahi Hai...',
@@ -22916,6 +22922,23 @@ function changeBPPageSize(val) {
     loadBillPaymentsPage(1);
 }
 window.changeBPPageSize = changeBPPageSize;
+
+// ==========================================================================
+// AADHAAR UCL UPDATE & PAC CODE MODULE LOADERS
+// ==========================================================================
+async function loadUCLPage() {
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+    }
+}
+window.loadUCLPage = loadUCLPage;
+
+async function loadPACPage() {
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+    }
+}
+window.loadPACPage = loadPACPage;
 
 window.onBPModalCategoryChange = onBPModalCategoryChange;
 window.calculateBPProfitInModal = calculateBPProfitInModal;
