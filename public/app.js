@@ -11792,7 +11792,7 @@ if (!window._familyPickerListenerAttached) {
         if (!_familyPickerEl) return;
         if (_familyPickerEl.contains(e.target)) return;
         const t = e.target;
-        if (t && (t.id === 'cscCustPhone' || t.id === 'bcCustomerPhone' || t.id === 'bpModalCustPhone')) return;
+        if (t && (t.id === 'cscCustPhone' || t.id === 'bcCustomerPhone' || t.id === 'bpModalCustPhone' || t.id === 'uclCustPhone')) return;
         hideFamilyPicker(true);
     }, true);
 }
@@ -11959,6 +11959,19 @@ function handleBillPayPhoneInput(el) {
     });
 }
 window.handleBillPayPhoneInput = handleBillPayPhoneInput;
+
+// UCL Update form ke phone input ke liye wrapper (Smart Family Guard)
+function handleUCLPhoneInput(el) {
+    autoFillCustomerFromPhone({
+        inputId: 'uclCustPhone',
+        nameId: 'uclCustName',
+        phoneId: 'uclCustPhone',
+        customerSelectId: 'uclCustomerSelect',
+        aadhaarId: 'uclCustAadhaar',
+        chipId: 'uclPhoneChip'
+    });
+}
+window.handleUCLPhoneInput = handleUCLPhoneInput;
 
 // ============ UNIVERSAL CLIPBOARD COPY SYSTEM ============
 function copyTextToClipboard(text, label = 'Content', triggerBtn = null) {
@@ -23197,6 +23210,17 @@ async function openNewUCLModal() {
     if (titleEl) titleEl.textContent = 'Naya UCL Update (आधार संशोधन एंट्री)';
     const chip = document.getElementById('uclAadhaarChip');
     if (chip) chip.innerHTML = '';
+    const phoneChip = document.getElementById('uclPhoneChip');
+    if (phoneChip) phoneChip.innerHTML = '';
+    const phoneInp = document.getElementById('uclCustPhone');
+    if (phoneInp) {
+        phoneInp._skipFamilyLink = false;
+        phoneInp._matchedByAadhaar = null;
+    }
+    const aadhaarInp = document.getElementById('uclCustAadhaar');
+    if (aadhaarInp) {
+        aadhaarInp._matchedCustId = null;
+    }
     const pacEl = document.getElementById('uclPACSelect');
     if (pacEl) pacEl.value = '';
 
@@ -23367,19 +23391,22 @@ async function handleUCLReceiptUpload(e) {
 
             // Auto-fill fields from scanned receipt
             if (p.customerName) document.getElementById('uclCustName').value = p.customerName;
-            if (p.customerPhone) document.getElementById('uclCustPhone').value = p.customerPhone;
-            if (p.aadhaarLast4) document.getElementById('uclCustAadhaar').value = p.aadhaarLast4;
-            if (p.sid) document.getElementById('uclSID').value = p.sid;
-            if (p.biometrics) document.getElementById('uclBiometrics').value = p.biometrics;
-
-            // Try to match existing customer by phone or name
-            if (p.customerPhone && Array.isArray(allCustomersData)) {
-                const match = allCustomersData.find(c => c.Phone && c.Phone.replace(/\D/g, '').endsWith(p.customerPhone.slice(-10)));
-                if (match) {
-                    const custSel = document.getElementById('uclCustomerSelect');
-                    if (custSel) custSel.value = match.CustomerID;
+            if (p.customerPhone) {
+                const phoneInp = document.getElementById('uclCustPhone');
+                if (phoneInp) {
+                    phoneInp.value = p.customerPhone;
+                    handleUCLPhoneInput(phoneInp);
                 }
             }
+            if (p.aadhaarLast4) {
+                const aadhaarInp = document.getElementById('uclCustAadhaar');
+                if (aadhaarInp) {
+                    aadhaarInp.value = p.aadhaarLast4;
+                    handleUCLAadhaarInput(aadhaarInp);
+                }
+            }
+            if (p.sid) document.getElementById('uclSID').value = p.sid;
+            if (p.biometrics) document.getElementById('uclBiometrics').value = p.biometrics;
 
             if (typeof showToast === 'function') {
                 showToast(`✅ UIDAI Raseed Scan Ho Gayi! Resident: ${p.customerName || 'Customer'} auto-fill ho chuka hai.`, 'success');
@@ -23467,10 +23494,12 @@ async function saveUCLUpdate(printSlip = false) {
     const url = editId ? `${API}/ucl/${editId}` : `${API}/ucl`;
     const method = editId ? 'PUT' : 'POST';
 
+    const phoneInp = document.getElementById('uclCustPhone');
     const payload = {
         customerId: document.getElementById('uclCustomerSelect')?.value || null,
         customerName: custName,
-        customerPhone: document.getElementById('uclCustPhone')?.value?.trim() || null,
+        customerPhone: phoneInp?.value?.trim() || null,
+        skipFamilyLink: phoneInp?._skipFamilyLink === true,
         aadhaarLast4: document.getElementById('uclCustAadhaar')?.value?.trim() || null,
         sid: document.getElementById('uclSID')?.value?.trim() || null,
         updateType: document.getElementById('uclUpdateType')?.value || 'Demographics Update',

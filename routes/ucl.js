@@ -370,6 +370,7 @@ router.post('/', async (req, res) => {
             customerPhone: phone,
             customerAadhaar: aadhaarLast4,
             source: 'Aadhaar UCL Update',
+            skipFamilyLink: !!(body.SkipFamilyLink || body.skipFamilyLink),
             userId
         });
         const resolvedCustomerId = custRes.customerId;

@@ -911,7 +911,8 @@
                 </div>
                 <div class="dlt-item">
                     <i data-lucide="check-circle-2"></i>
-                    <span>Database: <strong>CashManagement</strong> on <code>localhost\SQLEXPRESS</code> (as configured in <code>.env</code>)</span>
+                    <span>Database: <strong>CashManagement</strong> on <code>localhost\SQLEXPRESS</code> (as configured
+                        in <code>.env</code>)</span>
                 </div>
             </div>
             <div class="db-lockdown-actions">
@@ -3714,7 +3715,8 @@
                     <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
                         <span>UCL Update (आधार संशोधन सेवा)</span>
                     </h1>
-                    <p class="page-header-sub">Aadhaar Demographic Update, EID Tracking, PAC Linkage, Auto-Customer & Khatabook Integration</p>
+                    <p class="page-header-sub">Aadhaar Demographic Update, EID Tracking, PAC Linkage, Auto-Customer &
+                        Khatabook Integration</p>
                 </div>
                 <div class="page-header-actions"
                     style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -3730,9 +3732,11 @@
             </div>
 
             <!-- UCL KPI Summary Cards -->
-            <div class="csc-stats-grid" id="uclStatsGrid" style="grid-template-columns: repeat(5, minmax(0, 1fr)) !important;">
+            <div class="csc-stats-grid" id="uclStatsGrid"
+                style="grid-template-columns: repeat(5, minmax(0, 1fr)) !important;">
                 <div class="csc-stat-card total active-card" onclick="filterUCLStatus('all', this)">
-                    <div class="csc-stat-icon" style="background: #0891b2; color: #fff;"><i data-lucide="fingerprint"></i></div>
+                    <div class="csc-stat-icon" style="background: #0891b2; color: #fff;"><i
+                            data-lucide="fingerprint"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Updates (कुल)</div>
                         <div class="csc-stat-val" id="uclKpiTotal">0</div>
@@ -3740,7 +3744,8 @@
                     </div>
                 </div>
                 <div class="csc-stat-card pending" onclick="filterUCLStatus('In-Process', this)">
-                    <div class="csc-stat-icon" style="background: #f59e0b; color: #fff;"><i data-lucide="clock"></i></div>
+                    <div class="csc-stat-icon" style="background: #f59e0b; color: #fff;"><i data-lucide="clock"></i>
+                    </div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">In-Process / Pending</div>
                         <div class="csc-stat-val" id="uclKpiPending">0</div>
@@ -3748,7 +3753,8 @@
                     </div>
                 </div>
                 <div class="csc-stat-card approved" onclick="filterUCLStatus('Approved', this)">
-                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="check-circle-2"></i></div>
+                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i
+                            data-lucide="check-circle-2"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Generated / Success</div>
                         <div class="csc-stat-val" id="uclKpiApproved">0</div>
@@ -3756,15 +3762,18 @@
                     </div>
                 </div>
                 <div class="csc-stat-card delivered">
-                    <div class="csc-stat-icon" style="background: #6366f1; color: #fff;"><i data-lucide="wallet"></i></div>
+                    <div class="csc-stat-icon" style="background: #6366f1; color: #fff;"><i data-lucide="wallet"></i>
+                    </div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Fees Collected</div>
                         <div class="csc-stat-val" id="uclKpiFees">₹0</div>
                         <div class="csc-stat-sub">Jama Shulk</div>
                     </div>
                 </div>
-                <div class="csc-stat-card" style="border-left: 4px solid #ef4444;" onclick="filterUCLStatus('all', this)">
-                    <div class="csc-stat-icon" style="background: #ef4444; color: #fff;"><i data-lucide="alert-circle"></i></div>
+                <div class="csc-stat-card" style="border-left: 4px solid #ef4444;"
+                    onclick="filterUCLStatus('all', this)">
+                    <div class="csc-stat-icon" style="background: #ef4444; color: #fff;"><i
+                            data-lucide="alert-circle"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Khatabook Udhaar Due</div>
                         <div class="csc-stat-val" id="uclKpiBalance" style="color: #ef4444;">₹0</div>
@@ -3774,13 +3783,18 @@
             </div>
 
             <!-- UCL Filter Toolbar -->
-            <div class="table-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
+            <div class="table-toolbar"
+                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
                 <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 260px;">
                     <div class="search-box" style="position: relative; width: 100%; max-width: 380px;">
-                        <i data-lucide="search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
-                        <input type="text" id="uclSearchInput" class="form-control" placeholder="Grahak, Mobile, SID, Aadhaar..." oninput="debounceUCLSearch()" style="padding-left: 36px; height: 38px; border-radius: 8px;">
+                        <i data-lucide="search"
+                            style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                        <input type="text" id="uclSearchInput" class="form-control"
+                            placeholder="Grahak, Mobile, SID, Aadhaar..." oninput="debounceUCLSearch()"
+                            style="padding-left: 36px; height: 38px; border-radius: 8px;">
                     </div>
-                    <select id="uclStatusFilter" class="form-control" onchange="loadUCLPage(1)" style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
+                    <select id="uclStatusFilter" class="form-control" onchange="loadUCLPage(1)"
+                        style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
                         <option value="all">Sabhi Status</option>
                         <option value="Generated">Generated</option>
                         <option value="In-Process">In-Process / Pending</option>
@@ -3789,14 +3803,17 @@
                     </select>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="date" id="uclStartDate" class="form-control" style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
+                    <input type="date" id="uclStartDate" class="form-control"
+                        style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
                     <span style="color: var(--text-muted);">se</span>
-                    <input type="date" id="uclEndDate" class="form-control" style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
+                    <input type="date" id="uclEndDate" class="form-control"
+                        style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
                 </div>
             </div>
 
             <!-- UCL Table View -->
-            <div class="table-responsive" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
+            <div class="table-responsive"
+                style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
                 <table class="table" style="width: 100%; margin-bottom: 0;">
                     <thead>
                         <tr>
@@ -3820,7 +3837,8 @@
                     </tbody>
                 </table>
             </div>
-            <div id="uclPagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;"></div>
+            <div id="uclPagination"
+                style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;"></div>
         </div><!-- /page-ucl -->
 
         <!-- ============================================================== -->
@@ -3837,7 +3855,8 @@
                     <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
                         <span>PAC Code (Packet Authentication Code)</span>
                     </h1>
-                    <p class="page-header-sub">CSC UCL Operator PAC Code Generation, Wallet Deduction Tracking, Stock & Used Packets</p>
+                    <p class="page-header-sub">CSC UCL Operator PAC Code Generation, Wallet Deduction Tracking, Stock &
+                        Used Packets</p>
                 </div>
                 <div class="page-header-actions"
                     style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
@@ -3853,7 +3872,8 @@
             </div>
 
             <!-- PAC KPI Summary Cards -->
-            <div class="csc-stats-grid" id="pacStatsGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
+            <div class="csc-stats-grid" id="pacStatsGrid"
+                style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
                 <div class="csc-stat-card total active-card" onclick="filterPACStatus('Available', this)">
                     <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="key"></i></div>
                     <div class="csc-stat-info">
@@ -3863,7 +3883,8 @@
                     </div>
                 </div>
                 <div class="csc-stat-card pending" onclick="filterPACStatus('all', this)">
-                    <div class="csc-stat-icon" style="background: #3b82f6; color: #fff;"><i data-lucide="list"></i></div>
+                    <div class="csc-stat-icon" style="background: #3b82f6; color: #fff;"><i data-lucide="list"></i>
+                    </div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Generated</div>
                         <div class="csc-stat-val" id="pacKpiTotal">0</div>
@@ -3871,7 +3892,8 @@
                     </div>
                 </div>
                 <div class="csc-stat-card approved" onclick="filterPACStatus('Used', this)">
-                    <div class="csc-stat-icon" style="background: #8b5cf6; color: #fff;"><i data-lucide="check-circle-2"></i></div>
+                    <div class="csc-stat-icon" style="background: #8b5cf6; color: #fff;"><i
+                            data-lucide="check-circle-2"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Used / Consumed</div>
                         <div class="csc-stat-val" id="pacKpiUsed">0</div>
@@ -3879,7 +3901,8 @@
                     </div>
                 </div>
                 <div class="csc-stat-card delivered">
-                    <div class="csc-stat-icon" style="background: #f43f5e; color: #fff;"><i data-lucide="credit-card"></i></div>
+                    <div class="csc-stat-icon" style="background: #f43f5e; color: #fff;"><i
+                            data-lucide="credit-card"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">CSC Wallet Spent</div>
                         <div class="csc-stat-val" id="pacKpiWallet">₹0</div>
@@ -3889,13 +3912,18 @@
             </div>
 
             <!-- PAC Filter Toolbar -->
-            <div class="table-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
+            <div class="table-toolbar"
+                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
                 <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 260px;">
                     <div class="search-box" style="position: relative; width: 100%; max-width: 380px;">
-                        <i data-lucide="search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
-                        <input type="text" id="pacSearchInput" class="form-control" placeholder="PAC Code, Operator, Grahak..." oninput="debouncePACSearch()" style="padding-left: 36px; height: 38px; border-radius: 8px;">
+                        <i data-lucide="search"
+                            style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                        <input type="text" id="pacSearchInput" class="form-control"
+                            placeholder="PAC Code, Operator, Grahak..." oninput="debouncePACSearch()"
+                            style="padding-left: 36px; height: 38px; border-radius: 8px;">
                     </div>
-                    <select id="pacStatusFilter" class="form-control" onchange="loadPACPage()" style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
+                    <select id="pacStatusFilter" class="form-control" onchange="loadPACPage()"
+                        style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
                         <option value="all">Sabhi Status</option>
                         <option value="Available" selected>Available (Unused Stock)</option>
                         <option value="Used">Used (Consumed)</option>
@@ -3905,7 +3933,8 @@
             </div>
 
             <!-- PAC Table View -->
-            <div class="table-responsive" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
+            <div class="table-responsive"
+                style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
                 <table class="table" style="width: 100%; margin-bottom: 0;">
                     <thead>
                         <tr>
@@ -5546,7 +5575,8 @@
                         <div class="settings-kv" style="margin-top: 12px;">
                             <div class="settings-kv-row"><span>Application Name</span><b>HisaabBC — Cash Management
                                     System</b></div>
-                            <div class="settings-kv-row"><span>Build & Release</span><b id="settingsBuildRelease">v1.0.22 (Enterprise BC &
+                            <div class="settings-kv-row"><span>Build & Release</span><b
+                                    id="settingsBuildRelease">v1.0.22 (Enterprise BC &
                                     Khatabook)</b></div>
                             <div class="settings-kv-row"><span>Web Server Host</span><b id="settingsServerStatus">LIVE
                                     (localhost:3000)</b></div>
@@ -9276,11 +9306,14 @@
                                 <div class="slip-row" id="slipBankRow"><span>Bank:</span> <b id="slipBank">-</b></div>
                                 <div class="slip-row" id="slipAadhaarRow"><span>Aadhaar:</span> <b id="slipAadhaar"
                                         class="font-mono">-</b></div>
-                                <div class="slip-row is-hidden" id="slipAccRow" style="display: none !important;"><span>Account No:</span> <b
-                                        id="slipAcc" class="font-mono">-</b></div>
-                                <div class="slip-row is-hidden" id="slipBalanceRow" style="display: none !important;"><span>Bank Balance
+                                <div class="slip-row is-hidden" id="slipAccRow" style="display: none !important;">
+                                    <span>Account No:</span> <b id="slipAcc" class="font-mono">-</b>
+                                </div>
+                                <div class="slip-row is-hidden" id="slipBalanceRow" style="display: none !important;">
+                                    <span>Bank Balance
                                         (Bacha):</span> <b id="slipBalance" class="font-mono"
-                                        style="color: #10b981; font-weight: 800;">-</b></div>
+                                        style="color: #10b981; font-weight: 800;">-</b>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -11562,11 +11595,12 @@
     <div class="modal-overlay" id="uclModal">
         <div class="modal modal-extra-wide" onclick="event.stopPropagation()"
             style="width: min(1100px, calc(100vw - 24px)); max-width: 1100px; border-radius: 16px; overflow: hidden; max-height: 94vh; display: flex; flex-direction: column;">
-            
+
             <div class="modal-header"
                 style="background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 12px;">
-                    <div style="background: rgba(255, 255, 255, 0.2); width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                    <div
+                        style="background: rgba(255, 255, 255, 0.2); width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
                         <i data-lucide="fingerprint" style="width: 24px; height: 24px; color: #fff;"></i>
                     </div>
                     <div>
@@ -11584,7 +11618,8 @@
                 </button>
             </div>
 
-            <form id="uclForm" onsubmit="handleUCLFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin: 0;">
+            <form id="uclForm" onsubmit="handleUCLFormSubmit(event)"
+                style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin: 0;">
                 <input type="hidden" id="uclEditId" value="">
                 <input type="hidden" id="uclReceiptDocId" value="">
                 <input type="hidden" id="uclReceiptFilePath" value="">
@@ -11593,86 +11628,121 @@
                     <!-- 1. OCR Upload / Auto-Fill Dropzone -->
                     <div id="uclDropzone" onclick="document.getElementById('uclFileInput').click()"
                         style="border: 2px dashed #0891b2; border-radius: 12px; padding: 18px; text-align: center; background: rgba(6, 182, 212, 0.05); cursor: pointer; margin-bottom: 18px; transition: all 0.2s ease;">
-                        <input type="file" id="uclFileInput" accept="image/*,application/pdf" style="display: none;" onchange="handleUCLReceiptUpload(event)">
+                        <input type="file" id="uclFileInput" accept="image/*,application/pdf" style="display: none;"
+                            onchange="handleUCLReceiptUpload(event)">
                         <div id="uclScanIdle">
-                            <i data-lucide="scan" style="width: 32px; height: 32px; color: #0891b2; margin-bottom: 4px;"></i>
+                            <i data-lucide="scan"
+                                style="width: 32px; height: 32px; color: #0891b2; margin-bottom: 4px;"></i>
                             <div style="font-weight: 800; color: #0891b2; font-size: 15px;">
                                 📸 UIDAI Acknowledgement / Consent Slip Upload Karein (Auto-Fill)
                             </div>
                             <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
-                                Yahan raseed photo/PDF drag karein ya click karke upload karein — Resident Naam, Mobile, Aadhaar, SID khud bhar jayenge
+                                Yahan raseed photo/PDF drag karein ya click karke upload karein — Resident Naam, Mobile,
+                                Aadhaar, SID khud bhar jayenge
                             </div>
                         </div>
                         <div id="uclScanLoading" style="display: none; padding: 6px;">
-                            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(8,145,178,0.3); border-top-color: #0891b2; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                            <div
+                                style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(8,145,178,0.3); border-top-color: #0891b2; border-radius: 50%; animation: spin 0.8s linear infinite;">
+                            </div>
                             <div style="margin-top: 8px; font-weight: 700; color: #0891b2;">
                                 ⚡ Raseed OCR Scan Ho Rahi Hai... Auto-Extracting Data...
                             </div>
                         </div>
-                        <div id="uclScanSuccess" style="display: none; color: #10b981; font-weight: 700; font-size: 13.5px;">
-                            <i data-lucide="check-circle-2" style="width: 18px; height: 18px; display: inline; vertical-align: middle;"></i>
+                        <div id="uclScanSuccess"
+                            style="display: none; color: #10b981; font-weight: 700; font-size: 13.5px;">
+                            <i data-lucide="check-circle-2"
+                                style="width: 18px; height: 18px; display: inline; vertical-align: middle;"></i>
                             Raseed scan ho gayi! Resident Naam, Mobile, SID & Aadhaar auto-fill ho gaye hain.
                         </div>
                     </div>
 
                     <!-- 2. Form Grid -->
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px;">
-                        
+
                         <!-- Left Column: Customer Information -->
-                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
-                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
+                        <div
+                            style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                            <div
+                                style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
                                 <i data-lucide="user-check" style="width: 18px; height: 18px;"></i>
                                 <span>Grahak Jankari (Auto Customer Link)</span>
                             </div>
 
                             <!-- Customer Search/Select -->
                             <div class="form-group" style="margin-bottom: 12px;">
-                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Grahak Khojein / Select Karein</label>
-                                <select id="uclCustomerSelect" class="form-control" onchange="onUCLCustomerSelectChange()" style="height: 40px; border-radius: 8px;">
+                                <label
+                                    style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Grahak
+                                    Khojein / Select Karein</label>
+                                <select id="uclCustomerSelect" class="form-control"
+                                    onchange="onUCLCustomerSelectChange()" style="height: 40px; border-radius: 8px;">
                                     <option value="">-- Direct Naya / Walk-in Customer --</option>
                                 </select>
                             </div>
 
                             <!-- Customer Name -->
                             <div class="form-group" style="margin-bottom: 12px;">
-                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Resident / Grahak Naam *</label>
-                                <input type="text" id="uclCustName" class="form-control" placeholder="e.g. Ramkali" required style="height: 40px; border-radius: 8px; font-weight: 700;">
+                                <label
+                                    style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Resident
+                                    / Grahak Naam *</label>
+                                <input type="text" id="uclCustName" class="form-control" placeholder="e.g. Ramkali"
+                                    required style="height: 40px; border-radius: 8px; font-weight: 700;">
                             </div>
 
                             <!-- Mobile & Aadhaar -->
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                 <div class="form-group">
-                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Mobile Number</label>
-                                    <input type="text" id="uclCustPhone" class="form-control" placeholder="10-digit mobile" maxlength="10" style="height: 40px; border-radius: 8px;">
+                                    <label
+                                        style="font-weight: 600; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                                        <span>Mobile Number</span>
+                                        <span id="uclPhoneChip"></span>
+                                    </label>
+                                    <input type="text" id="uclCustPhone" class="form-control"
+                                        placeholder="10-digit mobile" maxlength="10"
+                                        oninput="handleUCLPhoneInput(this)"
+                                        style="height: 40px; border-radius: 8px;">
                                 </div>
                                 <div class="form-group">
-                                    <label style="font-weight: 600; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                                    <label
+                                        style="font-weight: 600; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
                                         <span>Aadhaar (12-Digit ya Last 4)</span>
                                         <span id="uclAadhaarChip"></span>
                                     </label>
-                                    <input type="text" id="uclCustAadhaar" class="form-control" placeholder="12-digit Aadhaar / Last 4" maxlength="14" oninput="handleUCLAadhaarInput(this)" style="height: 40px; border-radius: 8px; font-family: monospace;">
+                                    <input type="text" id="uclCustAadhaar" class="form-control"
+                                        placeholder="12-digit Aadhaar / Last 4" maxlength="14"
+                                        oninput="handleUCLAadhaarInput(this)"
+                                        style="height: 40px; border-radius: 8px; font-family: monospace;">
                                 </div>
                             </div>
                         </div>
 
                         <!-- Right Column: UCL Update Aavedan Details -->
-                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
-                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
+                        <div
+                            style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                            <div
+                                style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
                                 <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
                                 <span>UCL Update Aavedan Jankari</span>
                             </div>
 
                             <!-- SID / Acknowledgement No -->
                             <div class="form-group" style="margin-bottom: 12px;">
-                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">SID / Acknowledgement No (URN)</label>
-                                <input type="text" id="uclSID" class="form-control" placeholder="e.g. S325112317949020261120155058" style="height: 40px; border-radius: 8px; font-family: monospace;">
+                                <label
+                                    style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">SID
+                                    / Acknowledgement No (URN)</label>
+                                <input type="text" id="uclSID" class="form-control"
+                                    placeholder="e.g. S325112317949020261120155058"
+                                    style="height: 40px; border-radius: 8px; font-family: monospace;">
                             </div>
 
                             <!-- Update Type & Biometrics -->
                             <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 12px;">
                                 <div class="form-group">
-                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Update Type *</label>
-                                    <select id="uclUpdateType" class="form-control" style="height: 40px; border-radius: 8px; font-weight: 600;">
+                                    <label
+                                        style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Update
+                                        Type *</label>
+                                    <select id="uclUpdateType" class="form-control"
+                                        style="height: 40px; border-radius: 8px; font-weight: 600;">
                                         <option value="Demographics (Name)">Demographics Update (Name)</option>
                                         <option value="Mobile Update">Mobile Number Update</option>
                                         <option value="Address Update">Address Update (निवास)</option>
@@ -11684,8 +11754,10 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Biometrics</label>
-                                    <select id="uclBiometrics" class="form-control" style="height: 40px; border-radius: 8px;">
+                                    <label
+                                        style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Biometrics</label>
+                                    <select id="uclBiometrics" class="form-control"
+                                        style="height: 40px; border-radius: 8px;">
                                         <option value="No">No</option>
                                         <option value="Yes">Yes</option>
                                     </select>
@@ -11697,40 +11769,61 @@
                     </div>
 
                     <!-- 3. Payment, Fees & Khatabook Card -->
-                    <div style="background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 12px; padding: 16px;">
-                        <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #059669; display: flex; align-items: center; justify-content: space-between;">
+                    <div
+                        style="background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 12px; padding: 16px;">
+                        <div
+                            style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #059669; display: flex; align-items: center; justify-content: space-between;">
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <i data-lucide="wallet" style="width: 18px; height: 18px;"></i>
                                 <span>Shulk, Payment Mode & Khatabook Hisaab</span>
                             </div>
-                            <span id="uclDueStatusBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #059669;">
+                            <span id="uclDueStatusBadge"
+                                style="font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #059669;">
                                 🟢 Poora Jama (Paid)
                             </span>
                         </div>
 
-                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                        <div
+                            style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">UIDAI Shulk (₹)</label>
-                                <input type="number" id="uclFee" class="form-control" value="50" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px; font-weight: 700;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">UIDAI
+                                    Shulk (₹)</label>
+                                <input type="number" id="uclFee" class="form-control" value="50" min="0" step="1"
+                                    oninput="calculateUCLFees()"
+                                    style="height: 38px; border-radius: 8px; font-weight: 700;">
                             </div>
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Operator Charge (₹)</label>
-                                <input type="number" id="uclOpFee" class="form-control" value="0" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Operator
+                                    Charge (₹)</label>
+                                <input type="number" id="uclOpFee" class="form-control" value="0" min="0" step="1"
+                                    oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px;">
                             </div>
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Kul Rashi (Total ₹)</label>
-                                <input type="number" id="uclTotalAmt" class="form-control" value="50" readonly style="height: 38px; border-radius: 8px; font-weight: 800; background: var(--bg-secondary);">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Kul
+                                    Rashi (Total ₹)</label>
+                                <input type="number" id="uclTotalAmt" class="form-control" value="50" readonly
+                                    style="height: 38px; border-radius: 8px; font-weight: 800; background: var(--bg-secondary);">
                             </div>
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Jama Rashi (Paid ₹)</label>
-                                <input type="number" id="uclPaidAmt" class="form-control" value="50" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px; font-weight: 800; color: #059669;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Jama
+                                    Rashi (Paid ₹)</label>
+                                <input type="number" id="uclPaidAmt" class="form-control" value="50" min="0" step="1"
+                                    oninput="calculateUCLFees()"
+                                    style="height: 38px; border-radius: 8px; font-weight: 800; color: #059669;">
                             </div>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Payment Mode *</label>
-                                <select id="uclPayMode" class="form-control" onchange="onUCLPayModeChange()" style="height: 38px; border-radius: 8px; font-weight: 600;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Payment
+                                    Mode *</label>
+                                <select id="uclPayMode" class="form-control" onchange="onUCLPayModeChange()"
+                                    style="height: 38px; border-radius: 8px; font-weight: 600;">
                                     <option value="Cash">💵 Cash (Rokad Counter)</option>
                                     <option value="Online">📱 Online / UPI / QR</option>
                                     <option value="Khata">📖 Khata / Udhaar (Khatabook)</option>
@@ -11738,14 +11831,19 @@
                                 </select>
                             </div>
                             <div class="form-group" id="uclAccountGroup">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Khata (Account)</label>
-                                <select id="uclAccountSelect" class="form-control" style="height: 38px; border-radius: 8px;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Khata
+                                    (Account)</label>
+                                <select id="uclAccountSelect" class="form-control"
+                                    style="height: 38px; border-radius: 8px;">
                                     <!-- Populated dynamically with active accounts -->
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Status</label>
-                                <select id="uclStatus" class="form-control" style="height: 38px; border-radius: 8px; font-weight: 700;">
+                                <label
+                                    style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Status</label>
+                                <select id="uclStatus" class="form-control"
+                                    style="height: 38px; border-radius: 8px; font-weight: 700;">
                                     <option value="Generated">⏳ Generated (पावती बन गई)</option>
                                     <option value="In-Process">⚙️ In-Process / Uploaded</option>
                                     <option value="Approved">✅ Approved / Success</option>
@@ -11755,20 +11853,25 @@
                         </div>
 
                         <!-- Udhaar Warning Bar -->
-                        <div id="uclKhataAlert" style="display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #dc2626; font-size: 12.5px; font-weight: 600;">
-                            <i data-lucide="info" style="width: 15px; height: 15px; display: inline; vertical-align: middle;"></i>
-                            Is grahak ka ₹<span id="uclKhataDueText">0</span> baqi udhaar rahega aur seedha <b>Khatabook</b> me auto-sync ho jayega.
+                        <div id="uclKhataAlert"
+                            style="display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #dc2626; font-size: 12.5px; font-weight: 600;">
+                            <i data-lucide="info"
+                                style="width: 15px; height: 15px; display: inline; vertical-align: middle;"></i>
+                            Is grahak ka ₹<span id="uclKhataDueText">0</span> baqi udhaar rahega aur seedha
+                            <b>Khatabook</b> me auto-sync ho jayega.
                         </div>
                     </div>
                 </div>
 
-                <div class="modal-footer" style="padding: 14px 24px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <div class="modal-footer"
+                    style="padding: 14px 24px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                     <button type="button" class="btn-ghost" onclick="closeModal('uclModal')">Radd Karein</button>
                     <div style="display: flex; gap: 10px;">
                         <button type="button" class="btn-secondary" onclick="saveUCLUpdate(true)">
                             <i data-lucide="printer"></i> Save & Print Parchi
                         </button>
-                        <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #0891b2, #0e7490);">
+                        <button type="submit" class="btn-primary"
+                            style="background: linear-gradient(135deg, #0891b2, #0e7490);">
                             <i data-lucide="save"></i> Save Entry
                         </button>
                     </div>
@@ -11797,31 +11900,46 @@
             <form id="pacForm" onsubmit="handlePACFormSubmit(event)" style="margin: 0;">
                 <div class="modal-body" style="padding: 18px 22px;">
                     <div class="form-group" style="margin-bottom: 14px;">
-                        <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">PAC Code (Packet Authentication Code) *</label>
-                        <input type="text" id="pacCodeInput" class="form-control" placeholder="e.g. PAC99812456" required style="height: 42px; border-radius: 8px; font-family: monospace; font-size: 15px; font-weight: 800;">
+                        <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">PAC Code
+                            (Packet Authentication Code) *</label>
+                        <input type="text" id="pacCodeInput" class="form-control" placeholder="e.g. PAC99812456"
+                            required
+                            style="height: 42px; border-radius: 8px; font-family: monospace; font-size: 15px; font-weight: 800;">
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
                         <div class="form-group">
-                            <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Operator ID</label>
-                            <input type="text" id="pacOperatorInput" class="form-control" placeholder="e.g. OP-1047" style="height: 40px; border-radius: 8px;">
+                            <label
+                                style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Operator
+                                ID</label>
+                            <input type="text" id="pacOperatorInput" class="form-control" placeholder="e.g. OP-1047"
+                                style="height: 40px; border-radius: 8px;">
                         </div>
                         <div class="form-group">
-                            <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Wallet Katoti (₹)</label>
-                            <input type="number" id="pacWalletInput" class="form-control" value="50" min="0" step="1" style="height: 40px; border-radius: 8px; font-weight: 700;">
+                            <label
+                                style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Wallet
+                                Katoti (₹)</label>
+                            <input type="number" id="pacWalletInput" class="form-control" value="50" min="0" step="1"
+                                style="height: 40px; border-radius: 8px; font-weight: 700;">
                         </div>
                     </div>
                     <div class="form-group" style="margin-bottom: 14px;">
-                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Expiry Date (Optional)</label>
-                        <input type="date" id="pacExpiryInput" class="form-control" style="height: 40px; border-radius: 8px;">
+                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Expiry
+                            Date (Optional)</label>
+                        <input type="date" id="pacExpiryInput" class="form-control"
+                            style="height: 40px; border-radius: 8px;">
                     </div>
                     <div class="form-group">
-                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Notes / Remarks</label>
-                        <textarea id="pacNotesInput" class="form-control" rows="2" placeholder="Digital Seva portal se generate hua..." style="border-radius: 8px;"></textarea>
+                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Notes /
+                            Remarks</label>
+                        <textarea id="pacNotesInput" class="form-control" rows="2"
+                            placeholder="Digital Seva portal se generate hua..." style="border-radius: 8px;"></textarea>
                     </div>
                 </div>
-                <div class="modal-footer" style="padding: 12px 22px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
+                <div class="modal-footer"
+                    style="padding: 12px 22px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
                     <button type="button" class="btn-ghost" onclick="closeModal('pacModal')">Radd Karein</button>
-                    <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                    <button type="submit" class="btn-primary"
+                        style="background: linear-gradient(135deg, #7c3aed, #6d28d9);">
                         <i data-lucide="check"></i> PAC Code Save Karein
                     </button>
                 </div>
@@ -11840,8 +11958,10 @@
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 20px;">🪪</span>
                     <div>
-                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff;">Aadhaar Update Receipt Parchi</h3>
-                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #94a3b8;">Grahak ke liye print nikalne ki taiyari</p>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff;">Aadhaar Update Receipt
+                            Parchi</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #94a3b8;">Grahak ke liye print nikalne ki
+                            taiyari</p>
                     </div>
                 </div>
                 <button class="modal-close" onclick="closeModal('uclSlipModal')"
@@ -11852,9 +11972,11 @@
             <div class="modal-body" id="uclSlipPrintContent" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
                 <!-- Filled dynamically by renderUCLPrintSlip -->
             </div>
-            <div class="modal-footer" style="padding: 12px 20px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+            <div class="modal-footer"
+                style="padding: 12px 20px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                 <button type="button" class="btn-ghost" onclick="closeModal('uclSlipModal')">Band Karein</button>
-                <button type="button" class="btn-primary" onclick="printUCLSlipElement()" style="background: linear-gradient(135deg, #0891b2, #0e7490);">
+                <button type="button" class="btn-primary" onclick="printUCLSlipElement()"
+                    style="background: linear-gradient(135deg, #0891b2, #0e7490);">
                     <i data-lucide="printer"></i> Print Receipt Parchi
                 </button>
             </div>
@@ -11865,7 +11987,7 @@
     <script src="universal-doc-uploader.js"></script>
     <script src="global-dob.js?v=1794031600000"></script>
     <script src="searchable-select.js?v=1794483800000"></script>
-    <script src="app.js?v=1795175500000"></script>
+    <script src="app.js?v=1795179000000"></script>
 </body>
 
 </html>
