@@ -177,14 +177,25 @@ async function ensureAutoSchemaBootstrapped() {
                     Placeholder NVARCHAR(255) NULL,
                     CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
                     UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
-                    CONSTRAINT FK_FieldDefs_Module FOREIGN KEY (ModuleCode) REFERENCES dbo.TxnModules(ModuleCode),
-                    CONSTRAINT UQ_FieldDefs UNIQUE (ModuleCode, ServiceID, FieldKey)
+                    CONSTRAINT FK_FieldDefs_Module FOREIGN KEY (ModuleCode) REFERENCES dbo.TxnModules(ModuleCode)
                 );
                 SELECT 1 AS added;
             END
             ELSE SELECT 0 AS added;
         `);
         if (fieldDefCheck.recordset[0]?.added) additions.push('Table: FieldDefinitions');
+
+        await query(`
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_FieldDefinitions_Service_FieldKey' AND object_id = OBJECT_ID('dbo.FieldDefinitions'))
+                CREATE UNIQUE NONCLUSTERED INDEX UX_FieldDefinitions_Service_FieldKey
+                    ON dbo.FieldDefinitions (ServiceID, FieldKey)
+                    WHERE ServiceID IS NOT NULL;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_FieldDefinitions_Module_FieldKey' AND object_id = OBJECT_ID('dbo.FieldDefinitions'))
+                CREATE UNIQUE NONCLUSTERED INDEX UX_FieldDefinitions_Module_FieldKey
+                    ON dbo.FieldDefinitions (ModuleCode, FieldKey)
+                    WHERE ServiceID IS NULL AND ModuleCode IS NOT NULL;
+        `);
 
         // ServiceRecords (Universal Polymorphic Service Execution)
         const srvRecCheck = await query(`

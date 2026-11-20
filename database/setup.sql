@@ -300,8 +300,7 @@ BEGIN
         [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         CONSTRAINT [PK_FieldDefinitions] PRIMARY KEY CLUSTERED ([FieldID]),
-        CONSTRAINT [FK_FieldDefinitions_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID]),
-        CONSTRAINT [UQ_FieldDefinitions_Service_Key] UNIQUE ([ServiceID], [FieldKey])
+        CONSTRAINT [FK_FieldDefinitions_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID])
     );
 END
 GO
