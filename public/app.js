@@ -1524,6 +1524,14 @@ function formatMoneyCompact(amount) {
     return `${sign}₹${abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatNumber(num) {
+    if (num === null || num === undefined || isNaN(num)) return '0.00';
+    return parseFloat(num).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+window.formatNumber = formatNumber;
+window.formatMoney = formatMoney;
+window.formatMoneyCompact = formatMoneyCompact;
+
 // ==========================================================================
 // UNIVERSAL GLOBAL AMOUNT FORMATTER (RED: -, GREEN: +)
 // Applies project-wide consistent - Red / + Green rules across all tables & views
