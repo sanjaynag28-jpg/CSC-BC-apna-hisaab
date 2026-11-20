@@ -23224,13 +23224,8 @@ async function openNewUCLModal() {
     const pacEl = document.getElementById('uclPACSelect');
     if (pacEl) pacEl.value = '';
 
-    document.getElementById('uclReceiptDocId').value = '';
-    document.getElementById('uclReceiptFilePath').value = '';
-
-    // Reset upload dropzone
-    document.getElementById('uclScanIdle').style.display = 'block';
-    document.getElementById('uclScanLoading').style.display = 'none';
-    document.getElementById('uclScanSuccess').style.display = 'none';
+    clearUCLReceiptUpload();
+    setupUCLModalListeners();
 
     // Populate customer dropdown from allCustomersData
     const custSel = document.getElementById('uclCustomerSelect');
@@ -23332,6 +23327,26 @@ async function openEditUCLModal(id) {
             if (custSelect) custSelect.value = row.CustomerID;
         }
 
+        if (row.ReceiptPath) {
+            document.getElementById('uclReceiptFilePath').value = row.ReceiptPath;
+            document.getElementById('uclReceiptDocId').value = row.ReceiptDocumentID || '';
+            const successBox = document.getElementById('uclScanSuccess');
+            const idleBox = document.getElementById('uclScanIdle');
+            if (successBox && idleBox) {
+                idleBox.style.display = 'none';
+                successBox.style.display = 'block';
+                const thumb = document.getElementById('uclReceiptThumb');
+                if (thumb) {
+                    thumb.src = row.ReceiptPath;
+                    thumb.style.display = 'block';
+                }
+                const viewBtn = document.getElementById('uclReceiptViewBtn');
+                if (viewBtn) viewBtn.href = row.ReceiptPath;
+                const infoText = document.getElementById('uclReceiptInfoText');
+                if (infoText) infoText.textContent = `Attached Raseed (${row.SerialNo || 'UCL-' + row.UCLID})`;
+            }
+        }
+
         calculateUCLFees();
         if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
     } catch (err) {
@@ -23360,13 +23375,66 @@ function onUCLCustomerSelectChange() {
 }
 window.onUCLCustomerSelectChange = onUCLCustomerSelectChange;
 
-async function handleUCLReceiptUpload(e) {
-    const file = e.target.files?.[0];
+function clearUCLReceiptUpload() {
+    const fileInp = document.getElementById('uclFileInput');
+    if (fileInp) fileInp.value = '';
+    const docIdInp = document.getElementById('uclReceiptDocId');
+    if (docIdInp) docIdInp.value = '';
+    const filePathInp = document.getElementById('uclReceiptFilePath');
+    if (filePathInp) filePathInp.value = '';
+    const idleBox = document.getElementById('uclScanIdle');
+    if (idleBox) idleBox.style.display = 'block';
+    const loadBox = document.getElementById('uclScanLoading');
+    if (loadBox) loadBox.style.display = 'none';
+    const successBox = document.getElementById('uclScanSuccess');
+    if (successBox) successBox.style.display = 'none';
+    const thumb = document.getElementById('uclReceiptThumb');
+    if (thumb) {
+        thumb.src = '';
+        thumb.style.display = 'none';
+    }
+}
+window.clearUCLReceiptUpload = clearUCLReceiptUpload;
+
+async function pasteUCLReceiptFromClipboard() {
+    try {
+        if (!navigator.clipboard || !navigator.clipboard.read) {
+            if (typeof showToast === 'function') showToast('Clipboard access nahi mila. Kripya modal me click karke Ctrl+V dabayein.', 'info');
+            return;
+        }
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+            for (const type of item.types) {
+                if (type.startsWith('image/')) {
+                    const blob = await item.getType(type);
+                    const file = new File([blob], `ucl_pasted_receipt_${Date.now()}.png`, { type: 'image/png' });
+                    uploadAndScanUCLReceipt(file);
+                    return;
+                }
+            }
+        }
+        if (typeof showToast === 'function') {
+            showToast('Clipboard me koi raseed image nahi mili. Screenshot lekar Paste karein ya Ctrl+V dabayein.', 'warning');
+        }
+    } catch (e) {
+        console.warn('UCL Clipboard read error:', e.message);
+        if (typeof showToast === 'function') {
+            showToast('Kripya modal me click karke keyboard se Ctrl+V dabayein', 'info');
+        }
+    }
+}
+window.pasteUCLReceiptFromClipboard = pasteUCLReceiptFromClipboard;
+
+async function uploadAndScanUCLReceipt(file) {
     if (!file) return;
 
-    document.getElementById('uclScanIdle').style.display = 'none';
-    document.getElementById('uclScanLoading').style.display = 'block';
-    document.getElementById('uclScanSuccess').style.display = 'none';
+    const idleBox = document.getElementById('uclScanIdle');
+    const loadBox = document.getElementById('uclScanLoading');
+    const successBox = document.getElementById('uclScanSuccess');
+
+    if (idleBox) idleBox.style.display = 'none';
+    if (loadBox) loadBox.style.display = 'block';
+    if (successBox) successBox.style.display = 'none';
 
     const formData = new FormData();
     formData.append('receipt', file);
@@ -23381,16 +23449,41 @@ async function handleUCLReceiptUpload(e) {
 
         if (json.success && json.parsed) {
             const p = json.parsed;
-            document.getElementById('uclScanLoading').style.display = 'none';
-            document.getElementById('uclScanSuccess').style.display = 'block';
+            if (loadBox) loadBox.style.display = 'none';
+            if (successBox) successBox.style.display = 'block';
 
             if (json.document) {
                 document.getElementById('uclReceiptDocId').value = json.document.documentId || '';
                 document.getElementById('uclReceiptFilePath').value = json.document.filePath || '';
+
+                const thumb = document.getElementById('uclReceiptThumb');
+                if (thumb) {
+                    if (file.type && file.type.startsWith('image/')) {
+                        thumb.src = URL.createObjectURL(file);
+                        thumb.style.display = 'block';
+                    } else if (json.document.filePath) {
+                        thumb.src = json.document.filePath;
+                        thumb.style.display = 'block';
+                    }
+                }
+
+                const viewBtn = document.getElementById('uclReceiptViewBtn');
+                if (viewBtn && json.document.filePath) {
+                    viewBtn.href = json.document.filePath;
+                }
+
+                const infoText = document.getElementById('uclReceiptInfoText');
+                if (infoText) {
+                    const sz = (file.size / 1024).toFixed(1);
+                    infoText.textContent = `${json.document.originalName || file.name} (${sz} KB) • Documents me save ho gaya`;
+                }
             }
 
             // Auto-fill fields from scanned receipt
-            if (p.customerName) document.getElementById('uclCustName').value = p.customerName;
+            if (p.customerName) {
+                const nameInp = document.getElementById('uclCustName');
+                if (nameInp) nameInp.value = p.customerName;
+            }
             if (p.customerPhone) {
                 const phoneInp = document.getElementById('uclCustPhone');
                 if (phoneInp) {
@@ -23405,8 +23498,26 @@ async function handleUCLReceiptUpload(e) {
                     handleUCLAadhaarInput(aadhaarInp);
                 }
             }
-            if (p.sid) document.getElementById('uclSID').value = p.sid;
-            if (p.biometrics) document.getElementById('uclBiometrics').value = p.biometrics;
+            if (p.sid) {
+                const sidInp = document.getElementById('uclSID');
+                if (sidInp) sidInp.value = p.sid;
+            }
+            if (p.biometrics) {
+                const bioInp = document.getElementById('uclBiometrics');
+                if (bioInp) bioInp.value = p.biometrics;
+            }
+            if (p.updateType) {
+                const typeSelect = document.getElementById('uclUpdateType');
+                if (typeSelect) {
+                    for (let i = 0; i < typeSelect.options.length; i++) {
+                        if (typeSelect.options[i].value.toLowerCase().includes(p.updateType.toLowerCase()) ||
+                            p.updateType.toLowerCase().includes(typeSelect.options[i].value.toLowerCase())) {
+                            typeSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
 
             if (typeof showToast === 'function') {
                 showToast(`✅ UIDAI Raseed Scan Ho Gayi! Resident: ${p.customerName || 'Customer'} auto-fill ho chuka hai.`, 'success');
@@ -23415,8 +23526,8 @@ async function handleUCLReceiptUpload(e) {
             throw new Error(json.error || 'OCR scan me data extract nahi ho saka');
         }
     } catch (err) {
-        document.getElementById('uclScanLoading').style.display = 'none';
-        document.getElementById('uclScanIdle').style.display = 'block';
+        if (loadBox) loadBox.style.display = 'none';
+        if (idleBox) idleBox.style.display = 'block';
         if (typeof showToast === 'function') {
             showToast('⚠️ ' + err.message, 'warning');
         } else {
@@ -23426,7 +23537,67 @@ async function handleUCLReceiptUpload(e) {
         if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
     }
 }
+window.uploadAndScanUCLReceipt = uploadAndScanUCLReceipt;
+
+function handleUCLReceiptUpload(e) {
+    const file = e.target.files?.[0];
+    if (file) uploadAndScanUCLReceipt(file);
+}
 window.handleUCLReceiptUpload = handleUCLReceiptUpload;
+
+function setupUCLModalListeners() {
+    const modal = document.getElementById('uclModal');
+    const dropzone = document.getElementById('uclDropzone');
+
+    if (dropzone && !dropzone._listenersAttached) {
+        dropzone._listenersAttached = true;
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.style.borderColor = '#0e7490';
+                dropzone.style.background = 'rgba(6, 182, 212, 0.15)';
+            });
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.style.borderColor = '#0891b2';
+                dropzone.style.background = 'rgba(6, 182, 212, 0.05)';
+            });
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                uploadAndScanUCLReceipt(files[0]);
+            }
+        });
+    }
+
+    if (modal && !modal._listenersAttached) {
+        modal._listenersAttached = true;
+        modal.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || window.clipboardData)?.items;
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type && items[i].type.startsWith('image/')) {
+                        const blob = items[i].getAsFile();
+                        if (blob) {
+                            const file = new File([blob], `ucl_pasted_receipt_${Date.now()}.png`, { type: blob.type || 'image/png' });
+                            uploadAndScanUCLReceipt(file);
+                            e.preventDefault();
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+window.setupUCLModalListeners = setupUCLModalListeners;
 
 function calculateUCLFees() {
     const fee = parseFloat(document.getElementById('uclFee')?.value) || 0;

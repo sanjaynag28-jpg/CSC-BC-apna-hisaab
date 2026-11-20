@@ -70,13 +70,13 @@ function parseUCLReceipt(text) {
     };
 
     // 1. SID / Enrollment number (e.g. S325112317949020261120155058)
-    const sidMatch = text.match(/SID[^\n\r]*?([S\d][\d\s]{18,35})/i) || text.match(/\b(S\d{20,32})\b/i);
+    const sidMatch = text.match(/(?:SID|नामांकन\s*संख्या)[^\n\r]*?([S\d][\d\s]{18,35})/i) || text.match(/\b(S\d{20,32})\b/i);
     if (sidMatch) {
         res.sid = sidMatch[1].replace(/\s+/g, '');
     }
 
     // 2. Date & Time (e.g. 20/11/2026 15:50:58)
-    const dateMatch = text.match(/Date[^\n\r]*?(\d{2})[\/\.\-]?(\d{2})[\/\.\-]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
+    const dateMatch = text.match(/(?:Date|तिथि)[^\n\r]*?(\d{2})[\/\.\-]?(\d{2})[\/\.\-]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
         || text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);
     if (dateMatch) {
         if (dateMatch[3] && dateMatch[3].length === 4) {
@@ -90,13 +90,13 @@ function parseUCLReceipt(text) {
     }
 
     // 3. Mobile Number (10 digits starting with 6, 7, 8, 9)
-    const phoneMatch = text.match(/(?:Mobile|मोबाईल)[^\d]*?([6-9]\d{9})/i) || text.match(/\b([6-9]\d{9})\b/);
+    const phoneMatch = text.match(/(?:Mobile|मोबाईल|Phone)[^\d]*?([6-9]\d{9})/i) || text.match(/\b([6-9]\d{9})\b/);
     if (phoneMatch) {
         res.customerPhone = phoneMatch[1];
     }
 
     // 4. Resident Name (after Name: or नाम:)
-    const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{3,35})/i);
+    const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i);
     if (nameMatch) {
         let n = nameMatch[1].trim();
         n = n.replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
@@ -104,7 +104,7 @@ function parseUCLReceipt(text) {
     }
 
     // 5. Masked Aadhaar / Last 4 Digits (e.g. XXXXXXXX1047)
-    const aadhaarMatch = text.match(/AADHAAR[^\n\r]*?([X\d]{8,14})/i) || text.match(/([X]{4,8}\s*\d{4})/i);
+    const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?([X\d]{8,14})/i) || text.match(/([X]{4,8}\s*\d{4})/i);
     if (aadhaarMatch) {
         const raw = aadhaarMatch[1].replace(/\s+/g, '');
         const digits = raw.match(/\d{4}$/);
