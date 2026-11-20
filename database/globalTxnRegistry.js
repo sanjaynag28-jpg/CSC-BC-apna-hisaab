@@ -10,7 +10,9 @@ const MODULE_PREFIXES = {
     Invoices: 'INV',
     Bills: 'BIL',
     BillPay: 'BP',
-    Service: 'SRV'
+    Service: 'SRV',
+    UCL: 'UCL',
+    PAC: 'PAC'
 };
 
 const MODULE_TABLES = {
@@ -21,7 +23,9 @@ const MODULE_TABLES = {
     Invoices: { table: 'Invoices', pk: 'InvoiceID' },
     Bills: { table: 'Bills', pk: 'BillID' },
     BillPay: { table: 'BillPayments', pk: 'PaymentID' },
-    Service: { table: 'ServiceRecords', pk: 'RecordID' }
+    Service: { table: 'ServiceRecords', pk: 'RecordID' },
+    UCL: { table: 'UCLUpdates', pk: 'UCLID' },
+    PAC: { table: 'PACEntries', pk: 'PACID' }
 };
 
 /**

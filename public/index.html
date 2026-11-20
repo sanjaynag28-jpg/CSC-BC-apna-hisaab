@@ -3714,26 +3714,24 @@
                     <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
                         <span>UCL Update (आधार संशोधन सेवा)</span>
                     </h1>
-                    <p class="page-header-sub">Aadhaar Demographic Update (Name, DOB, Mobile, Address, Document POI/POA), EID Tracking & Customer Slips</p>
+                    <p class="page-header-sub">Aadhaar Demographic Update, EID Tracking, PAC Linkage, Auto-Customer & Khatabook Integration</p>
                 </div>
                 <div class="page-header-actions"
                     style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <button class="btn-ghost" onclick="loadUCLPage()" title="List refresh karein">
                         <i data-lucide="refresh-cw"></i> Refresh
                     </button>
-                    <button class="btn-secondary" onclick="alert('Export functionality jald hi active hogi')" title="Excel download karein">
-                        <i data-lucide="file-spreadsheet"></i> Export Excel
-                    </button>
-                    <button class="btn-primary" id="btn-ucl-new" onclick="alert('Naya UCL Update form requirements ke anusaar jald hi open hoga')"
-                        title="Naya UCL Aavedan Darz Karein">
+                    <button class="btn-primary" id="btn-ucl-new" onclick="openNewUCLModal()"
+                        style="background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 4px 14px rgba(8, 145, 178, 0.35);"
+                        title="Naya UCL Update Darz Karein">
                         <i data-lucide="plus-circle"></i> + Naya UCL Update
                     </button>
                 </div>
             </div>
 
             <!-- UCL KPI Summary Cards -->
-            <div class="csc-stats-grid" id="uclStatsGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
-                <div class="csc-stat-card total active-card">
+            <div class="csc-stats-grid" id="uclStatsGrid" style="grid-template-columns: repeat(5, minmax(0, 1fr)) !important;">
+                <div class="csc-stat-card total active-card" onclick="filterUCLStatus('all', this)">
                     <div class="csc-stat-icon" style="background: #0891b2; color: #fff;"><i data-lucide="fingerprint"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Updates (कुल)</div>
@@ -3741,7 +3739,7 @@
                         <div class="csc-stat-sub">Sabhi UCL aavedan</div>
                     </div>
                 </div>
-                <div class="csc-stat-card pending">
+                <div class="csc-stat-card pending" onclick="filterUCLStatus('In-Process', this)">
                     <div class="csc-stat-icon" style="background: #f59e0b; color: #fff;"><i data-lucide="clock"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">In-Process / Pending</div>
@@ -3749,7 +3747,7 @@
                         <div class="csc-stat-sub">Packet upload / Approval</div>
                     </div>
                 </div>
-                <div class="csc-stat-card approved">
+                <div class="csc-stat-card approved" onclick="filterUCLStatus('Approved', this)">
                     <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="check-circle-2"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Generated / Success</div>
@@ -3762,24 +3760,68 @@
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Fees Collected</div>
                         <div class="csc-stat-val" id="uclKpiFees">₹0</div>
-                        <div class="csc-stat-sub">Shulk & Hisaab</div>
+                        <div class="csc-stat-sub">Jama Shulk</div>
+                    </div>
+                </div>
+                <div class="csc-stat-card" style="border-left: 4px solid #ef4444;" onclick="filterUCLStatus('all', this)">
+                    <div class="csc-stat-icon" style="background: #ef4444; color: #fff;"><i data-lucide="alert-circle"></i></div>
+                    <div class="csc-stat-info">
+                        <div class="csc-stat-label">Khatabook Udhaar Due</div>
+                        <div class="csc-stat-val" id="uclKpiBalance" style="color: #ef4444;">₹0</div>
+                        <div class="csc-stat-sub">Baki Udhaar Rashi</div>
                     </div>
                 </div>
             </div>
 
-            <!-- UCL Main Panel / Placeholder -->
-            <div class="card" style="padding: 28px; text-align: center; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg-card); margin-top: 10px;">
-                <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(6, 182, 212, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: #0891b2;">
-                    <i data-lucide="fingerprint" style="width: 32px; height: 32px;"></i>
+            <!-- UCL Filter Toolbar -->
+            <div class="table-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 260px;">
+                    <div class="search-box" style="position: relative; width: 100%; max-width: 380px;">
+                        <i data-lucide="search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                        <input type="text" id="uclSearchInput" class="form-control" placeholder="Grahak, Mobile, SID, Aadhaar..." oninput="debounceUCLSearch()" style="padding-left: 36px; height: 38px; border-radius: 8px;">
+                    </div>
+                    <select id="uclStatusFilter" class="form-control" onchange="loadUCLPage(1)" style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
+                        <option value="all">Sabhi Status</option>
+                        <option value="Generated">Generated</option>
+                        <option value="In-Process">In-Process / Pending</option>
+                        <option value="Approved">Approved / Success</option>
+                        <option value="Rejected">Rejected</option>
+                    </select>
                 </div>
-                <h3 style="margin-bottom: 8px; font-weight: 700;">UCL Update Service Sidebar Me Add Ho Gayi Hai!</h3>
-                <p style="color: var(--text-secondary); max-width: 620px; margin: 0 auto 16px; font-size: 14px; line-height: 1.6;">
-                    Aap bataiye isme kaun-kaun se fields, status, slip format aur hisaab rakhna hai (jaise Resident Name, Aadhaar/EID No, Update Type [Mobile/Name/Address/DOB/Doc], PAC Code Link, Fees ₹50, Operator Name, aur Thermal Receipt Print).
-                </p>
-                <div style="display: inline-flex; gap: 8px; font-size: 13px; color: #0891b2; background: rgba(6, 182, 212, 0.08); padding: 8px 16px; border-radius: 20px; font-weight: 600;">
-                    <i data-lucide="info" style="width: 16px; height: 16px;"></i> Ready for your custom requirements
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="date" id="uclStartDate" class="form-control" style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
+                    <span style="color: var(--text-muted);">se</span>
+                    <input type="date" id="uclEndDate" class="form-control" style="height: 38px; border-radius: 8px; width: 140px;" onchange="loadUCLPage(1)">
                 </div>
             </div>
+
+            <!-- UCL Table View -->
+            <div class="table-responsive" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
+                <table class="table" style="width: 100%; margin-bottom: 0;">
+                    <thead>
+                        <tr>
+                            <th style="width: 90px;">SN</th>
+                            <th style="width: 110px;">Tarikh</th>
+                            <th>Grahak Jankari</th>
+                            <th>SID / URN Number</th>
+                            <th>Update Type</th>
+                            <th>PAC Code</th>
+                            <th>Shulk (₹)</th>
+                            <th>Payment</th>
+                            <th>Status</th>
+                            <th style="text-align: right; width: 140px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="uclTableBody">
+                        <tr>
+                            <td colspan="10" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                UCL data load ho raha hai...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="uclPagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;"></div>
         </div><!-- /page-ucl -->
 
         <!-- ============================================================== -->
@@ -3796,14 +3838,15 @@
                     <h1 style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
                         <span>PAC Code (Packet Authentication Code)</span>
                     </h1>
-                    <p class="page-header-sub">CSC UCL Operator PAC Code Generation, Wallet Deduction Tracking, Used / Unused Stock & Validity</p>
+                    <p class="page-header-sub">CSC UCL Operator PAC Code Generation, Wallet Deduction Tracking, Stock & Used Packets</p>
                 </div>
                 <div class="page-header-actions"
                     style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <button class="btn-ghost" onclick="loadPACPage()" title="List refresh karein">
                         <i data-lucide="refresh-cw"></i> Refresh
                     </button>
-                    <button class="btn-primary" id="btn-pac-new" onclick="alert('Naya PAC Code entry form requirements ke anusaar jald hi open hoga')"
+                    <button class="btn-primary" id="btn-pac-new" onclick="openNewPACModal()"
+                        style="background: linear-gradient(135deg, #7c3aed, #6d28d9); box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);"
                         title="Naya PAC Code Darz Karein">
                         <i data-lucide="plus-circle"></i> + Naya PAC Code
                     </button>
@@ -3812,15 +3855,15 @@
 
             <!-- PAC KPI Summary Cards -->
             <div class="csc-stats-grid" id="pacStatsGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr)) !important;">
-                <div class="csc-stat-card total active-card">
-                    <div class="csc-stat-icon" style="background: #7c3aed; color: #fff;"><i data-lucide="key"></i></div>
+                <div class="csc-stat-card total active-card" onclick="filterPACStatus('Available', this)">
+                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="key"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Available (Unused) PAC</div>
                         <div class="csc-stat-val" id="pacKpiAvailable">0</div>
                         <div class="csc-stat-sub">Ready to use in UCL</div>
                     </div>
                 </div>
-                <div class="csc-stat-card pending">
+                <div class="csc-stat-card pending" onclick="filterPACStatus('all', this)">
                     <div class="csc-stat-icon" style="background: #3b82f6; color: #fff;"><i data-lucide="list"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Total Generated</div>
@@ -3828,8 +3871,8 @@
                         <div class="csc-stat-sub">All PAC codes</div>
                     </div>
                 </div>
-                <div class="csc-stat-card approved">
-                    <div class="csc-stat-icon" style="background: #10b981; color: #fff;"><i data-lucide="check-circle-2"></i></div>
+                <div class="csc-stat-card approved" onclick="filterPACStatus('Used', this)">
+                    <div class="csc-stat-icon" style="background: #8b5cf6; color: #fff;"><i data-lucide="check-circle-2"></i></div>
                     <div class="csc-stat-info">
                         <div class="csc-stat-label">Used / Consumed</div>
                         <div class="csc-stat-val" id="pacKpiUsed">0</div>
@@ -3846,18 +3889,45 @@
                 </div>
             </div>
 
-            <!-- PAC Main Panel / Placeholder -->
-            <div class="card" style="padding: 28px; text-align: center; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--bg-card); margin-top: 10px;">
-                <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(139, 92, 246, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: #7c3aed;">
-                    <i data-lucide="key" style="width: 32px; height: 32px;"></i>
+            <!-- PAC Filter Toolbar -->
+            <div class="table-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; background: var(--bg-card); padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 260px;">
+                    <div class="search-box" style="position: relative; width: 100%; max-width: 380px;">
+                        <i data-lucide="search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted);"></i>
+                        <input type="text" id="pacSearchInput" class="form-control" placeholder="PAC Code, Operator, Grahak..." oninput="debouncePACSearch()" style="padding-left: 36px; height: 38px; border-radius: 8px;">
+                    </div>
+                    <select id="pacStatusFilter" class="form-control" onchange="loadPACPage()" style="width: auto; min-width: 150px; height: 38px; border-radius: 8px;">
+                        <option value="all">Sabhi Status</option>
+                        <option value="Available" selected>Available (Unused Stock)</option>
+                        <option value="Used">Used (Consumed)</option>
+                        <option value="Expired">Expired</option>
+                    </select>
                 </div>
-                <h3 style="margin-bottom: 8px; font-weight: 700;">PAC Code Service Sidebar Me Add Ho Gayi Hai!</h3>
-                <p style="color: var(--text-secondary); max-width: 620px; margin: 0 auto 16px; font-size: 14px; line-height: 1.6;">
-                    Aap bataiye isme kya workflow chahiye (jaise PAC Code number, Generation Date, CSC Wallet Katoti ₹50, Status: Available / Used / Expired, aur Kis Grahak / EID par PAC use hua uska tracking).
-                </p>
-                <div style="display: inline-flex; gap: 8px; font-size: 13px; color: #7c3aed; background: rgba(139, 92, 246, 0.08); padding: 8px 16px; border-radius: 20px; font-weight: 600;">
-                    <i data-lucide="info" style="width: 16px; height: 16px;"></i> Ready for your custom requirements
-                </div>
+            </div>
+
+            <!-- PAC Table View -->
+            <div class="table-responsive" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden;">
+                <table class="table" style="width: 100%; margin-bottom: 0;">
+                    <thead>
+                        <tr>
+                            <th>PAC Code</th>
+                            <th>Operator ID</th>
+                            <th>Wallet Katoti (₹)</th>
+                            <th>Generation Date</th>
+                            <th>Expiry Date</th>
+                            <th>Status</th>
+                            <th>Used For (Grahak / SID)</th>
+                            <th style="text-align: right; width: 110px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pacTableBody">
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                PAC data load ho raha hai...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div><!-- /page-pac -->
 
@@ -11483,6 +11553,316 @@
                 <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="dueDetailModalActions">
                     <!-- Dynamic action buttons -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 🪪 AADHAAR UCL UPDATE MODAL (नया आधार संशोधन व पावती ऑटो-फिल)          -->
+    <!-- ===================================================================== -->
+    <div class="modal-overlay" id="uclModal">
+        <div class="modal modal-extra-wide" onclick="event.stopPropagation()"
+            style="width: min(1100px, calc(100vw - 24px)); max-width: 1100px; border-radius: 16px; overflow: hidden; max-height: 94vh; display: flex; flex-direction: column;">
+            
+            <div class="modal-header"
+                style="background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="background: rgba(255, 255, 255, 0.2); width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                        <i data-lucide="fingerprint" style="width: 24px; height: 24px; color: #fff;"></i>
+                    </div>
+                    <div>
+                        <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #fff;" id="uclModalTitle">
+                            Naya UCL Update (आधार संशोधन एंट्री)
+                        </h2>
+                        <p style="margin: 2px 0 0; font-size: 12.5px; opacity: 0.9; color: #e0f2fe;">
+                            UIDAI Acknowledgement raseed upload karein (Auto-Fill) ya manual form bharein
+                        </p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('uclModal')"
+                    style="background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <form id="uclForm" onsubmit="handleUCLFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1; overflow: hidden; margin: 0;">
+                <input type="hidden" id="uclEditId" value="">
+                <input type="hidden" id="uclReceiptDocId" value="">
+                <input type="hidden" id="uclReceiptFilePath" value="">
+
+                <div class="modal-body" style="padding: 18px 24px; overflow-y: auto; flex: 1;">
+                    <!-- 1. OCR Upload / Auto-Fill Dropzone -->
+                    <div id="uclDropzone" onclick="document.getElementById('uclFileInput').click()"
+                        style="border: 2px dashed #0891b2; border-radius: 12px; padding: 18px; text-align: center; background: rgba(6, 182, 212, 0.05); cursor: pointer; margin-bottom: 18px; transition: all 0.2s ease;">
+                        <input type="file" id="uclFileInput" accept="image/*,application/pdf" style="display: none;" onchange="handleUCLReceiptUpload(event)">
+                        <div id="uclScanIdle">
+                            <i data-lucide="scan" style="width: 32px; height: 32px; color: #0891b2; margin-bottom: 4px;"></i>
+                            <div style="font-weight: 800; color: #0891b2; font-size: 15px;">
+                                📸 UIDAI Acknowledgement / Consent Slip Upload Karein (Auto-Fill)
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+                                Yahan raseed photo/PDF drag karein ya click karke upload karein — Resident Naam, Mobile, Aadhaar, SID khud bhar jayenge
+                            </div>
+                        </div>
+                        <div id="uclScanLoading" style="display: none; padding: 6px;">
+                            <div style="display: inline-block; width: 24px; height: 24px; border: 3px solid rgba(8,145,178,0.3); border-top-color: #0891b2; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                            <div style="margin-top: 8px; font-weight: 700; color: #0891b2;">
+                                ⚡ Raseed OCR Scan Ho Rahi Hai... Auto-Extracting Data...
+                            </div>
+                        </div>
+                        <div id="uclScanSuccess" style="display: none; color: #10b981; font-weight: 700; font-size: 13.5px;">
+                            <i data-lucide="check-circle-2" style="width: 18px; height: 18px; display: inline; vertical-align: middle;"></i>
+                            Raseed scan ho gayi! Resident Naam, Mobile, SID & Aadhaar auto-fill ho gaye hain.
+                        </div>
+                    </div>
+
+                    <!-- 2. Form Grid -->
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px;">
+                        
+                        <!-- Left Column: Customer Information -->
+                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #0891b2; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="user-check" style="width: 18px; height: 18px;"></i>
+                                <span>Grahak Jankari (Auto Customer Link)</span>
+                            </div>
+
+                            <!-- Customer Search/Select -->
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Grahak Khojein / Select Karein</label>
+                                <select id="uclCustomerSelect" class="form-control" onchange="onUCLCustomerSelectChange()" style="height: 40px; border-radius: 8px;">
+                                    <option value="">-- Direct Naya / Walk-in Customer --</option>
+                                </select>
+                            </div>
+
+                            <!-- Customer Name -->
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Resident / Grahak Naam *</label>
+                                <input type="text" id="uclCustName" class="form-control" placeholder="e.g. Ramkali" required style="height: 40px; border-radius: 8px; font-weight: 700;">
+                            </div>
+
+                            <!-- Mobile & Aadhaar -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Mobile Number</label>
+                                    <input type="text" id="uclCustPhone" class="form-control" placeholder="10-digit mobile" maxlength="10" style="height: 40px; border-radius: 8px;">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Aadhaar (Last 4 / Masked)</label>
+                                    <input type="text" id="uclCustAadhaar" class="form-control" placeholder="e.g. 1047 ya XXXXXXXX1047" style="height: 40px; border-radius: 8px; font-family: monospace;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column: UCL Update & PAC Code Details -->
+                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+                            <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #7c3aed; display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="key" style="width: 18px; height: 18px;"></i>
+                                <span>UCL Packet & PAC Code Details</span>
+                            </div>
+
+                            <!-- SID / Acknowledgement No -->
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">SID / Acknowledgement No (URN)</label>
+                                <input type="text" id="uclSID" class="form-control" placeholder="e.g. S325112317949020261120155058" style="height: 40px; border-radius: 8px; font-family: monospace;">
+                            </div>
+
+                            <!-- Update Type & Biometrics -->
+                            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                <div class="form-group">
+                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Update Type *</label>
+                                    <select id="uclUpdateType" class="form-control" style="height: 40px; border-radius: 8px; font-weight: 600;">
+                                        <option value="Demographics (Name)">Demographics Update (Name)</option>
+                                        <option value="Mobile Update">Mobile Number Update</option>
+                                        <option value="Address Update">Address Update (निवास)</option>
+                                        <option value="DOB Update">DOB / Janm Tithi Update</option>
+                                        <option value="Document Update (POI/POA)">Document Update (POI / POA)</option>
+                                        <option value="Name + Mobile Update">Name + Mobile Update</option>
+                                        <option value="Name + Address Update">Name + Address Update</option>
+                                        <option value="Full Demographics">Full Demographics Update</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Biometrics</label>
+                                    <select id="uclBiometrics" class="form-control" style="height: 40px; border-radius: 8px;">
+                                        <option value="No">No</option>
+                                        <option value="Yes">Yes</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- PAC Code Link -->
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">
+                                    PAC Code (Packet Authentication Code)
+                                </label>
+                                <select id="uclPACSelect" class="form-control" style="height: 40px; border-radius: 8px;">
+                                    <option value="">-- PAC Code Chunein (Optional) --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Payment, Fees & Khatabook Card -->
+                    <div style="background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 12px; padding: 16px;">
+                        <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #059669; display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <i data-lucide="wallet" style="width: 18px; height: 18px;"></i>
+                                <span>Shulk, Payment Mode & Khatabook Hisaab</span>
+                            </div>
+                            <span id="uclDueStatusBadge" style="font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #059669;">
+                                🟢 Poora Jama (Paid)
+                            </span>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 12px;">
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">UIDAI Shulk (₹)</label>
+                                <input type="number" id="uclFee" class="form-control" value="50" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px; font-weight: 700;">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Operator Charge (₹)</label>
+                                <input type="number" id="uclOpFee" class="form-control" value="0" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px;">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Kul Rashi (Total ₹)</label>
+                                <input type="number" id="uclTotalAmt" class="form-control" value="50" readonly style="height: 38px; border-radius: 8px; font-weight: 800; background: var(--bg-secondary);">
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Jama Rashi (Paid ₹)</label>
+                                <input type="number" id="uclPaidAmt" class="form-control" value="50" min="0" step="1" oninput="calculateUCLFees()" style="height: 38px; border-radius: 8px; font-weight: 800; color: #059669;">
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Payment Mode *</label>
+                                <select id="uclPayMode" class="form-control" onchange="onUCLPayModeChange()" style="height: 38px; border-radius: 8px; font-weight: 600;">
+                                    <option value="Cash">💵 Cash (Rokad Counter)</option>
+                                    <option value="Online">📱 Online / UPI / QR</option>
+                                    <option value="Khata">📖 Khata / Udhaar (Khatabook)</option>
+                                    <option value="Split">🔀 Split Payment</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="uclAccountGroup">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Khata (Account)</label>
+                                <select id="uclAccountSelect" class="form-control" style="height: 38px; border-radius: 8px;">
+                                    <!-- Populated dynamically with active accounts -->
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 4px;">Status</label>
+                                <select id="uclStatus" class="form-control" style="height: 38px; border-radius: 8px; font-weight: 700;">
+                                    <option value="Generated">⏳ Generated (पावती बन गई)</option>
+                                    <option value="In-Process">⚙️ In-Process / Uploaded</option>
+                                    <option value="Approved">✅ Approved / Success</option>
+                                    <option value="Rejected">❌ Rejected</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Udhaar Warning Bar -->
+                        <div id="uclKhataAlert" style="display: none; margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #dc2626; font-size: 12.5px; font-weight: 600;">
+                            <i data-lucide="info" style="width: 15px; height: 15px; display: inline; vertical-align: middle;"></i>
+                            Is grahak ka ₹<span id="uclKhataDueText">0</span> baqi udhaar rahega aur seedha <b>Khatabook</b> me auto-sync ho jayega.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 14px 24px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <button type="button" class="btn-ghost" onclick="closeModal('uclModal')">Radd Karein</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn-secondary" onclick="saveUCLUpdate(true)">
+                            <i data-lucide="printer"></i> Save & Print Parchi
+                        </button>
+                        <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #0891b2, #0e7490);">
+                            <i data-lucide="save"></i> Save Entry
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 🔑 CSC PAC CODE MODAL (नया पीएसी कोड दर्ज करें)                       -->
+    <!-- ===================================================================== -->
+    <div class="modal-overlay" id="pacModal">
+        <div class="modal" onclick="event.stopPropagation()"
+            style="width: min(540px, calc(100vw - 24px)); max-width: 540px; border-radius: 16px; overflow: hidden;">
+            <div class="modal-header"
+                style="background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; padding: 16px 22px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="key" style="width: 22px; height: 22px; color: #fff;"></i>
+                    <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #fff;">Naya PAC Code Entry</h3>
+                </div>
+                <button class="modal-close" onclick="closeModal('pacModal')"
+                    style="background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 8px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <form id="pacForm" onsubmit="handlePACFormSubmit(event)" style="margin: 0;">
+                <div class="modal-body" style="padding: 18px 22px;">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label style="font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px;">PAC Code (Packet Authentication Code) *</label>
+                        <input type="text" id="pacCodeInput" class="form-control" placeholder="e.g. PAC99812456" required style="height: 42px; border-radius: 8px; font-family: monospace; font-size: 15px; font-weight: 800;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                        <div class="form-group">
+                            <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Operator ID</label>
+                            <input type="text" id="pacOperatorInput" class="form-control" placeholder="e.g. OP-1047" style="height: 40px; border-radius: 8px;">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Wallet Katoti (₹)</label>
+                            <input type="number" id="pacWalletInput" class="form-control" value="50" min="0" step="1" style="height: 40px; border-radius: 8px; font-weight: 700;">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Expiry Date (Optional)</label>
+                        <input type="date" id="pacExpiryInput" class="form-control" style="height: 40px; border-radius: 8px;">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight: 600; font-size: 12.5px; display: block; margin-bottom: 4px;">Notes / Remarks</label>
+                        <textarea id="pacNotesInput" class="form-control" rows="2" placeholder="Digital Seva portal se generate hua..." style="border-radius: 8px;"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer" style="padding: 12px 22px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn-ghost" onclick="closeModal('pacModal')">Radd Karein</button>
+                    <button type="submit" class="btn-primary" style="background: linear-gradient(135deg, #7c3aed, #6d28d9);">
+                        <i data-lucide="check"></i> PAC Code Save Karein
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 🧾 UCL PRINT SLIP MODAL (आधार पावती पर्ची)                             -->
+    <!-- ===================================================================== -->
+    <div class="modal-overlay" id="uclSlipModal">
+        <div class="modal" onclick="event.stopPropagation()"
+            style="width: min(580px, calc(100vw - 24px)); max-width: 580px; border-radius: 16px; overflow: hidden;">
+            <div class="modal-header"
+                style="background: #0f172a; color: #fff; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">🪪</span>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #fff;">Aadhaar Update Receipt Parchi</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #94a3b8;">Grahak ke liye print nikalne ki taiyari</p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('uclSlipModal')"
+                    style="background: rgba(255,255,255,0.15); border: none; color: #fff; border-radius: 8px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="uclSlipPrintContent" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+                <!-- Filled dynamically by renderUCLPrintSlip -->
+            </div>
+            <div class="modal-footer" style="padding: 12px 20px; background: var(--bg-secondary); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn-ghost" onclick="closeModal('uclSlipModal')">Band Karein</button>
+                <button type="button" class="btn-primary" onclick="printUCLSlipElement()" style="background: linear-gradient(135deg, #0891b2, #0e7490);">
+                    <i data-lucide="printer"></i> Print Receipt Parchi
+                </button>
             </div>
         </div>
     </div>

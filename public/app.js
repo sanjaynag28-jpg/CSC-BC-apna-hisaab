@@ -22924,21 +22924,764 @@ function changeBPPageSize(val) {
 window.changeBPPageSize = changeBPPageSize;
 
 // ==========================================================================
-// AADHAAR UCL UPDATE & PAC CODE MODULE LOADERS
+// AADHAAR UCL UPDATE & PAC CODE MODULE LOADERS & WORKFLOW
 // ==========================================================================
-async function loadUCLPage() {
-    if (window.lucide && typeof lucide.createIcons === 'function') {
-        lucide.createIcons();
+let allUCLUpdates = [];
+let currentUCLPage = 1;
+let currentUCLStatus = 'all';
+let uclSearchTimer = null;
+
+let allPACEntries = [];
+let currentPACStatus = 'Available';
+let pacSearchTimer = null;
+
+async function loadUCLPage(page = 1) {
+    currentUCLPage = page;
+    const tbody = document.getElementById('uclTableBody');
+    if (tbody && (!allUCLUpdates || allUCLUpdates.length === 0)) {
+        if (typeof renderTableSkeleton === 'function') renderTableSkeleton(tbody, 10, 5);
+    }
+
+    const searchVal = document.getElementById('uclSearchInput')?.value?.trim() || '';
+    const statusVal = document.getElementById('uclStatusFilter')?.value || currentUCLStatus || 'all';
+    const startDate = document.getElementById('uclStartDate')?.value || '';
+    const endDate = document.getElementById('uclEndDate')?.value || '';
+
+    try {
+        const queryParams = new URLSearchParams({
+            page: currentUCLPage,
+            limit: 25,
+            status: statusVal,
+            search: searchVal,
+            startDate,
+            endDate,
+            _t: Date.now()
+        });
+
+        const res = await fetch(`${API}/ucl?${queryParams.toString()}`);
+        const json = await res.json();
+        if (json.success) {
+            allUCLUpdates = json.data || [];
+            
+            // Update KPI cards
+            const stats = json.stats || {};
+            const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+            setTxt('uclKpiTotal', stats.total ?? 0);
+            setTxt('uclKpiPending', stats.pending ?? 0);
+            setTxt('uclKpiApproved', stats.approved ?? 0);
+            setTxt('uclKpiFees', `₹${formatNumber(stats.fees || 0)}`);
+            setTxt('uclKpiBalance', `₹${formatNumber(stats.balance || 0)}`);
+
+            renderUCLTable(allUCLUpdates);
+            renderUCLPagination(json.total || 0, json.page || 1, json.limit || 25);
+        } else {
+            console.error('[UCL Load Error]:', json.error);
+        }
+    } catch (err) {
+        console.error('[UCL Fetch Error]:', err.message);
+    } finally {
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
     }
 }
 window.loadUCLPage = loadUCLPage;
 
+function renderUCLTable(rows) {
+    const tbody = document.getElementById('uclTableBody');
+    if (!tbody) return;
+
+    if (!rows || rows.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="10" style="text-align: center; padding: 48px; color: var(--text-muted);">
+                    <div style="font-size: 32px; margin-bottom: 8px;">🪪</div>
+                    <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Koi UCL Update Record Nahi Mila</div>
+                    <div style="font-size: 13px; margin-bottom: 16px;">Naya aavedan darz karne ke liye upar "+ Naya UCL Update" button par click karein.</div>
+                    <button class="btn-primary btn-sm" onclick="openNewUCLModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <i data-lucide="plus-circle" style="width: 14px; height: 14px;"></i> + Naya UCL Update
+                    </button>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let html = '';
+    rows.forEach(row => {
+        const dateStr = row.UpdateDate ? formatDate(row.UpdateDate) : '-';
+        const snCode = row.SerialNo || `UCL-${row.UCLID}`;
+        const custName = escapeHtml(row.CustomerName || '-');
+        const phone = row.CustomerPhone ? `<div style="font-size: 12px; color: var(--text-muted);">📞 ${escapeHtml(row.CustomerPhone)}</div>` : '';
+        const aadhaar = row.AadhaarLast4 ? `<div style="font-size: 11.5px; color: #0891b2; font-family: monospace;">Aadhaar: XXXX-${escapeHtml(row.AadhaarLast4)}</div>` : '';
+        const sid = row.SID ? `<span style="font-family: monospace; font-size: 12px; font-weight: 700; color: #0e7490;" title="${escapeHtml(row.SID)}">${escapeHtml(row.SID.length > 20 ? row.SID.substring(0, 18) + '...' : row.SID)}</span>` : '<span style="color: var(--text-muted);">-</span>';
+        const uType = escapeHtml(row.UpdateType || 'Demographics');
+        const pac = row.PACCode ? `<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #7c3aed; font-family: monospace; font-weight: 700;">${escapeHtml(row.PACCode)}</span>` : '<span style="color: var(--text-muted);">-</span>';
+        const total = parseFloat(row.TotalAmount || 0);
+        const paid = parseFloat(row.PaidAmount || 0);
+        const balance = parseFloat(row.BalanceAmount || 0);
+
+        let feeCol = `<div><b>₹${formatNumber(total)}</b></div>`;
+        if (balance > 0) {
+            feeCol += `<div style="font-size: 11.5px; color: #ef4444; font-weight: 700;">₹${formatNumber(balance)} Udhaar</div>`;
+        } else {
+            feeCol += `<div style="font-size: 11.5px; color: #10b981; font-weight: 600;">✓ Poora Jama</div>`;
+        }
+
+        let statusBadge = '';
+        if (row.Status === 'Approved') {
+            statusBadge = `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">✅ Approved</span>`;
+        } else if (row.Status === 'In-Process') {
+            statusBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700;">⚙️ In-Process</span>`;
+        } else if (row.Status === 'Rejected') {
+            statusBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #dc2626; font-weight: 700;">❌ Rejected</span>`;
+        } else {
+            statusBadge = `<span class="badge" style="background: rgba(8, 145, 178, 0.15); color: #0891b2; font-weight: 700;">⏳ Generated</span>`;
+        }
+
+        const receiptBtn = row.ReceiptPath ? `
+            <a href="${escapeHtml(row.ReceiptPath)}" target="_blank" class="btn-ghost btn-sm" title="Raseed dekhein" style="padding: 4px 7px;">
+                <i data-lucide="file-text" style="width: 14px; height: 14px; color: #0891b2;"></i>
+            </a>
+        ` : '';
+
+        html += `
+            <tr>
+                <td style="font-weight: 700; font-family: monospace; color: #0891b2;">${escapeHtml(snCode)}</td>
+                <td style="font-size: 12.5px;">${dateStr}</td>
+                <td>
+                    <div style="font-weight: 700; font-size: 13.5px;">${custName}</div>
+                    ${phone}
+                    ${aadhaar}
+                </td>
+                <td>${sid}</td>
+                <td><span style="font-size: 12.5px; font-weight: 600;">${uType}</span></td>
+                <td>${pac}</td>
+                <td>${feeCol}</td>
+                <td><span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">${escapeHtml(row.PaymentMode || 'Cash')}</span></td>
+                <td>${statusBadge}</td>
+                <td style="text-align: right; white-space: nowrap;">
+                    ${receiptBtn}
+                    <button class="btn-ghost btn-sm" onclick="printUCLSlip(${row.UCLID})" title="Parchi Print Karein" style="padding: 4px 7px;">
+                        <i data-lucide="printer" style="width: 14px; height: 14px; color: #059669;"></i>
+                    </button>
+                    <button class="btn-ghost btn-sm" onclick="deleteUCLUpdate(${row.UCLID})" title="Delete Karein" style="padding: 4px 7px; color: #ef4444;">
+                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderUCLPagination(total, page, limit) {
+    const el = document.getElementById('uclPagination');
+    if (!el) return;
+    const totalPages = Math.ceil(total / limit) || 1;
+    el.innerHTML = `
+        <div style="font-size: 13px; color: var(--text-muted);">
+            Kul <b>${total}</b> UCL updates (Page <b>${page}</b> of <b>${totalPages}</b>)
+        </div>
+        <div style="display: flex; gap: 6px;">
+            <button class="btn-ghost btn-sm" ${page <= 1 ? 'disabled' : ''} onclick="loadUCLPage(${page - 1})">
+                ◀ Pichla
+            </button>
+            <button class="btn-ghost btn-sm" ${page >= totalPages ? 'disabled' : ''} onclick="loadUCLPage(${page + 1})">
+                Agla ▶
+            </button>
+        </div>
+    `;
+}
+
+function filterUCLStatus(status, btn) {
+    currentUCLStatus = status;
+    const filterSel = document.getElementById('uclStatusFilter');
+    if (filterSel) filterSel.value = status;
+
+    document.querySelectorAll('#uclStatsGrid .csc-stat-card').forEach(c => c.classList.remove('active-card'));
+    if (btn) btn.classList.add('active-card');
+
+    loadUCLPage(1);
+}
+window.filterUCLStatus = filterUCLStatus;
+
+function debounceUCLSearch() {
+    clearTimeout(uclSearchTimer);
+    uclSearchTimer = setTimeout(() => {
+        loadUCLPage(1);
+    }, 300);
+}
+window.debounceUCLSearch = debounceUCLSearch;
+
+// --------------------------------------------------------------------------
+// UCL Modal & Auto Customer Logic
+// --------------------------------------------------------------------------
+async function openNewUCLModal() {
+    const form = document.getElementById('uclForm');
+    if (form) form.reset();
+
+    document.getElementById('uclEditId').value = '';
+    document.getElementById('uclReceiptDocId').value = '';
+    document.getElementById('uclReceiptFilePath').value = '';
+
+    // Reset upload dropzone
+    document.getElementById('uclScanIdle').style.display = 'block';
+    document.getElementById('uclScanLoading').style.display = 'none';
+    document.getElementById('uclScanSuccess').style.display = 'none';
+
+    // Populate customer dropdown from allCustomersData
+    const custSel = document.getElementById('uclCustomerSelect');
+    if (custSel) {
+        let optHtml = '<option value="">-- Direct Naya / Walk-in Customer --</option>';
+        if (Array.isArray(allCustomersData)) {
+            allCustomersData.forEach(c => {
+                const p = c.Phone ? ` (${c.Phone})` : '';
+                optHtml += `<option value="${c.CustomerID}" data-name="${escapeHtml(c.CustomerName)}" data-phone="${c.Phone || ''}" data-aadhaar="${c.AadhaarNumber || ''}">
+                    ${escapeHtml(c.CustomerName)}${p}
+                </option>`;
+            });
+        }
+        custSel.innerHTML = optHtml;
+    }
+
+    // Populate available PAC Codes
+    const pacSel = document.getElementById('uclPACSelect');
+    if (pacSel) {
+        pacSel.innerHTML = '<option value="">-- PAC Code Chunein (Optional) --</option>';
+        try {
+            const pRes = await fetch(`${API}/pac?status=Available&_t=${Date.now()}`);
+            const pJson = await pRes.json();
+            if (pJson.success && Array.isArray(pJson.data)) {
+                pJson.data.forEach(p => {
+                    pacSel.innerHTML += `<option value="${escapeHtml(p.PACCode)}">
+                        ${escapeHtml(p.PACCode)} (₹${p.WalletDeduction})
+                    </option>`;
+                });
+            }
+        } catch (e) { }
+    }
+
+    // Populate active accounts
+    const accSel = document.getElementById('uclAccountSelect');
+    if (accSel) {
+        let accHtml = '';
+        if (Array.isArray(allAccounts)) {
+            allAccounts.filter(a => a.IsActive).forEach(a => {
+                accHtml += `<option value="${a.AccountID}">${escapeHtml(a.AccountName)} (Bal: ₹${formatNumber(a.CurrentBalance || 0)})</option>`;
+            });
+        }
+        accSel.innerHTML = accHtml;
+    }
+
+    // Default fee values
+    document.getElementById('uclFee').value = 50;
+    document.getElementById('uclOpFee').value = 0;
+    document.getElementById('uclTotalAmt').value = 50;
+    document.getElementById('uclPaidAmt').value = 50;
+    calculateUCLFees();
+
+    openModal('uclModal');
+    if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+}
+window.openNewUCLModal = openNewUCLModal;
+
+function onUCLCustomerSelectChange() {
+    const sel = document.getElementById('uclCustomerSelect');
+    if (!sel || !sel.value) return;
+
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+
+    const name = opt.getAttribute('data-name') || '';
+    const phone = opt.getAttribute('data-phone') || '';
+    const aadhaar = opt.getAttribute('data-aadhaar') || '';
+
+    if (name) document.getElementById('uclCustName').value = name;
+    if (phone) document.getElementById('uclCustPhone').value = phone;
+    if (aadhaar) {
+        const cleanAadhaar = aadhaar.replace(/\D/g, '');
+        document.getElementById('uclCustAadhaar').value = cleanAadhaar.length >= 4 ? cleanAadhaar.slice(-4) : cleanAadhaar;
+    }
+}
+window.onUCLCustomerSelectChange = onUCLCustomerSelectChange;
+
+async function handleUCLReceiptUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    document.getElementById('uclScanIdle').style.display = 'none';
+    document.getElementById('uclScanLoading').style.display = 'block';
+    document.getElementById('uclScanSuccess').style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('receipt', file);
+
+    try {
+        const res = await fetch(`${API}/ucl/scan-receipt`, {
+            method: 'POST',
+            headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(false) : {},
+            body: formData
+        });
+        const json = await res.json();
+
+        if (json.success && json.parsed) {
+            const p = json.parsed;
+            document.getElementById('uclScanLoading').style.display = 'none';
+            document.getElementById('uclScanSuccess').style.display = 'block';
+
+            if (json.document) {
+                document.getElementById('uclReceiptDocId').value = json.document.documentId || '';
+                document.getElementById('uclReceiptFilePath').value = json.document.filePath || '';
+            }
+
+            // Auto-fill fields from scanned receipt
+            if (p.customerName) document.getElementById('uclCustName').value = p.customerName;
+            if (p.customerPhone) document.getElementById('uclCustPhone').value = p.customerPhone;
+            if (p.aadhaarLast4) document.getElementById('uclCustAadhaar').value = p.aadhaarLast4;
+            if (p.sid) document.getElementById('uclSID').value = p.sid;
+            if (p.biometrics) document.getElementById('uclBiometrics').value = p.biometrics;
+
+            // Try to match existing customer by phone or name
+            if (p.customerPhone && Array.isArray(allCustomersData)) {
+                const match = allCustomersData.find(c => c.Phone && c.Phone.replace(/\D/g, '').endsWith(p.customerPhone.slice(-10)));
+                if (match) {
+                    const custSel = document.getElementById('uclCustomerSelect');
+                    if (custSel) custSel.value = match.CustomerID;
+                }
+            }
+
+            if (typeof showToast === 'function') {
+                showToast(`✅ UIDAI Raseed Scan Ho Gayi! Resident: ${p.customerName || 'Customer'} auto-fill ho chuka hai.`, 'success');
+            }
+        } else {
+            throw new Error(json.error || 'OCR scan me data extract nahi ho saka');
+        }
+    } catch (err) {
+        document.getElementById('uclScanLoading').style.display = 'none';
+        document.getElementById('uclScanIdle').style.display = 'block';
+        if (typeof showToast === 'function') {
+            showToast('⚠️ ' + err.message, 'warning');
+        } else {
+            alert(err.message);
+        }
+    } finally {
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+}
+window.handleUCLReceiptUpload = handleUCLReceiptUpload;
+
+function calculateUCLFees() {
+    const fee = parseFloat(document.getElementById('uclFee')?.value) || 0;
+    const opFee = parseFloat(document.getElementById('uclOpFee')?.value) || 0;
+    const total = parseFloat((fee + opFee).toFixed(2));
+    document.getElementById('uclTotalAmt').value = total;
+
+    const paidInput = document.getElementById('uclPaidAmt');
+    const paid = parseFloat(paidInput?.value) || 0;
+    const due = Math.max(0, total - paid);
+
+    const badge = document.getElementById('uclDueStatusBadge');
+    const alertBox = document.getElementById('uclKhataAlert');
+    const dueTxt = document.getElementById('uclKhataDueText');
+
+    if (due > 0) {
+        if (badge) {
+            badge.style.background = 'rgba(239, 68, 68, 0.15)';
+            badge.style.color = '#ef4444';
+            badge.textContent = `🔴 ₹${formatNumber(due)} Udhaar`;
+        }
+        if (alertBox) alertBox.style.display = 'block';
+        if (dueTxt) dueTxt.textContent = formatNumber(due);
+    } else {
+        if (badge) {
+            badge.style.background = 'rgba(16, 185, 129, 0.15)';
+            badge.style.color = '#059669';
+            badge.textContent = '🟢 Poora Jama (Paid)';
+        }
+        if (alertBox) alertBox.style.display = 'none';
+    }
+}
+window.calculateUCLFees = calculateUCLFees;
+
+function onUCLPayModeChange() {
+    const mode = document.getElementById('uclPayMode')?.value;
+    const accGroup = document.getElementById('uclAccountGroup');
+    if (accGroup) {
+        accGroup.style.display = mode === 'Online' || mode === 'Split' ? 'block' : 'none';
+    }
+    if (mode === 'Khata') {
+        document.getElementById('uclPaidAmt').value = 0;
+    } else if (mode === 'Cash' || mode === 'Online') {
+        const total = parseFloat(document.getElementById('uclTotalAmt')?.value) || 50;
+        document.getElementById('uclPaidAmt').value = total;
+    }
+    calculateUCLFees();
+}
+window.onUCLPayModeChange = onUCLPayModeChange;
+
+async function handleUCLFormSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    await saveUCLUpdate(false);
+}
+window.handleUCLFormSubmit = handleUCLFormSubmit;
+
+async function saveUCLUpdate(printSlip = false) {
+    const custName = document.getElementById('uclCustName')?.value?.trim();
+    if (!custName) {
+        alert('Kripya Resident / Grahak ka naam enter karein');
+        return;
+    }
+
+    const payload = {
+        customerId: document.getElementById('uclCustomerSelect')?.value || null,
+        customerName: custName,
+        customerPhone: document.getElementById('uclCustPhone')?.value?.trim() || null,
+        aadhaarLast4: document.getElementById('uclCustAadhaar')?.value?.trim() || null,
+        sid: document.getElementById('uclSID')?.value?.trim() || null,
+        updateType: document.getElementById('uclUpdateType')?.value || 'Demographics Update',
+        pacCode: document.getElementById('uclPACSelect')?.value || null,
+        biometricsUpdate: document.getElementById('uclBiometrics')?.value || 'No',
+        totalFee: parseFloat(document.getElementById('uclFee')?.value) || 50,
+        operatorFee: parseFloat(document.getElementById('uclOpFee')?.value) || 0,
+        paidAmount: parseFloat(document.getElementById('uclPaidAmt')?.value) || 0,
+        paymentMode: document.getElementById('uclPayMode')?.value || 'Cash',
+        accountId: document.getElementById('uclAccountSelect')?.value || null,
+        status: document.getElementById('uclStatus')?.value || 'Generated',
+        receiptDocumentId: document.getElementById('uclReceiptDocId')?.value || null,
+        receiptPath: document.getElementById('uclReceiptFilePath')?.value || null
+    };
+
+    try {
+        const res = await fetch(`${API}/ucl`, {
+            method: 'POST',
+            headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(true) : { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.success) {
+            if (typeof showToast === 'function') {
+                showToast(`✅ ${json.message || 'UCL Update darz ho gaya!'}`, 'success');
+            }
+            closeModal('uclModal');
+            loadUCLPage(1);
+            if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
+
+            if (printSlip && json.data?.uclId) {
+                printUCLSlip(json.data.uclId);
+            }
+        } else {
+            alert('❌ ' + (json.error || 'Save nahi ho saka'));
+        }
+    } catch (err) {
+        alert('❌ Error: ' + err.message);
+    }
+}
+window.saveUCLUpdate = saveUCLUpdate;
+
+async function deleteUCLUpdate(id) {
+    if (!confirm('Kya aap sach me is UCL record ko hatana chahte hain?')) return;
+    try {
+        const res = await fetch(`${API}/ucl/${id}`, {
+            method: 'DELETE',
+            headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(true) : { 'Content-Type': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.success) {
+            if (typeof showToast === 'function') showToast('🗑️ UCL record hata diya gaya', 'info');
+            loadUCLPage(currentUCLPage);
+            if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
+        } else {
+            alert(json.error || 'Hata nahi sake');
+        }
+    } catch (err) {
+        alert(err.message);
+    }
+}
+window.deleteUCLUpdate = deleteUCLUpdate;
+
+async function printUCLSlip(id) {
+    try {
+        const res = await fetch(`${API}/ucl/${id}`);
+        const json = await res.json();
+        if (!json.success || !json.data) return;
+
+        const row = json.data;
+        const printContent = document.getElementById('uclSlipPrintContent');
+        if (!printContent) return;
+
+        const shopName = (typeof currentShopProfile !== 'undefined' && currentShopProfile?.shopName) || 'CSC AADHAAR SEVA KENDRA';
+
+        printContent.innerHTML = `
+            <div id="uclPrintSlipInner" style="font-family: monospace, sans-serif; background: #fff; color: #000; padding: 18px; border: 1.5px solid #000; border-radius: 8px;">
+                <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 12px;">
+                    <div style="font-size: 17px; font-weight: 800; text-transform: uppercase;">${escapeHtml(shopName)}</div>
+                    <div style="font-size: 13px; font-weight: 700;">AADHAAR UCL UPDATE ACKNOWLEDGEMENT</div>
+                    <div style="font-size: 11px; margin-top: 2px;">पावती रसीद / ग्राहक पर्ची</div>
+                </div>
+
+                <table style="width: 100%; font-size: 13px; line-height: 1.6; border-collapse: collapse;">
+                    <tr><td style="width: 40%; font-weight: 700;">Serial No:</td><td style="font-weight: 800;">${escapeHtml(row.SerialNo || 'UCL-' + row.UCLID)}</td></tr>
+                    <tr><td style="font-weight: 700;">Date & Time:</td><td>${formatDate(row.UpdateDate)}</td></tr>
+                    <tr><td style="font-weight: 700;">Resident Name:</td><td style="font-weight: 800; font-size: 14px;">${escapeHtml(row.CustomerName)}</td></tr>
+                    <tr><td style="font-weight: 700;">Mobile:</td><td>${escapeHtml(row.CustomerPhone || '-')}</td></tr>
+                    <tr><td style="font-weight: 700;">Aadhaar (Last 4):</td><td style="font-family: monospace; font-weight: 700;">${row.AadhaarLast4 ? 'XXXX-XXXX-' + escapeHtml(row.AadhaarLast4) : '-'}</td></tr>
+                    <tr><td style="font-weight: 700;">SID / URN:</td><td style="font-family: monospace; font-size: 12px; font-weight: 700; word-break: break-all;">${escapeHtml(row.SID || '-')}</td></tr>
+                    <tr><td style="font-weight: 700;">Update Type:</td><td style="font-weight: 700;">${escapeHtml(row.UpdateType || 'Demographics')}</td></tr>
+                    ${row.PACCode ? `<tr><td style="font-weight: 700;">PAC Code:</td><td>${escapeHtml(row.PACCode)}</td></tr>` : ''}
+                </table>
+
+                <div style="border-top: 1.5px dashed #000; margin: 12px 0 8px; padding-top: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800;">
+                        <span>KUL SHULK (TOTAL FEE):</span>
+                        <span>₹${formatNumber(row.TotalAmount || 0)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #000; margin-top: 4px;">
+                        <span>JAMA RASHI (PAID):</span>
+                        <span>₹${formatNumber(row.PaidAmount || 0)} (${escapeHtml(row.PaymentMode || 'Cash')})</span>
+                    </div>
+                    ${row.BalanceAmount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: #ef4444; margin-top: 4px;">
+                            <span>BAQI UDHAAR (DUE):</span>
+                            <span>₹${formatNumber(row.BalanceAmount)}</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <div style="text-align: center; font-size: 11px; margin-top: 14px; border-top: 1px dotted #666; padding-top: 6px;">
+                    Aapka Aadhaar update UIDAI dwara 24 se 72 ghante me verify kiya jata hai.<br>
+                    Status check karne ke liye: <b>myaadhaar.uidai.gov.in</b> par URN/SID darz karein.<br>
+                    *** Dhanyawad / Visit Again ***
+                </div>
+            </div>
+        `;
+
+        openModal('uclSlipModal');
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    } catch (e) {
+        alert('Slip open nahi ho saki: ' + e.message);
+    }
+}
+window.printUCLSlip = printUCLSlip;
+
+function printUCLSlipElement() {
+    const slipInner = document.getElementById('uclPrintSlipInner');
+    if (!slipInner) {
+        window.print();
+        return;
+    }
+    const printWin = window.open('', '_blank', 'width=450,height=650');
+    if (printWin) {
+        printWin.document.write(`
+            <html>
+                <head>
+                    <title>Aadhaar UCL Update Parchi</title>
+                    <style>
+                        body { margin: 0; padding: 10px; font-family: monospace, sans-serif; }
+                        @media print { body { padding: 0; } }
+                    </style>
+                </head>
+                <body>
+                    ${slipInner.outerHTML}
+                    <script>
+                        window.onload = function() { window.print(); window.close(); };
+                    </script>
+                </body>
+            </html>
+        `);
+        printWin.document.close();
+    } else {
+        window.print();
+    }
+}
+window.printUCLSlipElement = printUCLSlipElement;
+
+// --------------------------------------------------------------------------
+// PAC Code Management Logic
+// --------------------------------------------------------------------------
 async function loadPACPage() {
-    if (window.lucide && typeof lucide.createIcons === 'function') {
-        lucide.createIcons();
+    const tbody = document.getElementById('pacTableBody');
+    if (tbody && (!allPACEntries || allPACEntries.length === 0)) {
+        if (typeof renderTableSkeleton === 'function') renderTableSkeleton(tbody, 8, 4);
+    }
+
+    const searchVal = document.getElementById('pacSearchInput')?.value?.trim() || '';
+    const statusVal = document.getElementById('pacStatusFilter')?.value || currentPACStatus || 'all';
+
+    try {
+        const queryParams = new URLSearchParams({
+            status: statusVal,
+            search: searchVal,
+            _t: Date.now()
+        });
+
+        const res = await fetch(`${API}/pac?${queryParams.toString()}`);
+        const json = await res.json();
+        if (json.success) {
+            allPACEntries = json.data || [];
+            
+            const stats = json.stats || {};
+            const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+            setTxt('pacKpiAvailable', stats.available ?? 0);
+            setTxt('pacKpiTotal', stats.total ?? 0);
+            setTxt('pacKpiUsed', stats.used ?? 0);
+            setTxt('pacKpiWallet', `₹${formatNumber(stats.walletSpent || 0)}`);
+
+            renderPACTable(allPACEntries);
+        }
+    } catch (err) {
+        console.error('[PAC Fetch Error]:', err.message);
+    } finally {
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
     }
 }
 window.loadPACPage = loadPACPage;
+
+function renderPACTable(rows) {
+    const tbody = document.getElementById('pacTableBody');
+    if (!tbody) return;
+
+    if (!rows || rows.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <div style="font-size: 28px; margin-bottom: 6px;">🔑</div>
+                    <div style="font-weight: 700; margin-bottom: 4px;">Koi PAC Code Nahi Mila</div>
+                    <div style="font-size: 13px; margin-bottom: 12px;">Digital Seva portal se generate hua PAC code add karein.</div>
+                    <button class="btn-primary btn-sm" onclick="openNewPACModal()">
+                        <i data-lucide="plus-circle" style="width: 14px; height: 14px;"></i> + Naya PAC Code
+                    </button>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let html = '';
+    rows.forEach(row => {
+        const dateStr = row.GenerationDate ? formatDate(row.GenerationDate) : '-';
+        const expiryStr = row.ExpiryDate ? formatDate(row.ExpiryDate) : '<span style="color: var(--text-muted);">-</span>';
+        
+        let statusBadge = '';
+        if (row.Status === 'Available') {
+            statusBadge = `<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 700;">🟢 Available</span>`;
+        } else if (row.Status === 'Used') {
+            statusBadge = `<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #7c3aed; font-weight: 700;">🔵 Used</span>`;
+        } else {
+            statusBadge = `<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 700;">🔴 Expired</span>`;
+        }
+
+        const usedFor = row.UsedForCustomerName ? `
+            <div><b>${escapeHtml(row.UsedForCustomerName)}</b></div>
+            ${row.UsedForSID ? `<div style="font-size: 11px; font-family: monospace; color: var(--text-muted);">${escapeHtml(row.UsedForSID)}</div>` : ''}
+        ` : '<span style="color: var(--text-muted); font-size: 12px;">Stock me uplabdh</span>';
+
+        html += `
+            <tr>
+                <td style="font-weight: 800; font-family: monospace; color: #7c3aed; font-size: 14px;">${escapeHtml(row.PACCode)}</td>
+                <td style="font-size: 12.5px;">${escapeHtml(row.OperatorID || '-')}</td>
+                <td style="font-weight: 700;">₹${formatNumber(row.WalletDeduction || 50)}</td>
+                <td style="font-size: 12px;">${dateStr}</td>
+                <td style="font-size: 12px;">${expiryStr}</td>
+                <td>${statusBadge}</td>
+                <td>${usedFor}</td>
+                <td style="text-align: right;">
+                    <button class="btn-ghost btn-sm" onclick="deletePACCode(${row.PACID})" title="Delete Karein" style="color: #ef4444; padding: 4px 7px;">
+                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function filterPACStatus(status, btn) {
+    currentPACStatus = status;
+    const sel = document.getElementById('pacStatusFilter');
+    if (sel) sel.value = status;
+
+    document.querySelectorAll('#pacStatsGrid .csc-stat-card').forEach(c => c.classList.remove('active-card'));
+    if (btn) btn.classList.add('active-card');
+
+    loadPACPage();
+}
+window.filterPACStatus = filterPACStatus;
+
+function debouncePACSearch() {
+    clearTimeout(pacSearchTimer);
+    pacSearchTimer = setTimeout(() => {
+        loadPACPage();
+    }, 300);
+}
+window.debouncePACSearch = debouncePACSearch;
+
+function openNewPACModal() {
+    const form = document.getElementById('pacForm');
+    if (form) form.reset();
+    document.getElementById('pacWalletInput').value = 50;
+    openModal('pacModal');
+    if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+}
+window.openNewPACModal = openNewPACModal;
+
+async function handlePACFormSubmit(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const pacCode = document.getElementById('pacCodeInput')?.value?.trim();
+    if (!pacCode) {
+        alert('PAC Code enter karein');
+        return;
+    }
+
+    const payload = {
+        pacCode,
+        operatorId: document.getElementById('pacOperatorInput')?.value?.trim() || null,
+        walletDeduction: parseFloat(document.getElementById('pacWalletInput')?.value) || 50,
+        expiryDate: document.getElementById('pacExpiryInput')?.value || null,
+        notes: document.getElementById('pacNotesInput')?.value?.trim() || null
+    };
+
+    try {
+        const res = await fetch(`${API}/pac`, {
+            method: 'POST',
+            headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(true) : { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.success) {
+            if (typeof showToast === 'function') showToast(`✅ ${json.message || 'PAC Code darz ho gaya!'}`, 'success');
+            closeModal('pacModal');
+            loadPACPage();
+            if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
+        } else {
+            alert('❌ ' + (json.error || 'PAC Code save nahi ho saka'));
+        }
+    } catch (err) {
+        alert('❌ Error: ' + err.message);
+    }
+}
+window.handlePACFormSubmit = handlePACFormSubmit;
+
+async function deletePACCode(id) {
+    if (!confirm('Kya aap is PAC code ko delete karna chahte hain?')) return;
+    try {
+        const res = await fetch(`${API}/pac/${id}`, {
+            method: 'DELETE',
+            headers: typeof getAuthHeaders === 'function' ? getAuthHeaders(true) : { 'Content-Type': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.success) {
+            if (typeof showToast === 'function') showToast('🗑️ PAC Code hata diya gaya', 'info');
+            loadPACPage();
+            if (typeof updateSidebarBadges === 'function') updateSidebarBadges();
+        } else {
+            alert(json.error || 'Delete nahi ho saka');
+        }
+    } catch (err) {
+        alert(err.message);
+    }
+}
+window.deletePACCode = deletePACCode;
 
 window.onBPModalCategoryChange = onBPModalCategoryChange;
 window.calculateBPProfitInModal = calculateBPProfitInModal;

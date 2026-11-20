@@ -28,6 +28,8 @@ module.exports = {
         'BillPayments',
         'Invoices',
         'InvoiceItems',
+        'UCLUpdates',
+        'PACEntries',
         'AppLicenses',
         'ApiIdempotencyRequests',
         'SchemaMigrations'

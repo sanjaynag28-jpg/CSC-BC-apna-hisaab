@@ -697,6 +697,8 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/csc', require('./routes/csc'));
 app.use('/api/service', require('./routes/service_records'));
 app.use('/api/bill-payments', require('./routes/bill_payments'));
+app.use('/api/ucl', require('./routes/ucl'));
+app.use('/api/pac', require('./routes/pac'));
 app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/history', require('./routes/history'));
@@ -716,6 +718,8 @@ app.get('/api/badges', async (req, res) => {
                 (SELECT COUNT(*) FROM KhataEntries WHERE UserID = @userId) AS khatabook,
                 (SELECT COUNT(*) FROM Documents WHERE UserID = @userId) AS documents,
                 (SELECT COUNT(*) FROM CSCApplications WHERE IsActive = 1 AND UserID = @userId) AS csc,
+                (SELECT COUNT(*) FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId) AS ucl,
+                (SELECT COUNT(*) FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId) AS pac,
                 (SELECT COUNT(*) FROM Budgets WHERE UserID = @userId) AS budgets,
                 (SELECT COUNT(*) FROM Bills WHERE UserID = @userId) AS bills,
                 (SELECT COUNT(*) FROM Categories WHERE IsActive = 1 AND UserID = @userId) AS categories,

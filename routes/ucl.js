@@ -1,0 +1,699 @@
+/**
+ * routes/ucl.js
+ * ---------------------------------------------------------------------------
+ * Aadhaar UCL (Update Client Lite) Demographics & Document Update Router
+ * 
+ * Features:
+ * - OCR Receipt Scanning (UIDAI Acknowledgement/Consent slips)
+ * - Auto Customer Match/Register (Same Customer Logic via customerAutoRegister)
+ * - Multi-mode Payment (Cash Counter, Online/Bank, Khata/Udhaar, Split)
+ * - Direct Khatabook synchronization with zero balance drift
+ * - Universal Txn Registry integration (UCL-1, UCL-2...)
+ * - PAC Code auto-linkage
+ * ---------------------------------------------------------------------------
+ */
+
+const express = require('express');
+const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const Tesseract = require('tesseract.js');
+
+const { query, withTransaction, sql } = require('../database/db');
+const { logAudit } = require('../utils/auditLogger');
+const { escapeLike } = require('../utils/helpers');
+const { resolveOrCreateCustomer } = require('../database/customerAutoRegister');
+const { registerGlobalTransaction, updateGlobalTransaction, deactivateGlobalTransaction } = require('../database/globalTxnRegistry');
+const { addKhataEntry, refreshCustomerBalance } = require('../database/khataEngine');
+
+// Multer storage for uploaded UCL receipts
+const uploadDir = path.join(__dirname, '../public/uploads/documents');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname) || '.png';
+        const unique = `ucl_receipt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+        cb(null, unique);
+    }
+});
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 25 * 1024 * 1024 }
+});
+
+// ============================================================================
+// Intelligent UIDAI UCL Acknowledgement / Consent Slip Parser
+// ============================================================================
+function parseUCLReceipt(text) {
+    if (!text || typeof text !== 'string') return {};
+
+    const res = {
+        sid: '',
+        date: '',
+        time: '',
+        aadhaarLast4: '',
+        aadhaarMasked: '',
+        customerName: '',
+        customerPhone: '',
+        updateType: 'Demographics Update',
+        biometrics: 'No',
+        registrar: 'CSC e-Gov.',
+        enrolmentAgency: 'CSC Bank BC',
+        locationId: '',
+        rawText: text
+    };
+
+    // 1. SID / Enrollment number (e.g. S325112317949020261120155058)
+    const sidMatch = text.match(/SID[^\n\r]*?([S\d][\d\s]{18,35})/i) || text.match(/\b(S\d{20,32})\b/i);
+    if (sidMatch) {
+        res.sid = sidMatch[1].replace(/\s+/g, '');
+    }
+
+    // 2. Date & Time (e.g. 20/11/2026 15:50:58)
+    const dateMatch = text.match(/Date[^\n\r]*?(\d{2})[\/\.\-]?(\d{2})[\/\.\-]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
+        || text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);
+    if (dateMatch) {
+        if (dateMatch[3] && dateMatch[3].length === 4) {
+            res.date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+        }
+        if (dateMatch[4]) res.time = dateMatch[4];
+    }
+    if (!res.date) {
+        const today = new Date().toISOString().split('T')[0];
+        res.date = today;
+    }
+
+    // 3. Mobile Number (10 digits starting with 6, 7, 8, 9)
+    const phoneMatch = text.match(/(?:Mobile|मोबाईल)[^\d]*?([6-9]\d{9})/i) || text.match(/\b([6-9]\d{9})\b/);
+    if (phoneMatch) {
+        res.customerPhone = phoneMatch[1];
+    }
+
+    // 4. Resident Name (after Name: or नाम:)
+    const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{3,35})/i);
+    if (nameMatch) {
+        let n = nameMatch[1].trim();
+        n = n.replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
+        if (n.length >= 2) res.customerName = n;
+    }
+
+    // 5. Masked Aadhaar / Last 4 Digits (e.g. XXXXXXXX1047)
+    const aadhaarMatch = text.match(/AADHAAR[^\n\r]*?([X\d]{8,14})/i) || text.match(/([X]{4,8}\s*\d{4})/i);
+    if (aadhaarMatch) {
+        const raw = aadhaarMatch[1].replace(/\s+/g, '');
+        const digits = raw.match(/\d{4}$/);
+        if (digits) res.aadhaarLast4 = digits[0];
+        res.aadhaarMasked = 'XXXX-XXXX-' + (res.aadhaarLast4 || 'XXXX');
+    }
+
+    // 6. Biometrics Update (Yes / No)
+    if (/Biometrics?\s*Update[^\n\r]*?\b(Yes|हा|हाँ)\b/i.test(text)) {
+        res.biometrics = 'Yes';
+    } else {
+        res.biometrics = 'No';
+    }
+
+    // 7. Update Type detection
+    const updates = [];
+    if (/Demograph/i.test(text)) updates.push('Demographics');
+    if (/Name\s*[:\-]/i.test(text)) updates.push('Name');
+    if (/Mobile|Phone/i.test(text) && !/Mobile\s*Update/i.test(text)) updates.push('Mobile');
+    if (/Address|Pata|Niwas/i.test(text)) updates.push('Address');
+    if (/DOB|Birth|Janm/i.test(text)) updates.push('DOB');
+    if (/Document|POI|POA/i.test(text)) updates.push('Document POI/POA');
+    if (updates.length > 0) {
+        res.updateType = updates.join(' + ');
+    }
+
+    // 8. Agency & Location
+    const agencyMatch = text.match(/Enrol?l?ment\s*Agency\s*[:\-]\s*([^\n\r]+?)(?:Location|$)/i);
+    if (agencyMatch) res.enrolmentAgency = agencyMatch[1].trim();
+
+    const locMatch = text.match(/Location\s*Id\s*[:\-]\s*([^\n\r]+)/i);
+    if (locMatch) res.locationId = locMatch[1].trim();
+
+    return res;
+}
+
+// ============================================================================
+// 1. POST /api/ucl/scan-receipt - Upload & OCR Parse UIDAI UCL Receipt
+// ============================================================================
+router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'Koi receipt file upload nahi ki gayi' });
+        }
+
+        const userId = req.user?.UserID || 1;
+        const filePath = req.file.path;
+        const fileName = req.file.filename;
+        const originalName = req.file.originalname;
+        const fileType = req.file.mimetype || 'image/jpeg';
+        const fileSize = req.file.size || 0;
+        const relativePath = `/uploads/documents/${fileName}`;
+
+        // Run OCR on the receipt
+        let ocrText = '';
+        try {
+            const ocrResult = await Tesseract.recognize(filePath, 'eng');
+            ocrText = ocrResult?.data?.text || '';
+        } catch (ocrErr) {
+            console.error('[UCL OCR Error]:', ocrErr.message);
+        }
+
+        // Parse extracted text
+        const parsed = parseUCLReceipt(ocrText);
+
+        // Save entry in Documents table
+        let documentId = null;
+        try {
+            const docRes = await query(`
+                INSERT INTO Documents (
+                    UserID, CustomerID, FileName, OriginalName, FileType, FileSize, FilePath,
+                    UploadedBy, Description, IsArchived, CreatedAt, UpdatedAt, EntityType, EntityID
+                ) VALUES (
+                    @userId, NULL, @fileName, @originalName, @fileType, @fileSize, @filePath,
+                    'shop', @description, 0, GETDATE(), GETDATE(), 'UCL', NULL
+                );
+                SELECT SCOPE_IDENTITY() AS DocumentID;
+            `, {
+                userId,
+                fileName,
+                originalName,
+                fileType,
+                fileSize,
+                filePath: relativePath,
+                description: `Aadhaar UCL Receipt: ${parsed.customerName || 'Resident'} (${parsed.sid || 'Update'})`
+            });
+            if (docRes.recordset?.length) {
+                documentId = docRes.recordset[0].DocumentID;
+            }
+        } catch (docErr) {
+            console.warn('[UCL Documents Save Warning]:', docErr.message);
+        }
+
+        res.json({
+            success: true,
+            parsed,
+            document: {
+                documentId,
+                fileName,
+                originalName,
+                filePath: relativePath,
+                fileSize,
+                fileType
+            }
+        });
+    } catch (err) {
+        console.error('[UCL Scan Receipt Error]:', err);
+        res.status(500).json({ success: false, error: 'Raseed scan nahi ho saki: ' + err.message });
+    }
+});
+
+// ============================================================================
+// 2. GET /api/ucl - List UCL Updates with Search, Filters & KPIs
+// ============================================================================
+router.get('/', async (req, res) => {
+    try {
+        const userId = req.user?.UserID || 1;
+        const { search, status, startDate, endDate, page = 1, limit = 50 } = req.query;
+
+        let whereClause = 'WHERE u.IsDeleted = 0 AND u.UserID = @userId';
+        const params = { userId };
+
+        if (status && status !== 'all') {
+            whereClause += ' AND u.Status = @status';
+            params.status = status;
+        }
+
+        if (startDate) {
+            whereClause += ' AND CAST(u.UpdateDate AS DATE) >= @startDate';
+            params.startDate = startDate;
+        }
+
+        if (endDate) {
+            whereClause += ' AND CAST(u.UpdateDate AS DATE) <= @endDate';
+            params.endDate = endDate;
+        }
+
+        if (search && search.trim()) {
+            params.search = `%${escapeLike(search.trim())}%`;
+            whereClause += ` AND (
+                u.CustomerName LIKE @search OR
+                u.CustomerPhone LIKE @search OR
+                u.AadhaarLast4 LIKE @search OR
+                u.SID LIKE @search OR
+                u.SerialNo LIKE @search OR
+                u.PACCode LIKE @search
+            )`;
+        }
+
+        // Get total count
+        const countRes = await query(`
+            SELECT COUNT(*) AS total
+            FROM UCLUpdates u
+            ${whereClause}
+        `, params);
+        const total = countRes.recordset[0]?.total || 0;
+
+        // KPI aggregates
+        const kpiRes = await query(`
+            SELECT
+                COUNT(*) AS TotalCount,
+                SUM(CASE WHEN Status IN ('Generated', 'In-Process', 'Pending', 'Uploaded') THEN 1 ELSE 0 END) AS PendingCount,
+                SUM(CASE WHEN Status IN ('Approved', 'Success', 'Generated_Success') THEN 1 ELSE 0 END) AS ApprovedCount,
+                ISNULL(SUM(PaidAmount), 0) AS TotalFeesCollected,
+                ISNULL(SUM(BalanceAmount), 0) AS TotalBalanceDue
+            FROM UCLUpdates
+            WHERE IsDeleted = 0 AND UserID = @userId
+        `, { userId });
+        const kpi = kpiRes.recordset[0] || {};
+
+        // Paginated rows
+        const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
+        params.offset = offset;
+        params.limit = parseInt(limit);
+
+        const rowsRes = await query(`
+            SELECT 
+                u.*,
+                c.CustomerName AS RegisteredCustomerName,
+                c.Phone AS RegisteredCustomerPhone,
+                a.AccountName
+            FROM UCLUpdates u
+            LEFT JOIN Customers c ON u.CustomerID = c.CustomerID
+            LEFT JOIN Accounts a ON u.AccountID = a.AccountID
+            ${whereClause}
+            ORDER BY u.UpdateDate DESC, u.UCLID DESC
+            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+        `, params);
+
+        res.json({
+            success: true,
+            data: rowsRes.recordset,
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            stats: {
+                total: kpi.TotalCount || 0,
+                pending: kpi.PendingCount || 0,
+                approved: kpi.ApprovedCount || 0,
+                fees: parseFloat(kpi.TotalFeesCollected || 0),
+                balance: parseFloat(kpi.TotalBalanceDue || 0)
+            }
+        });
+    } catch (err) {
+        console.error('[UCL List Error]:', err);
+        res.status(500).json({ success: false, error: 'UCL updates load nahi ho sake: ' + err.message });
+    }
+});
+
+// ============================================================================
+// 3. POST /api/ucl - Create New UCL Update with Auto-Customer & Ledger Sync
+// ============================================================================
+router.post('/', async (req, res) => {
+    try {
+        const userId = req.user?.UserID || 1;
+        const body = req.body;
+
+        const customerName = (body.customerName || body.CustomerName || '').trim();
+        if (!customerName) {
+            return res.status(400).json({ success: false, error: 'Customer / Resident naam zaroori hai' });
+        }
+
+        const phone = (body.customerPhone || body.CustomerPhone || '').trim();
+        const aadhaarLast4 = (body.aadhaarLast4 || body.AadhaarLast4 || '').trim();
+        const sid = (body.sid || body.SID || '').trim();
+        const updateType = (body.updateType || body.UpdateType || 'Demographics Update').trim();
+        const pacCode = (body.pacCode || body.PACCode || '').trim();
+        const biometrics = body.biometricsUpdate || body.BiometricsUpdate || 'No';
+
+        // Robust date parsing (handles ISO, YYYY-MM-DD, DD/MM/YYYY)
+        let safeDate = new Date();
+        const rawDate = body.updateDate || body.UpdateDate;
+        if (rawDate) {
+            if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(rawDate)) {
+                const parts = rawDate.split(/[\/\-]/);
+                const d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                if (!isNaN(d.getTime())) safeDate = d;
+            } else {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) safeDate = d;
+            }
+        }
+        const transDateStr = safeDate.toISOString().slice(0, 10);
+        const transTimeStr = safeDate.toTimeString().slice(0, 8);
+
+        const totalFee = parseFloat(body.totalFee ?? body.TotalFee ?? 50.00);
+        const operatorFee = parseFloat(body.operatorFee ?? body.OperatorFee ?? 0.00);
+        const totalAmount = parseFloat((totalFee + operatorFee).toFixed(2));
+        const paidAmount = parseFloat(body.paidAmount ?? body.PaidAmount ?? totalAmount);
+        const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
+
+        const paymentMode = body.paymentMode || body.PaymentMode || (balanceAmount > 0 ? 'Khata' : 'Cash');
+        const accountId = body.accountId || body.AccountID ? parseInt(body.accountId || body.AccountID) : null;
+        const status = body.status || body.Status || 'Generated';
+        const receiptDocumentId = body.receiptDocumentId || body.ReceiptDocumentID ? parseInt(body.receiptDocumentId || body.ReceiptDocumentID) : null;
+        const receiptPath = body.receiptPath || body.ReceiptPath || null;
+        const notes = body.notes || body.Notes || null;
+
+        // Auto Customer Resolution (Rule: Zero Duplicates, Auto-Enrichment)
+        const custRes = await resolveOrCreateCustomer({
+            customerId: body.customerId ? parseInt(body.customerId) : null,
+            customerName,
+            customerPhone: phone,
+            customerAadhaar: aadhaarLast4,
+            source: 'Aadhaar UCL Update',
+            userId
+        });
+        const resolvedCustomerId = custRes.customerId;
+
+        // Atomic Transaction for UCL Record, Global Registry & Ledgers
+        const savedRecord = await withTransaction(async (tQuery) => {
+            // 1. Insert UCL Record
+            const insertRes = await tQuery(`
+                INSERT INTO UCLUpdates (
+                    UserID, CustomerID, CustomerName, CustomerPhone, AadhaarLast4,
+                    AadhaarMasked, SID, UpdateType, PACCode, BiometricsUpdate,
+                    UpdateDate, TotalFee, OperatorFee, TotalAmount, PaidAmount,
+                    BalanceAmount, PaymentMode, AccountID, Status, ReceiptDocumentID,
+                    ReceiptPath, Notes, IsActive, IsDeleted, CreatedAt, UpdatedAt
+                ) VALUES (
+                    @userId, @customerId, @customerName, @phone, @aadhaarLast4,
+                    @aadhaarMasked, @sid, @updateType, @pacCode, @biometrics,
+                    @updateDate, @totalFee, @operatorFee, @totalAmount, @paidAmount,
+                    @balanceAmount, @paymentMode, @accountId, @status, @receiptDocumentId,
+                    @receiptPath, @notes, 1, 0, GETDATE(), GETDATE()
+                );
+                SELECT SCOPE_IDENTITY() AS UCLID;
+            `, {
+                userId,
+                customerId: resolvedCustomerId,
+                customerName,
+                phone: phone || null,
+                aadhaarLast4: aadhaarLast4 || null,
+                aadhaarMasked: aadhaarLast4 ? `XXXX-XXXX-${aadhaarLast4}` : null,
+                sid: sid || null,
+                updateType,
+                pacCode: pacCode || null,
+                biometrics,
+                updateDate: safeDate,
+                totalFee,
+                operatorFee,
+                totalAmount,
+                paidAmount,
+                balanceAmount,
+                paymentMode,
+                accountId,
+                status,
+                receiptDocumentId,
+                receiptPath,
+                notes
+            });
+
+            const uclId = insertRes.recordset[0].UCLID;
+
+            // 2. Register Global Transaction (Generates SNCode e.g. UCL-1)
+            let effGlobSN = null;
+            let effSNCode = `UCL-${uclId}`;
+            try {
+                const regRes = await registerGlobalTransaction({
+                    sourceModule: 'UCL',
+                    recordId: uclId,
+                    entityName: customerName,
+                    amount: totalAmount,
+                    transDate: safeDate,
+                    userId
+                }, tQuery);
+                if (regRes) {
+                    effGlobSN = regRes.globalSerialNo || regRes.GlobalSerialNo || null;
+                    effSNCode = regRes.snCode || regRes.SNCode || effSNCode;
+                }
+            } catch (regErr) {
+                console.warn('[UCL Global Registry Warning]:', regErr.message);
+            }
+
+            // Update UCL SerialNo
+            await tQuery(`UPDATE UCLUpdates SET SerialNo = @sn WHERE UCLID = @id`, {
+                sn: effSNCode,
+                id: uclId
+            });
+
+            // 3. Transactions Table Mirror Entry (Cash in Hand or Bank Account)
+            if (paidAmount > 0) {
+                // If accountId is null, resolve Default Cash Account
+                let effAccountId = accountId;
+                if (!effAccountId) {
+                    const cashAccRes = await tQuery(`
+                        SELECT TOP 1 AccountID FROM Accounts 
+                        WHERE UserID = @userId AND AccountType = 'Cash' AND IsActive = 1
+                    `, { userId });
+                    if (cashAccRes.recordset?.length) {
+                        effAccountId = cashAccRes.recordset[0].AccountID;
+                    }
+                }
+
+                if (effAccountId) {
+                    await tQuery(`
+                        INSERT INTO Transactions (
+                            TransDate, TransTime, TransType, Amount, AccountID,
+                            Description, Reference, UserID, Tags,
+                            SourceModule, SourceID, LineType,
+                            GlobalSerialNo, SNCode, ModuleCode
+                        ) VALUES (
+                            @transDate, @transTime, 'Income', @amount, @accId,
+                            @desc, @ref, @userId, 'UCL',
+                            'UCL', @sourceId, 'UCL_FEE_IN',
+                            @globSN, @sn, 'UCL'
+                        )
+                    `, {
+                        accId: effAccountId,
+                        amount: paidAmount,
+                        transDate: transDateStr,
+                        transTime: transTimeStr,
+                        desc: `UCL Shulk Jama: ${customerName} (${updateType})`,
+                        ref: effSNCode,
+                        userId,
+                        sourceId: uclId,
+                        globSN: effGlobSN,
+                        sn: effSNCode
+                    });
+
+                    // Update account balance
+                    await tQuery(`
+                        UPDATE Accounts 
+                        SET CurrentBalance = CurrentBalance + @amount, UpdatedAt = GETDATE()
+                        WHERE AccountID = @accId
+                    `, { accId: effAccountId, amount: paidAmount });
+                }
+            }
+
+            // 4. Khatabook Synchronization (If Udhaar / Balance Due or PaymentMode is Khata)
+            if (resolvedCustomerId && (balanceAmount > 0 || paymentMode === 'Khata')) {
+                // Customer Gave (Due Shulk)
+                await addKhataEntry(tQuery, {
+                    CustomerID: resolvedCustomerId,
+                    EntryType: 'Gave',
+                    Amount: totalAmount,
+                    EntryDate: transDateStr,
+                    PaymentMode: paymentMode,
+                    Description: `Aadhaar UCL Update Shulk (${updateType}) [${effSNCode}]`,
+                    ReferenceNo: effSNCode,
+                    UserID: userId,
+                    GlobalSerialNo: effGlobSN,
+                    SNCode: effSNCode,
+                    ModuleCode: 'UCL',
+                    SourceModule: 'UCL',
+                    SourceID: uclId
+                });
+
+                // If partially paid in cash/online, record Got entry
+                if (paidAmount > 0) {
+                    await addKhataEntry(tQuery, {
+                        CustomerID: resolvedCustomerId,
+                        EntryType: 'Got',
+                        Amount: paidAmount,
+                        EntryDate: transDateStr,
+                        PaymentMode: paymentMode,
+                        Description: `UCL Jama (${paymentMode}) [${effSNCode}]`,
+                        ReferenceNo: `${effSNCode}-PAY`,
+                        UserID: userId,
+                        GlobalSerialNo: effGlobSN,
+                        SNCode: effSNCode,
+                        ModuleCode: 'UCL',
+                        SourceModule: 'UCL',
+                        SourceID: uclId
+                    });
+                }
+
+                // Zero balance drift: recalculate customer ledger balance
+                await refreshCustomerBalance(tQuery, resolvedCustomerId);
+            }
+
+            // 5. PAC Code linkage (If PAC code was provided, mark it Used)
+            if (pacCode) {
+                await tQuery(`
+                    UPDATE PACEntries
+                    SET Status = 'Used',
+                        UsedForUCLID = @uclId,
+                        UsedForCustomerName = @cName,
+                        UsedForSID = @sid,
+                        UsedDate = GETDATE(),
+                        UpdatedAt = GETDATE()
+                    WHERE PACCode = @pacCode AND UserID = @userId
+                `, {
+                    uclId,
+                    cName: customerName,
+                    sid: sid || null,
+                    pacCode,
+                    userId
+                });
+            }
+
+            // 6. Link Document EntityID
+            if (receiptDocumentId) {
+                await tQuery(`
+                    UPDATE Documents
+                    SET EntityID = @uclId, CustomerID = @custId
+                    WHERE DocumentID = @docId
+                `, {
+                    uclId,
+                    custId: resolvedCustomerId,
+                    docId: receiptDocumentId
+                });
+            }
+
+            return {
+                uclId,
+                serialNo: effSNCode,
+                customerName,
+                totalAmount,
+                paidAmount,
+                balanceAmount
+            };
+        });
+
+        await logAudit(userId, 'CREATE', 'UCLUpdates', savedRecord.uclId, null, {
+            serialNo: savedRecord.serialNo,
+            customerName,
+            totalAmount
+        });
+
+        res.json({
+            success: true,
+            data: savedRecord,
+            message: `Aadhaar UCL Update ${savedRecord.serialNo} darz ho gaya!`
+        });
+    } catch (err) {
+        console.error('[UCL Create Error]:', err);
+        res.status(500).json({ success: false, error: 'UCL update save nahi ho saka: ' + err.message });
+    }
+});
+
+// ============================================================================
+// 4. GET /api/ucl/:id - Single Record Details
+// ============================================================================
+router.get('/:id', async (req, res) => {
+    try {
+        const userId = req.user?.UserID || 1;
+        const id = parseInt(req.params.id);
+
+        const recRes = await query(`
+            SELECT 
+                u.*,
+                c.CustomerName AS RegisteredCustomerName,
+                c.Phone AS RegisteredCustomerPhone,
+                a.AccountName
+            FROM UCLUpdates u
+            LEFT JOIN Customers c ON u.CustomerID = c.CustomerID
+            LEFT JOIN Accounts a ON u.AccountID = a.AccountID
+            WHERE u.UCLID = @id AND u.UserID = @userId AND u.IsDeleted = 0
+        `, { id, userId });
+
+        if (!recRes.recordset?.length) {
+            return res.status(404).json({ success: false, error: 'UCL update record nahi mila' });
+        }
+
+        res.json({ success: true, data: recRes.recordset[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ============================================================================
+// 5. PUT /api/ucl/:id - Update UCL Record Status or Details
+// ============================================================================
+router.put('/:id', async (req, res) => {
+    try {
+        const userId = req.user?.UserID || 1;
+        const id = parseInt(req.params.id);
+        const { status, notes, pacCode } = req.body;
+
+        await query(`
+            UPDATE UCLUpdates
+            SET Status = ISNULL(@status, Status),
+                Notes = ISNULL(@notes, Notes),
+                PACCode = ISNULL(@pacCode, PACCode),
+                UpdatedAt = GETDATE()
+            WHERE UCLID = @id AND UserID = @userId AND IsDeleted = 0
+        `, { id, userId, status: status || null, notes: notes || null, pacCode: pacCode || null });
+
+        res.json({ success: true, message: 'UCL record update ho gaya' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ============================================================================
+// 6. DELETE /api/ucl/:id - Soft Delete UCL Record
+// ============================================================================
+router.delete('/:id', async (req, res) => {
+    try {
+        const userId = req.user?.UserID || 1;
+        const id = parseInt(req.params.id);
+
+        await withTransaction(async (tQuery) => {
+            // Soft delete UCL
+            await tQuery(`
+                UPDATE UCLUpdates
+                SET IsDeleted = 1, UpdatedAt = GETDATE()
+                WHERE UCLID = @id AND UserID = @userId
+            `, { id, userId });
+
+            // Deactivate global registry
+            await deactivateGlobalTransaction('UCL', id, tQuery);
+
+            // Soft delete mirror transactions
+            await tQuery(`
+                DELETE FROM Transactions
+                WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId
+            `, { id, userId });
+
+            // Lookup CustomerID for balance refresh
+            const uclRec = await tQuery(`SELECT CustomerID FROM UCLUpdates WHERE UCLID = @id`, { id });
+            const custId = uclRec.recordset[0]?.CustomerID;
+
+            // Remove Khata entries
+            await tQuery(`
+                DELETE FROM KhataEntries
+                WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId
+            `, { id, userId });
+
+            if (custId) {
+                await refreshCustomerBalance(tQuery, custId);
+            }
+        });
+
+        res.json({ success: true, message: 'UCL record hata diya gaya' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+module.exports = router;
