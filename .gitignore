@@ -1,4 +1,4 @@
-﻿# ==========================================================
+# ==========================================================
 # STRICT DATA & PRIVACY PROTECTION (.gitignore)
 # Personal data, live databases, uploads & secrets NEVER go to GitHub
 # ==========================================================
@@ -10,6 +10,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+client_secret*.json
+youtube_token*.json
 
 # Live SQL Server Database files & Backups (CRITICAL - ZERO DATA LEAK)
 database/data/
