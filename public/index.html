@@ -48,6 +48,18 @@
                 var el = document.getElementById(id);
                 if (el) el.classList.remove('active');
             };
+
+            window.openNewUCLModal = function () {
+                if (window._realOpenNewUCLModal) return window._realOpenNewUCLModal();
+                window._queuedOpenUCLModal = true;
+                window.openModal('uclModal');
+            };
+
+            window.openNewPACModal = function () {
+                if (window._realOpenNewPACModal) return window._realOpenNewPACModal();
+                window._queuedOpenPACModal = true;
+                window.openModal('pacModal');
+            };
         })();
     </script>
     <!-- Auto Error Telemetry & Logger (Loads first to capture all startup/runtime errors) -->
@@ -12064,7 +12076,7 @@
     <script src="universal-doc-uploader.js"></script>
     <script src="global-dob.js?v=1794031600000"></script>
     <script src="searchable-select.js?v=1794483800000"></script>
-    <script src="app.js?v=1795185000000"></script>
+    <script src="app.js?v=1795190000000"></script>
 </body>
 
 </html>

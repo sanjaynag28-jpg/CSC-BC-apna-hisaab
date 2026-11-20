@@ -23279,7 +23279,12 @@ async function openNewUCLModal() {
     openModal('uclModal');
     if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
 }
+window._realOpenNewUCLModal = openNewUCLModal;
 window.openNewUCLModal = openNewUCLModal;
+if (window._queuedOpenUCLModal) {
+    window._queuedOpenUCLModal = false;
+    openNewUCLModal();
+}
 
 async function openEditUCLModal(id) {
     try {
@@ -23975,7 +23980,12 @@ function openNewPACModal() {
     openModal('pacModal');
     if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
 }
+window._realOpenNewPACModal = openNewPACModal;
 window.openNewPACModal = openNewPACModal;
+if (window._queuedOpenPACModal) {
+    window._queuedOpenPACModal = false;
+    openNewPACModal();
+}
 
 async function handlePACFormSubmit(e) {
     if (e && e.preventDefault) e.preventDefault();
