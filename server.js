@@ -128,7 +128,7 @@ app.get('/api/health', async (req, res) => {
             success: true,
             status: 'CONNECTED',
             dbReady: true,
-            database: 'CashManagement',
+            database: process.env.DB_NAME || 'CashManagement',
             uptimeSeconds: Math.round((Date.now() - serverStartTime) / 1000),
             serverTime: new Date()
         });

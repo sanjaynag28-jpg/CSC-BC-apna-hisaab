@@ -285,11 +285,12 @@ router.post('/entry', async (req, res) => {
                     CustomerID, EntryDate, EntryTime, EntryType, Amount, 
                     AccountID, PaymentMode, Description, ReferenceNo, UserID
                 )
-                OUTPUT INSERTED.*
                 VALUES (
                     @custId, @date, CONVERT(VARCHAR(5), GETDATE(), 108), @type, @amt,
                     @accId, @mode, @desc, @ref, @userId
-                )
+                );
+                -- KhataEntries par AFTER INSERT trigger hai, isliye OUTPUT nahi
+                SELECT * FROM KhataEntries WHERE KhataID = SCOPE_IDENTITY();
             `, {
                 custId: targetCustId,
                 date: dateVal,

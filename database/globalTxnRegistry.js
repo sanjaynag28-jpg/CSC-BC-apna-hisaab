@@ -1,4 +1,5 @@
 const { query, withTransaction } = require('./db');
+const { resolveModule, upsertModule } = require('./moduleRegistry');
 const moment = require('moment');
 
 const MODULE_PREFIXES = {
@@ -41,8 +42,9 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
 
     const q = (typeof executor === 'function') ? executor : query;
 
-    const modConfig = MODULE_TABLES[sourceModule] || null;
-    const prefix = MODULE_PREFIXES[sourceModule] || sourceModule.substring(0, 4).toUpperCase();
+    // DB-driven module config (TxnModules); hardcoded maps sirf fallback hain.
+    const modConfig = await resolveModule(sourceModule);
+    const prefix = (modConfig && modConfig.prefix) || MODULE_PREFIXES[sourceModule] || sourceModule.substring(0, 4).toUpperCase();
     const cleanDate = transDate ? new Date(transDate) : new Date();
     // Use local string format if createdAt explicitly provided, else use SQL Server GETDATE()
     const cleanCreated = createdAt ? moment(createdAt).format('YYYY-MM-DD HH:mm:ss') : null;
@@ -88,14 +90,17 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
         const inserted = insertRes.recordset[0];
         const { GlobalSerialNo, SNCode, ModuleCode } = inserted;
 
-        // Update source table (if dedicated table configured)
-        if (modConfig && modConfig.table && modConfig.pk) {
+        // Update source table (if dedicated table configured or dynamic ServiceRecords)
+        const targetTable = (modConfig && modConfig.table) ? modConfig.table : (MODULE_TABLES[sourceModule]?.table || 'ServiceRecords');
+        const pkCol = (modConfig && modConfig.pk) ? modConfig.pk : (MODULE_TABLES[sourceModule]?.pk || 'RecordID');
+
+        if (targetTable && pkCol) {
             try {
-                const serialCol = (modConfig.table === 'ServiceRecords') ? 'DocCode = @ModuleCode, ModuleCodeSerial = @ModuleCode' : 'ModuleCode = @ModuleCode';
+                const serialCol = (targetTable === 'ServiceRecords') ? 'DocCode = @ModuleCode, ModuleCodeSerial = @ModuleCode' : 'ModuleCode = @ModuleCode';
                 await tQ(`
-                    UPDATE ${modConfig.table} 
+                    UPDATE ${targetTable} 
                     SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ${serialCol}
-                    WHERE ${modConfig.pk} = @recordId
+                    WHERE ${pkCol} = @recordId
                 `, {
                     GlobalSerialNo,
                     SNCode,
@@ -147,9 +152,10 @@ async function lookupBySN(queryText, userId = null) {
         sqlWhere = 'SNCode = @snCode OR GlobalSerialNo = @num';
         params = { snCode: `SN-${num}`, num };
     }
-    // Module code (e.g. "CSC-10", "CSC 10", "CSC10", "BC-5", "BC5", "CB-1", "KH-20", "INV-1")
-    else if (/^([A-Z]{2,3})[-\s]?(\d+)$/i.test(q)) {
-        const cleanMod = q.replace(/^([A-Z]{2,3})[-\s]?(\d+)$/i, '$1-$2').toUpperCase();
+    // Module code (e.g. "CSC-10", "CSC 10", "CSC10", "BC-5", "CB-1", "KH-20", "INV-1", "INSUR-7")
+    // Prefix 2-10 alphanumeric: dynamic modules ke lambe prefixes bhi support hain.
+    else if (/^([A-Z][A-Z0-9]{1,9})[-\s]?(\d+)$/i.test(q)) {
+        const cleanMod = q.replace(/^([A-Z][A-Z0-9]{1,9})[-\s]?(\d+)$/i, '$1-$2').toUpperCase();
         sqlWhere = 'ModuleCode = @cleanMod';
         params = { cleanMod };
     } else {
@@ -168,14 +174,16 @@ async function lookupBySN(queryText, userId = null) {
     if (!res.recordset || res.recordset.length === 0) return null;
 
     const row = res.recordset[0];
-    const modConfig = MODULE_TABLES[row.SourceModule];
+    const modConfig = await resolveModule(row.SourceModule);
+    const targetTable = (modConfig && modConfig.table) ? modConfig.table : (MODULE_TABLES[row.SourceModule]?.table || 'ServiceRecords');
+    const pkCol = (modConfig && modConfig.pk) ? modConfig.pk : (MODULE_TABLES[row.SourceModule]?.pk || 'RecordID');
 
     // Fetch full details from source table (user-scoped — cross-tenant leak na ho)
     let details = null;
-    if (modConfig) {
+    if (targetTable && pkCol) {
         const detUserId = userId || row.UserID;
         const detRes = await query(
-            `SELECT * FROM ${modConfig.table} WHERE ${modConfig.pk} = @id${detUserId ? ' AND UserID = @userId' : ''}`,
+            `SELECT * FROM ${targetTable} WHERE ${pkCol} = @id${detUserId ? ' AND UserID = @userId' : ''}`,
             detUserId ? { id: row.RecordID, userId: detUserId } : { id: row.RecordID }
         );
         details = detRes.recordset[0] || null;
@@ -241,11 +249,31 @@ async function updateGlobalTransaction({ sourceModule, recordId, entityName, amo
  * @param {string} [config.table] - Table name (e.g. 'InsurancePolicies')
  * @param {string} [config.pk] - Primary key column (e.g. 'PolicyID')
  */
-function registerModuleConfig(sourceModule, config = {}) {
-    if (!sourceModule || typeof sourceModule !== 'string') return;
-    if (config.prefix) MODULE_PREFIXES[sourceModule] = config.prefix;
-    if (config.table && config.pk) {
-        MODULE_TABLES[sourceModule] = { table: config.table, pk: config.pk };
+async function registerModuleConfig(sourceModule, config = {}) {
+    if (!sourceModule || typeof sourceModule !== 'string') return null;
+
+    const prefix = config.prefix || sourceModule.substring(0, 4).toUpperCase();
+    const table = config.table || null;
+    const pk = config.pk || null;
+
+    // In-memory fallback sync (DB down hone par bhi kaam aaye)
+    MODULE_PREFIXES[sourceModule] = prefix;
+    if (table && pk) MODULE_TABLES[sourceModule] = { table, pk };
+
+    try {
+        // Single source of truth: TxnModules table
+        return await upsertModule({
+            moduleCode: sourceModule,
+            moduleName: config.name || sourceModule,
+            prefix,
+            targetTable: table,
+            primaryKeyColumn: pk,
+            isCore: !!config.isCore,
+            displayOrder: config.displayOrder || 100
+        });
+    } catch (err) {
+        console.warn(`registerModuleConfig(${sourceModule}) DB sync warning:`, err.message);
+        return null;
     }
 }
 

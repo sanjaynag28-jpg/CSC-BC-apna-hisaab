@@ -31,15 +31,18 @@ const CACHE_TTL_MS = 60 * 1000;
 let cache = { loadedAt: 0, map: null };
 
 function normalizeRow(row) {
+    const table = row.RecordTable || row.TargetTable || 'ServiceRecords';
+    const pk = row.PrimaryKeyColumn || (table === 'ServiceRecords' ? 'RecordID' : 'RecordID');
+    const prefix = String(row.DocPrefix || row.Prefix || '').trim() || String(row.ModuleCode || 'MOD').substring(0, 4).toUpperCase();
     return {
         moduleCode: String(row.ModuleCode || '').trim(),
         moduleName: row.ModuleName || row.ModuleCode,
-        prefix: String(row.Prefix || '').trim() || String(row.ModuleCode || 'MOD').substring(0, 4).toUpperCase(),
-        table: row.TargetTable || null,
-        pk: row.PrimaryKeyColumn || null,
-        isCore: row.IsCore === undefined ? true : !!row.IsCore,
+        prefix,
+        table,
+        pk,
+        isCore: row.IsCore === undefined ? false : !!row.IsCore,
         isActive: row.IsActive === undefined ? true : !!row.IsActive,
-        displayOrder: row.DisplayOrder || 0
+        displayOrder: row.SortOrder !== undefined && row.SortOrder !== null ? row.SortOrder : (row.DisplayOrder || 0)
     };
 }
 
@@ -60,7 +63,7 @@ async function loadModules(force = false) {
     try {
         const res = await query(`
             SELECT ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn,
-                   IsCore, IsActive, DisplayOrder
+                   IsCore, IsActive, DisplayOrder, DocPrefix, RecordTable, SortOrder
             FROM dbo.TxnModules
         `);
         const map = buildFallbackMap();
@@ -98,8 +101,8 @@ async function resolveModule(moduleCode) {
         moduleCode,
         moduleName: moduleCode,
         prefix: String(moduleCode).replace(/[^A-Za-z0-9]/g, '').substring(0, 4).toUpperCase() || 'MOD',
-        table: null,
-        pk: null,
+        table: 'ServiceRecords',
+        pk: 'RecordID',
         isCore: false,
         isActive: true,
         displayOrder: 999
@@ -126,31 +129,37 @@ async function upsertModule({
     if (!moduleCode || !moduleName || !prefix) {
         throw new Error('moduleCode, moduleName aur prefix zaroori hain');
     }
+    const cleanPrefix = String(prefix).trim().toUpperCase();
+    const table = targetTable || 'ServiceRecords';
+    const pk = primaryKeyColumn || 'RecordID';
     await query(`
         IF NOT EXISTS (SELECT 1 FROM dbo.TxnModules WHERE ModuleCode = @code)
         BEGIN
             INSERT INTO dbo.TxnModules
-                (ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder)
+                (ModuleCode, ModuleName, Prefix, DocPrefix, TargetTable, RecordTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder, SortOrder, UserID)
             VALUES
-                (@code, @name, @prefix, @table, @pk, @isCore, 1, @order);
+                (@code, @name, @prefix, @prefix, @table, @table, @pk, @isCore, 1, @order, @order, 1);
         END
         ELSE
         BEGIN
             UPDATE dbo.TxnModules
             SET ModuleName = @name,
                 Prefix = @prefix,
-                TargetTable = COALESCE(@table, TargetTable),
-                PrimaryKeyColumn = COALESCE(@pk, PrimaryKeyColumn),
+                DocPrefix = @prefix,
+                TargetTable = @table,
+                RecordTable = @table,
+                PrimaryKeyColumn = @pk,
                 DisplayOrder = @order,
+                SortOrder = @order,
                 UpdatedAt = GETDATE()
             WHERE ModuleCode = @code;
         END
     `, {
         code: moduleCode,
         name: moduleName,
-        prefix,
-        table: targetTable,
-        pk: primaryKeyColumn,
+        prefix: cleanPrefix,
+        table,
+        pk,
         isCore: isCore ? 1 : 0,
         order: displayOrder
     });

@@ -38,13 +38,13 @@ IF COL_LENGTH('dbo.KhataEntries', 'SourceID') IS NULL
     ALTER TABLE dbo.KhataEntries ADD SourceID INT NULL;
 
 IF COL_LENGTH('dbo.Transactions', 'SourceModule') IS NULL
-    ALTER TABLE dbo.Transactions ADD SourceModule VARCHAR(30) NULL;
+    ALTER TABLE dbo.Transactions ADD SourceModule VARCHAR(20) NULL;
 
 IF COL_LENGTH('dbo.Transactions', 'SourceID') IS NULL
     ALTER TABLE dbo.Transactions ADD SourceID INT NULL;
 
 IF COL_LENGTH('dbo.Transactions', 'LineType') IS NULL
-    ALTER TABLE dbo.Transactions ADD LineType VARCHAR(30) NULL;
+    ALTER TABLE dbo.Transactions ADD LineType VARCHAR(20) NULL;
 GO
 
 -- Purane service rows ko canonical module/category do (data safe: sirf NULL fill)

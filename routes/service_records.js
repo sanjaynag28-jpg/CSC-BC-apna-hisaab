@@ -242,9 +242,10 @@ router.post('/services/:id/fields', async (req, res) => {
                 INSERT INTO dbo.FieldDefinitions
                     (ServiceID, FieldKey, FieldLabel, FieldType, FieldOptionsJson,
                      DefaultValue, Placeholder, IsRequired, DisplayOrder, IsActive)
-                OUTPUT INSERTED.FieldID
                 VALUES
                     (@sid, @key, @label, @type, @options, @def, @ph, @req, @order, 1);
+                -- FieldDefinitions par AFTER INSERT trigger hai, isliye OUTPUT nahi
+                SELECT CAST(SCOPE_IDENTITY() AS INT) AS FieldID;
             END
         `, {
             sid: serviceId,

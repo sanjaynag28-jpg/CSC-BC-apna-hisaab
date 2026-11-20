@@ -930,11 +930,12 @@ router.post('/', async (req, res) => {
                         CustomerID, EntryDate, EntryTime, EntryType, Amount, 
                         PaymentMode, Description, ReferenceNo, UserID
                     )
-                    OUTPUT INSERTED.KhataID
                     VALUES (
                         @custId, CAST(GETDATE() AS DATE), CONVERT(VARCHAR(5), GETDATE(), 108), @entryType, @amt,
                         'Opening Balance', 'Purana / Opening Hisaab', 'OPENING-BAL', @userId
-                    )
+                    );
+                    -- KhataEntries par AFTER INSERT trigger hai, isliye OUTPUT nahi (SCOPE_IDENTITY safe)
+                    SELECT CAST(SCOPE_IDENTITY() AS INT) AS KhataID;
                 `, {
                     custId: createdCust.CustomerID,
                     entryType: entryType,

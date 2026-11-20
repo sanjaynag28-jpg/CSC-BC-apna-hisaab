@@ -222,8 +222,9 @@ router.post('/upload', upload.array('files', 15), async (req, res) => {
 
             const result = await query(`
                 INSERT INTO Documents (UserID, CustomerID, FileName, OriginalName, FileType, FileSize, FilePath, UploadedBy, Description, EntityType, EntityID)
-                OUTPUT INSERTED.DocumentID
-                VALUES (@userId, @custId, @fileName, @origName, @fileType, @fileSize, @filePath, @uploadedBy, @desc, @entityType, @entityId)
+                VALUES (@userId, @custId, @fileName, @origName, @fileType, @fileSize, @filePath, @uploadedBy, @desc, @entityType, @entityId);
+                -- Documents par AFTER INSERT/UPDATE trigger hai, isliye OUTPUT nahi
+                SELECT CAST(SCOPE_IDENTITY() AS INT) AS DocumentID;
             `, {
                 userId,
                 custId: customerId,

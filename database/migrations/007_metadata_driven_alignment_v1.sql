@@ -56,7 +56,7 @@ GO
 -- 3. FieldDefinitions Alignment
 -- ---------------------------------------------------------------------------
 IF COL_LENGTH('dbo.FieldDefinitions', 'ModuleCode') IS NULL
-    ALTER TABLE dbo.FieldDefinitions ADD ModuleCode VARCHAR(20) NULL;
+    ALTER TABLE dbo.FieldDefinitions ADD ModuleCode VARCHAR(30) NULL;
 
 IF COL_LENGTH('dbo.FieldDefinitions', 'Label') IS NULL
     ALTER TABLE dbo.FieldDefinitions ADD Label NVARCHAR(100) NULL;

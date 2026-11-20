@@ -217,6 +217,16 @@ async function setup() {
         // Step 4: Seed clean starter data ONLY if brand-new empty DB
         await seedStarterDataIfEmpty(pool);
 
+        // Step 5: Apply file-based migrations (006+) — fresh install ko live schema ke barabar laane ke liye.
+        // Seeding ke BAAD chalte hain taaki Users/Accounts exist hon aur FK constraints ban sakein.
+        // Existing DB par backup ke saath, brand-new empty DB par backup skip.
+        const { runPendingMigrations } = require('./database/migrationRunner');
+        const hasExistingData = (await pool.request().query('SELECT COUNT(*) AS c FROM Customers')).recordset[0].c > 0;
+        const migResult = await runPendingMigrations({ dryRun: false, backup: hasExistingData });
+        if (migResult.applied.length) {
+            console.log(`✅ ${migResult.applied.length} migration(s) applied: ${migResult.applied.join(', ')}`);
+        }
+
         console.log('✅ Database setup completed & verified successfully!');
         process.exit(0);
     } catch (err) {

@@ -8,6 +8,8 @@
     "dev": "node server.js",
     "setup": "node setup-database.js",
     "migrate": "node scripts/migration_rule1_sourceline.js",
+    "migrate:db": "node database/migrationRunner.js",
+    "migrate:db:dry": "node database/migrationRunner.js --dry-run",
     "reconcile-sn": "node scripts/reconcile_and_backfill_all_sn.js",
     "verify": "node scratch/verify_all.js"
   },

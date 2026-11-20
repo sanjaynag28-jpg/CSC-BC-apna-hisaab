@@ -115,27 +115,37 @@ async function ensureAutoSchemaBootstrapped() {
             IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'TxnModules')
             BEGIN
                 CREATE TABLE dbo.TxnModules (
-                    ModuleCode VARCHAR(30) PRIMARY KEY,
+                    ModuleID INT IDENTITY(1,1) NOT NULL,
+                    ModuleCode VARCHAR(30) NOT NULL,
                     ModuleName NVARCHAR(100) NOT NULL,
-                    DocPrefix VARCHAR(10) NOT NULL,
+                    Prefix VARCHAR(10) NOT NULL,
+                    TargetTable VARCHAR(50) NULL,
+                    PrimaryKeyColumn VARCHAR(50) NULL,
+                    IsCore BIT NOT NULL DEFAULT(1),
+                    IsActive BIT NOT NULL DEFAULT(1),
+                    DisplayOrder INT NOT NULL DEFAULT(0),
+                    DocPrefix VARCHAR(10) NULL,
                     RecordTable NVARCHAR(128) NULL,
                     IsLedgerLinked BIT NOT NULL DEFAULT(1),
-                    IsActive BIT NOT NULL DEFAULT(1),
                     Icon NVARCHAR(50) NULL,
                     Color NVARCHAR(20) NULL,
                     SortOrder INT NOT NULL DEFAULT(0),
-                    UserID INT NOT NULL DEFAULT 1,
-                    CreatedAt DATETIME NOT NULL DEFAULT(GETDATE())
+                    UserID INT NOT NULL DEFAULT(1),
+                    CreatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
+                    UpdatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
+                    CONSTRAINT PK_TxnModules PRIMARY KEY CLUSTERED (ModuleID),
+                    CONSTRAINT UQ_TxnModules_ModuleCode UNIQUE (ModuleCode)
                 );
-                INSERT INTO dbo.TxnModules (ModuleCode, ModuleName, DocPrefix, RecordTable, IsLedgerLinked, IsActive, SortOrder, UserID)
-                VALUES 
-                ('CSC', 'CSC e-Governance Services', 'CSC', 'CSCApplications', 1, 1, 1, 1),
-                ('BC', 'Banking Correspondent / Kiosk', 'BC', 'BCTransactions', 1, 1, 2, 1),
-                ('BillPay', 'Utility Bill Payments (BBPS)', 'BP', 'BillPayments', 1, 1, 3, 1),
-                ('Invoices', 'Sales Invoices & Billing', 'INV', 'Invoices', 1, 1, 4, 1),
-                ('Khata', 'Customer Khata Ledger', 'KH', 'KhataEntries', 1, 1, 5, 1),
-                ('Cashbook', 'Daily Cash & Bank Transactions', 'CB', 'Transactions', 1, 1, 6, 1),
-                ('Service', 'Universal Dynamic Services', 'SRV', 'ServiceRecords', 1, 1, 7, 1);
+                INSERT INTO dbo.TxnModules
+                    (ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder, DocPrefix, RecordTable, SortOrder, UserID)
+                VALUES
+                ('CSC', 'CSC e-Governance Services', 'CSC', 'CSCApplications', 'AppID', 1, 1, 1, 'CSC', 'CSCApplications', 1, 1),
+                ('BC', 'Banking Correspondent / Kiosk', 'BC', 'BCTransactions', 'BCID', 1, 1, 2, 'BC', 'BCTransactions', 2, 1),
+                ('BillPay', 'Utility Bill Payments (BBPS)', 'BP', 'BillPayments', 'PaymentID', 1, 1, 3, 'BP', 'BillPayments', 3, 1),
+                ('Invoices', 'Sales Invoices & Billing', 'INV', 'Invoices', 'InvoiceID', 1, 1, 4, 'INV', 'Invoices', 4, 1),
+                ('Khata', 'Customer Khata Ledger', 'KH', 'KhataEntries', 'KhataID', 1, 1, 5, 'KH', 'KhataEntries', 5, 1),
+                ('Cashbook', 'Daily Cash & Bank Transactions', 'CB', 'Transactions', 'TransactionID', 1, 1, 6, 'CB', 'Transactions', 6, 1),
+                ('Service', 'Universal Dynamic Services', 'SRV', 'ServiceRecords', 'RecordID', 1, 1, 7, 'SRV', 'ServiceRecords', 7, 1);
                 SELECT 1 AS added;
             END
             ELSE SELECT 0 AS added;
@@ -148,7 +158,7 @@ async function ensureAutoSchemaBootstrapped() {
             BEGIN
                 CREATE TABLE dbo.FieldDefinitions (
                     FieldID INT IDENTITY(1,1) PRIMARY KEY,
-                    ModuleCode VARCHAR(30) NOT NULL,
+                    ModuleCode VARCHAR(30) NULL,
                     ServiceID INT NULL,
                     FieldKey VARCHAR(50) NOT NULL,
                     Label NVARCHAR(100) NOT NULL,
@@ -159,6 +169,7 @@ async function ensureAutoSchemaBootstrapped() {
                     DefaultValue NVARCHAR(200) NULL,
                     ShowInList BIT NOT NULL DEFAULT(0),
                     SortOrder INT NOT NULL DEFAULT(0),
+                    DisplayOrder INT NOT NULL DEFAULT(0),
                     IsActive BIT NOT NULL DEFAULT(1),
                     FieldLabel NVARCHAR(100) NULL,
                     FieldType VARCHAR(30) NULL,
@@ -188,12 +199,18 @@ async function ensureAutoSchemaBootstrapped() {
                     CustomerName NVARCHAR(150) NULL,
                     CustomerPhone NVARCHAR(20) NULL,
                     RecordDate DATE NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+                    CompletionDate DATE NULL,
+                    GovtFee DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    OperatorFee DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    TotalFee DECIMAL(18,2) NOT NULL DEFAULT(0),
+                    BalanceAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
                     Amount DECIMAL(18,2) NOT NULL DEFAULT(0),
                     Charge DECIMAL(18,2) NOT NULL DEFAULT(0),
                     TotalAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
                     PaidAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
                     DueAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
                     Status NVARCHAR(50) NOT NULL DEFAULT('Pending'),
+                    PaymentStatus NVARCHAR(30) NOT NULL DEFAULT('Unpaid'),
                     PaymentMode NVARCHAR(50) NOT NULL DEFAULT('Cash'),
                     ReferenceNo NVARCHAR(100) NULL,
                     AccountID INT NULL,
@@ -202,7 +219,10 @@ async function ensureAutoSchemaBootstrapped() {
                     ExtraFieldsJson NVARCHAR(MAX) NULL,
                     GlobalSerialNo INT NULL,
                     SNCode VARCHAR(30) NULL,
+                    ModuleCodeSerial VARCHAR(30) NULL,
                     DocCode VARCHAR(30) NULL,
+                    IsActive BIT NOT NULL DEFAULT(1),
+                    IsDeleted BIT NOT NULL DEFAULT(0),
                     CreatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
                     UpdatedAt DATETIME NOT NULL DEFAULT(GETDATE()),
                     CONSTRAINT FK_SR_Module FOREIGN KEY (ModuleCode) REFERENCES dbo.TxnModules(ModuleCode),
@@ -369,6 +389,28 @@ async function ensureAutoSchemaBootstrapped() {
                     DataType   = COALESCE(f.DataType, f.FieldType, 'text')
                 FROM FieldDefinitions f
                 INNER JOIN inserted i ON f.FieldID = i.FieldID;
+            END;
+        `);
+
+        // TxnModules sync trigger (Prefix <-> DocPrefix, TargetTable <-> RecordTable)
+        await query(`
+            CREATE OR ALTER TRIGGER trg_TxnModules_Sync
+            ON dbo.TxnModules
+            AFTER INSERT, UPDATE
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                UPDATE m
+                SET 
+                    Prefix           = COALESCE(m.Prefix, m.DocPrefix, m.ModuleCode),
+                    DocPrefix        = COALESCE(m.DocPrefix, m.Prefix, m.ModuleCode),
+                    TargetTable      = COALESCE(m.TargetTable, m.RecordTable, 'ServiceRecords'),
+                    RecordTable      = COALESCE(m.RecordTable, m.TargetTable, 'ServiceRecords'),
+                    PrimaryKeyColumn = COALESCE(m.PrimaryKeyColumn, CASE WHEN COALESCE(m.RecordTable, m.TargetTable, 'ServiceRecords') = 'ServiceRecords' THEN 'RecordID' ELSE 'RecordID' END),
+                    DisplayOrder     = COALESCE(m.DisplayOrder, m.SortOrder, 100),
+                    SortOrder        = COALESCE(m.SortOrder, m.DisplayOrder, 100)
+                FROM dbo.TxnModules m
+                INNER JOIN inserted i ON m.ModuleCode = i.ModuleCode;
             END;
         `);
 

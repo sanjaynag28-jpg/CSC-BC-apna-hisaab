@@ -333,9 +333,8 @@ BEGIN
         [CreatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         [UpdatedAt] DATETIME NOT NULL DEFAULT (getdate()),
         CONSTRAINT [PK_ServiceRecords] PRIMARY KEY CLUSTERED ([RecordID]),
-        CONSTRAINT [FK_ServiceRecords_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID]),
-        CONSTRAINT [FK_ServiceRecords_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [dbo].[Customers]([CustomerID]),
-        CONSTRAINT [FK_ServiceRecords_Users] FOREIGN KEY ([UserID]) REFERENCES [dbo].[Users]([UserID])
+        CONSTRAINT [FK_ServiceRecords_Services] FOREIGN KEY ([ServiceID]) REFERENCES [dbo].[CSCServices]([ServiceID])
+        -- NOTE: Customers/Users FKs neeche add hote hain (kyunki wo tables baad me bante hain).
     );
 END
 GO
@@ -386,8 +385,8 @@ BEGIN
         CustomerName NVARCHAR(150) NOT NULL,
         CustomerPhone NVARCHAR(20) NULL,
         CustomerAadhaar NVARCHAR(20) NULL,
-        BillCategory NVARCHAR(80) NOT NULL,
-        ProviderName NVARCHAR(150) NULL,
+        BillCategory NVARCHAR(50) NOT NULL,
+        ProviderName NVARCHAR(100) NULL,
         ConsumerNumber NVARCHAR(100) NULL,
         BillNumber NVARCHAR(100) NULL,
         BillDate NVARCHAR(30) NULL,
@@ -415,8 +414,8 @@ BEGIN
         UpdatedAt DATETIME NOT NULL DEFAULT (GETDATE()),
         UserID INT NOT NULL DEFAULT ((1)),
         GlobalSerialNo INT NULL,
-        SNCode NVARCHAR(30) NULL,
-        ModuleCode NVARCHAR(30) NULL,
+        SNCode NVARCHAR(50) NULL,
+        ModuleCode VARCHAR(30) NULL,
         CONSTRAINT PK_BillPayments PRIMARY KEY CLUSTERED (PaymentID)
     );
 END
@@ -645,9 +644,9 @@ BEGIN
         [GlobalSerialNo] INT NULL,
         [SNCode] VARCHAR(30) NULL,
         [ModuleCode] VARCHAR(30) NULL,
-        [SourceModule] VARCHAR(30) NULL,
+        [SourceModule] VARCHAR(20) NULL,
         [SourceID] INT NULL,
-        [LineType] VARCHAR(30) NULL,
+        [LineType] VARCHAR(20) NULL,
         CONSTRAINT [PK_Transactions] PRIMARY KEY CLUSTERED ([TransactionID])
     );
 END
@@ -734,6 +733,26 @@ BEGIN
 END
 GO
 
+-- Deferred FKs: ServiceRecords -> Customers / Users
+-- (Ye tables ServiceRecords ke baad create hoti hain, isliye FK yahan add karte hain.)
+IF OBJECT_ID('dbo.ServiceRecords', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.Customers', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ServiceRecords_Customers')
+BEGIN
+    ALTER TABLE dbo.ServiceRecords
+        ADD CONSTRAINT FK_ServiceRecords_Customers FOREIGN KEY (CustomerID) REFERENCES dbo.Customers (CustomerID);
+END
+GO
+
+IF OBJECT_ID('dbo.ServiceRecords', 'U') IS NOT NULL
+   AND OBJECT_ID('dbo.Users', 'U') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_ServiceRecords_Users')
+BEGIN
+    ALTER TABLE dbo.ServiceRecords
+        ADD CONSTRAINT FK_ServiceRecords_Users FOREIGN KEY (UserID) REFERENCES dbo.Users (UserID);
+END
+GO
+
 -- Stored Procedure: sp_BackupCashManagementDB
 CREATE OR ALTER PROCEDURE sp_BackupCashManagementDB     @BackupFolder NVARCHAR(500) = NULL
 AS
@@ -751,7 +770,7 @@ BEGIN
         DECLARE @DbPath NVARCHAR(400);
         SELECT @DbPath = LEFT(mf.physical_name, LEN(mf.physical_name) - CHARINDEX('\', REVERSE(mf.physical_name)) + 1)
         FROM sys.master_files mf
-        WHERE mf.database_id = DB_ID('CashManagement') AND mf.type = 0;
+        WHERE mf.database_id = DB_ID() AND mf.type = 0;
         SET @TargetFolder = ISNULL(@DbPath, 'D:\Cash Managment BC\backups\');
     END
 
