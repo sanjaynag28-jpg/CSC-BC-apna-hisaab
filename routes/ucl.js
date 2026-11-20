@@ -95,7 +95,7 @@ function parseUCLReceipt(text) {
 
     // 4. Resident Name (after Name: or नाम: or Update(s) made as per request)
     const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i) ||
-                     text.match(/(?:Update\(s\)\s*made[^\n\r]*?[:\-]\s*)([A-Za-z\s]{2,30})/i);
+        text.match(/(?:Update\(s\)\s*made[^\n\r]*?[:\-]\s*)([A-Za-z\s]{2,30})/i);
     if (nameMatch) {
         let n = nameMatch[1].trim().split('\n')[0].trim();
         n = n.replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
@@ -104,7 +104,7 @@ function parseUCLReceipt(text) {
 
     // 5. Masked Aadhaar / Last 4 Digits (e.g. XXXXXXXX1047)
     const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?(?:[X\dO0]{4,14}\s*)(\d{3,4})/i) ||
-                         text.match(/(?:[X\dO0]{6,14}\s*)(\d{3,4})/i);
+        text.match(/(?:[X\dO0]{6,14}\s*)(\d{3,4})/i);
     if (aadhaarMatch) {
         res.aadhaarLast4 = aadhaarMatch[1];
         res.aadhaarMasked = 'XXXX-XXXX-' + (res.aadhaarLast4 || 'XXXX');

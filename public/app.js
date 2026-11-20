@@ -2769,6 +2769,11 @@ function closeModal(id) {
     if (typeof hideFamilyPicker === 'function') hideFamilyPicker();
 }
 
+window._realOpenModal = openModal;
+window.openModal = openModal;
+window._realCloseModal = closeModal;
+window.closeModal = closeModal;
+
 // Backdrop (bahar) click par modal auto-close DISABLED hai — modal sirf X / Cancel / Band Karo button se band hoga
 // taaki form ka data galti se bahar click karne par na ude
 document.addEventListener('click', (e) => {
@@ -3217,7 +3222,17 @@ function showPage(page, navEl) {
 
     refreshIcons();
 }
+window._realShowPage = showPage;
 window.showPage = showPage;
+
+// If user clicked any navigation link before app.js finished loading, execute it now!
+if (window._queuedPage) {
+    const qPage = window._queuedPage;
+    const qNav = window._queuedNavEl;
+    window._queuedPage = null;
+    window._queuedNavEl = null;
+    showPage(qPage, qNav);
+}
 
 // ============ MASTER DATA (100% DIRECT LIVE SQL DATABASE) ============
 async function loadMasterData() {
@@ -23480,20 +23495,16 @@ async function uploadAndScanUCLReceipt(file) {
             }
 
             // Auto-fill fields from scanned receipt
+            if (p.customerName) {
+                const nameInp = document.getElementById('uclCustName');
+                if (nameInp) nameInp.value = p.customerName;
+            }
             if (p.customerPhone) {
                 const phoneInp = document.getElementById('uclCustPhone');
                 if (phoneInp) {
                     phoneInp.value = p.customerPhone;
                     handleUCLPhoneInput(phoneInp);
                 }
-            }
-            if (p.customerName) {
-                const nameInp = document.getElementById('uclCustName');
-                if (nameInp) nameInp.value = p.customerName;
-            }
-            if (p.matchedCustomerId) {
-                const custSel = document.getElementById('uclCustomerSelect');
-                if (custSel) custSel.value = p.matchedCustomerId;
             }
             if (p.aadhaarLast4) {
                 const aadhaarInp = document.getElementById('uclCustAadhaar');
