@@ -4,6 +4,7 @@ const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const ROOT_DIR = path.resolve(__dirname);
 const { getPool, isDbAlive, query, sql } = require('./database/db');
 const { runPendingMigrations } = require('./database/migrationRunner');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
@@ -854,7 +855,7 @@ app.use('/api', (req, res) => {
 });
 
 // SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache)
-app.get('*', (req, res) => {
+app.get(/.*/, (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
