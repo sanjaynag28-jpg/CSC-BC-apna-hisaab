@@ -50,16 +50,27 @@ $LogDir = Join-Path $ProjectDir 'logs'
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 $LogFile = Join-Path $LogDir 'install_wizard.log'
 
+function DoEvents {
+    if ($global:Dispatcher) {
+        $frame = New-Object System.Windows.Threading.DispatcherFrame
+        $global:Dispatcher.BeginInvoke(
+            [System.Windows.Threading.DispatcherPriority]::Background,
+            [Action[System.Windows.Threading.DispatcherFrame]]{ param($f) $f.Continue = $false },
+            $frame
+        ) | Out-Null
+        [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+    }
+}
+
 function Write-WizardLog {
     param([string]$Msg, [string]$Level = 'INFO')
     $ts = Get-Date -Format 'HH:mm:ss'
     $line = "[$ts] [$Level] $Msg"
     try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch { }
     if ($global:LogTextBox) {
-        $global:Dispatcher.Invoke([Action]{
-            $global:LogTextBox.AppendText("$line`r`n")
-            $global:LogTextBox.ScrollToEnd()
-        })
+        $global:LogTextBox.AppendText("$line`r`n")
+        $global:LogTextBox.ScrollToEnd()
+        DoEvents
     }
     Write-Host $line
 }
@@ -99,39 +110,42 @@ $Steps = @(
 function Set-StepState {
     param([int]$StepNum, [string]$Status, [string]$Detail = '')
     # Status: 'RUNNING', 'SUCCESS', 'FAILED', 'WAITING'
-    if ($global:Dispatcher) {
-        $global:Dispatcher.Invoke([Action]{
-            $iconEl = $global:Window.FindName("StepIcon$StepNum")
-            $statusEl = $global:Window.FindName("StepStatus$StepNum")
-            $cardEl = $global:Window.FindName("StepCard$StepNum")
-            if ($iconEl) {
-                switch ($Status) {
-                    'RUNNING' {
-                        $iconEl.Text = "🔄"
-                        if ($statusEl) { $statusEl.Text = "Chal raha hai..." ; $statusEl.Foreground = [System.Windows.Media.Brushes]::Orange }
-                        if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1e3a5f") }
-                    }
-                    'SUCCESS' {
-                        $iconEl.Text = "✅"
-                        if ($statusEl) { $statusEl.Text = $(if($Detail){$Detail}else{"Theek Hai"}); $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399") }
-                        if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0f291e") }
-                    }
-                    'FAILED' {
-                        $iconEl.Text = "❌"
-                        if ($statusEl) { $statusEl.Text = $(if($Detail){$Detail}else{"Fail Hua"}); $statusEl.Foreground = [System.Windows.Media.Brushes]::Red }
-                        if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3b1111") }
-                    }
-                    default {
-                        $iconEl.Text = "⏳"
-                        if ($statusEl) { $statusEl.Text = "Pratiksha..."; $statusEl.Foreground = [System.Windows.Media.Brushes]::Gray }
-                    }
+    if ($global:Window) {
+        $iconEl = $global:Window.FindName("StepIcon$StepNum")
+        $statusEl = $global:Window.FindName("StepStatus$StepNum")
+        $cardEl = $global:Window.FindName("StepCard$StepNum")
+        if ($iconEl) {
+            switch ($Status) {
+                'RUNNING' {
+                    $iconEl.Text = "[..]"
+                    $iconEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#fbbf24")
+                    if ($statusEl) { $statusEl.Text = "Chal raha hai..." ; $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#fbbf24") }
+                    if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1e3a5f") }
+                }
+                'SUCCESS' {
+                    $iconEl.Text = "[OK]"
+                    $iconEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
+                    if ($statusEl) { $statusEl.Text = $(if($Detail){$Detail}else{"Theek Hai"}); $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399") }
+                    if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0f291e") }
+                }
+                'FAILED' {
+                    $iconEl.Text = "[X]"
+                    $iconEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f87171")
+                    if ($statusEl) { $statusEl.Text = $(if($Detail){$Detail}else{"Fail Hua"}); $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f87171") }
+                    if ($cardEl) { $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#3b1111") }
+                }
+                default {
+                    $iconEl.Text = "[--]"
+                    $iconEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#94a3b8")
+                    if ($statusEl) { $statusEl.Text = "Pratiksha..."; $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#64748b") }
                 }
             }
-            # Progress bar
-            $pct = [Math]::Min(100, [int](($StepNum / 11.0) * 100))
-            if ($global:ProgressBar) { $global:ProgressBar.Value = $pct }
-            if ($global:ProgressPctText) { $global:ProgressPctText.Text = "$pct%" }
-        })
+        }
+        # Progress bar
+        $pct = [Math]::Min(100, [int](($StepNum / 11.0) * 100))
+        if ($global:ProgressBar) { $global:ProgressBar.Value = $pct }
+        if ($global:ProgressPctText) { $global:ProgressPctText.Text = "$pct%" }
+        DoEvents
     }
 }
 
@@ -651,7 +665,7 @@ function Exec-Step11-HealthCheck {
 }
 
 function Repair-WithAiDoctor([int]$FailedStep, [string]$Reason = '') {
-    Write-WizardLog "🤖 [Free AI Auto-Fix] Step $FailedStep me rukawat aayi. AI live repair engine execute ho raha hai..." 'WARN'
+    Write-WizardLog "[Free AI Auto-Fix] Step $FailedStep me rukawat aayi. AI live repair engine execute ho raha hai..." 'WARN'
     $docScript = Join-Path $PSScriptRoot 'ai_doctor.ps1'
     if (-not (Test-Path $docScript)) {
         $docScript = Join-Path $ProjectDir 'scripts\ai_doctor.ps1'
@@ -666,10 +680,10 @@ function Repair-WithAiDoctor([int]$FailedStep, [string]$Reason = '') {
     if (Test-Path $docScript) {
         try {
             & $docScript -ProjectDir $ProjectDir -AutoFix | Out-Null
-            Write-WizardLog "🤖 [Free AI Auto-Fix] AI live auto-remediation completed. Resuming installation..." 'OK'
+            Write-WizardLog "[Free AI Auto-Fix] AI live auto-remediation completed. Resuming installation..." 'OK'
             return $true
         } catch {
-            Write-WizardLog "🤖 [Free AI Auto-Fix] Notice: $($_.Exception.Message)" 'WARN'
+            Write-WizardLog "[Free AI Auto-Fix] Notice: $($_.Exception.Message)" 'WARN'
         }
     }
     return $false
@@ -679,52 +693,46 @@ function Repair-WithAiDoctor([int]$FailedStep, [string]$Reason = '') {
 # MAIN WORKFLOW RUNNER
 # ----------------------------------------------------------------------------
 function Start-FullSetupWorkflow {
-    [System.Threading.Tasks.Task]::Run([Action]{
-        try {
-            Write-WizardLog "========================================================"
-            Write-WizardLog " CSC & BC Apna Hisaab - Automatic Setup & Repair Wizard"
-            Write-WizardLog " 🤖 Free AI Live Problem Solver & Self-Healing: ACTIVE"
-            Write-WizardLog " Project Directory: $ProjectDir"
-            Write-WizardLog "========================================================"
+    try {
+        Write-WizardLog "========================================================"
+        Write-WizardLog " CSC & BC Apna Hisaab - Automatic Setup & Repair Wizard"
+        Write-WizardLog " [AI DOCTOR] Free AI Live Problem Solver & Self-Healing: ACTIVE"
+        Write-WizardLog " Project Directory: $ProjectDir"
+        Write-WizardLog "========================================================"
 
-            $s1 = Exec-Step1-Environment;   if (-not $s1) { [void](Repair-WithAiDoctor 1); $null = Exec-Step1-Environment }
-            $s2 = Exec-Step2-Integrity;     if (-not $s2) { [void](Repair-WithAiDoctor 2); $null = Exec-Step2-Integrity }
-            $s3 = Exec-Step3-NodeJs;        if (-not $s3) { [void](Repair-WithAiDoctor 3); $null = Exec-Step3-NodeJs }
-            $s4 = Exec-Step4-Dependencies;  if (-not $s4) { [void](Repair-WithAiDoctor 4); $null = Exec-Step4-Dependencies }
-            $s5 = Exec-Step5-SqlServer;     if (-not $s5) { [void](Repair-WithAiDoctor 5); $null = Exec-Step5-SqlServer }
-            $s6 = Exec-Step6-TcpAndAuth;    if (-not $s6) { [void](Repair-WithAiDoctor 6); $null = Exec-Step6-TcpAndAuth }
-            $s7 = Exec-Step7-LoginAndEnv;   if (-not $s7) { [void](Repair-WithAiDoctor 7); $null = Exec-Step7-LoginAndEnv }
-            $s8 = Exec-Step8-DatabaseTables;if (-not $s8) { [void](Repair-WithAiDoctor 8); $null = Exec-Step8-DatabaseTables }
-            $s9 = Exec-Step9-Firewall;      if (-not $s9) { [void](Repair-WithAiDoctor 9); $null = Exec-Step9-Firewall }
-            $s10 = Exec-Step10-Shortcuts;   if (-not $s10) { [void](Repair-WithAiDoctor 10); $null = Exec-Step10-Shortcuts }
-            $s11 = Exec-Step11-HealthCheck; if (-not $s11) { [void](Repair-WithAiDoctor 11); $null = Exec-Step11-HealthCheck }
+        $s1 = Exec-Step1-Environment;   if (-not $s1) { [void](Repair-WithAiDoctor 1); $null = Exec-Step1-Environment }
+        $s2 = Exec-Step2-Integrity;     if (-not $s2) { [void](Repair-WithAiDoctor 2); $null = Exec-Step2-Integrity }
+        $s3 = Exec-Step3-NodeJs;        if (-not $s3) { [void](Repair-WithAiDoctor 3); $null = Exec-Step3-NodeJs }
+        $s4 = Exec-Step4-Dependencies;  if (-not $s4) { [void](Repair-WithAiDoctor 4); $null = Exec-Step4-Dependencies }
+        $s5 = Exec-Step5-SqlServer;     if (-not $s5) { [void](Repair-WithAiDoctor 5); $null = Exec-Step5-SqlServer }
+        $s6 = Exec-Step6-TcpAndAuth;    if (-not $s6) { [void](Repair-WithAiDoctor 6); $null = Exec-Step6-TcpAndAuth }
+        $s7 = Exec-Step7-LoginAndEnv;   if (-not $s7) { [void](Repair-WithAiDoctor 7); $null = Exec-Step7-LoginAndEnv }
+        $s8 = Exec-Step8-DatabaseTables;if (-not $s8) { [void](Repair-WithAiDoctor 8); $null = Exec-Step8-DatabaseTables }
+        $s9 = Exec-Step9-Firewall;      if (-not $s9) { [void](Repair-WithAiDoctor 9); $null = Exec-Step9-Firewall }
+        $s10 = Exec-Step10-Shortcuts;   if (-not $s10) { [void](Repair-WithAiDoctor 10); $null = Exec-Step10-Shortcuts }
+        $s11 = Exec-Step11-HealthCheck; if (-not $s11) { [void](Repair-WithAiDoctor 11); $null = Exec-Step11-HealthCheck }
 
-            Write-WizardLog "========================================================"
-            Write-WizardLog " 🎉 SETUP & HEALTH VERIFICATION 100% COMPLETE!" 'OK'
-            Write-WizardLog " URL: http://localhost:3000" 'OK'
-            Write-WizardLog "========================================================"
+        Write-WizardLog "========================================================"
+        Write-WizardLog " [OK] SETUP & HEALTH VERIFICATION 100% COMPLETE!" 'OK'
+        Write-WizardLog " URL: http://localhost:3000" 'OK'
+        Write-WizardLog "========================================================"
 
-            if ($global:Dispatcher) {
-                $global:Dispatcher.Invoke([Action]{
-                    if ($global:FinishBanner) { $global:FinishBanner.Visibility = 'Visible' }
-                    if ($global:LaunchBtn) {
-                        $global:LaunchBtn.IsEnabled = $true
-                        $global:LaunchBtn.Content = "🚀 Open CSC & BC Apna Hisaab (http://localhost:3000)"
-                        $global:LaunchBtn.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#10b981")
-                    }
-                    if ($global:ProgressPctText) { $global:ProgressPctText.Text = "100%" }
-                    if ($global:ProgressBar) { $global:ProgressBar.Value = 100 }
-                })
-            }
-
-            # Automatically launch browser
-            Start-Sleep -Seconds 2
-            try { Start-Process "http://localhost:3000" } catch { }
-
-        } catch {
-            Write-WizardLog "Setup error: $($_.Exception.Message)" 'ERROR'
+        if ($global:LaunchBtn) {
+            $global:LaunchBtn.IsEnabled = $true
+            $global:LaunchBtn.Content = "Open CSC & BC Apna Hisaab (http://localhost:3000)"
+            $global:LaunchBtn.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#10b981")
         }
-    })
+        if ($global:ProgressPctText) { $global:ProgressPctText.Text = "100%" }
+        if ($global:ProgressBar) { $global:ProgressBar.Value = 100 }
+        DoEvents
+
+        # Automatically launch browser
+        Start-Sleep -Seconds 2
+        try { Start-Process "http://localhost:3000" } catch { }
+
+    } catch {
+        Write-WizardLog "Setup error: $($_.Exception.Message)" 'ERROR'
+    }
 }
 
 # ----------------------------------------------------------------------------
@@ -763,14 +771,14 @@ if ($guiAvailable) {
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Width="48" Height="48" Background="#064e3b" BorderBrush="#059669" BorderThickness="1" CornerRadius="10" Margin="0,0,14,0">
-                    <TextBlock Text="💰" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBlock Text="BC" FontSize="20" FontWeight="Bold" Foreground="#34d399" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock Text="CSC &amp; BC Apna Hisaab" FontSize="19" FontWeight="Bold" Foreground="#34d399"/>
-                    <TextBlock Text="1-Click Enterprise Setup &amp; Auto-Repair Engine • Zero Manual Work" FontSize="12.5" Foreground="#94a3b8" Margin="0,2,0,0"/>
+                    <TextBlock Text="1-Click Enterprise Setup &amp; Auto-Repair Engine - Zero Manual Work" FontSize="12.5" Foreground="#94a3b8" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Border Grid.Column="2" Background="#064e3b" BorderBrush="#059669" BorderThickness="1" CornerRadius="8" Padding="10,6" VerticalAlignment="Center">
-                    <TextBlock Text="🤖 FREE AI AUTO-FIX ACTIVE" FontSize="11" FontWeight="Bold" Foreground="#34d399"/>
+                    <TextBlock Text="FREE AI AUTO-FIX ACTIVE" FontSize="11" FontWeight="Bold" Foreground="#34d399"/>
                 </Border>
             </Grid>
         </Border>
@@ -796,7 +804,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard1" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon1" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon1" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="1. Admin Privileges" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="UAC &amp; Execution Policies" FontSize="10.5" Foreground="#64748b"/>
@@ -808,7 +816,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard2" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon2" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon2" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="2. Files Integrity" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Corrupt/Missing Auto-Fix" FontSize="10.5" Foreground="#64748b"/>
@@ -820,7 +828,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard3" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon3" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon3" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="3. Node.js LTS Runtime" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Engine Detect/Auto-Install" FontSize="10.5" Foreground="#64748b"/>
@@ -832,7 +840,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard4" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon4" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon4" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="4. NPM Dependencies" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Packages Auto-Install" FontSize="10.5" Foreground="#64748b"/>
@@ -844,7 +852,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard5" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon5" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon5" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="5. SQL Server Service" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Service Detect &amp; Auto-Start" FontSize="10.5" Foreground="#64748b"/>
@@ -856,7 +864,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard6" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon6" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon6" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="6. TCP/IP &amp; Mixed Mode" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Registry Protocol Auto-ON" FontSize="10.5" Foreground="#64748b"/>
@@ -868,7 +876,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard7" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon7" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon7" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="7. SQL Login &amp; .env" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Credentials &amp; Security" FontSize="10.5" Foreground="#64748b"/>
@@ -880,7 +888,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard8" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon8" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon8" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="8. Database &amp; Tables" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Tables, Procs &amp; Seeding" FontSize="10.5" Foreground="#64748b"/>
@@ -892,7 +900,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard9" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon9" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon9" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="9. Firewall Port 3000" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="LAN &amp; Mobile Access Rule" FontSize="10.5" Foreground="#64748b"/>
@@ -904,7 +912,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard10" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon10" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon10" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="10. Desktop Shortcut" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="Icon &amp; Auto-Start Setup" FontSize="10.5" Foreground="#64748b"/>
@@ -916,7 +924,7 @@ if ($guiAvailable) {
                     <Border Name="StepCard11" Background="#111827" BorderBrush="#1f2937" BorderThickness="1" CornerRadius="8" Margin="4" Padding="10">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <TextBlock Name="StepIcon11" Text="⏳" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Name="StepIcon11" Text="[--]" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="11. Server Live Health" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock Text="http://localhost:3000 Check" FontSize="10.5" Foreground="#64748b"/>
@@ -944,7 +952,7 @@ if ($guiAvailable) {
                     <Setter Property="CornerRadius" Value="10"/>
                 </Style>
             </Button.Resources>
-            <TextBlock Text="⏳ Setup Chalu Hai... Kripya Window Band Na Karein" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <TextBlock Text="Setup Chalu Hai... Kripya Window Band Na Karein" HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Button>
     </Grid>
 </Window>
@@ -963,9 +971,12 @@ if ($guiAvailable) {
         $global:Window.Close()
     })
 
-    # Start the async workflow when window opens
+    # Start the workflow when window opens
     $global:Window.Add_Loaded({
-        Start-FullSetupWorkflow
+        $global:Dispatcher.BeginInvoke(
+            [System.Windows.Threading.DispatcherPriority]::ApplicationIdle,
+            [Action]{ Start-FullSetupWorkflow }
+        ) | Out-Null
     })
 
     # Show Modal Dialog

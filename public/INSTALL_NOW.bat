@@ -37,6 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$targetDir = '%TARGET_DIR%';" ^
   "$tempWiz = Join-Path $env:TEMP 'cmbc_installer_wizard.ps1';" ^
   "$urls = @(" ^
+  "  'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1'," ^
   "  'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1'," ^
   "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/raw/main/scripts/installer_wizard.ps1'" ^
   ");" ^
