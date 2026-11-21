@@ -550,6 +550,13 @@ async function runSilentAutoUpdate(options = {}) {
         state.lastResult = 'updated';
         logUpdate(`Successfully updated to v${state.currentVersion}!`);
 
+        // Auto-bump patch version after every successful update (1.0.25 -> 1.0.26)
+        try {
+            bumpPatchVersion();
+        } catch (bumpErr) {
+            logUpdate(`Version auto-bump warning: ${bumpErr.message}`);
+        }
+
         if (restartOnUpdate && !isCli) {
             triggerCleanRestart();
         }
@@ -569,6 +576,31 @@ async function runSilentAutoUpdate(options = {}) {
     } finally {
         state.updating = false;
     }
+}
+
+/**
+ * Auto-bump patch version in version.json after every successful update.
+ * 1.0.25 -> 1.0.26, 1.0.26 -> 1.0.27, etc.
+ * Har PC ka version alag-alag hoga jaise jaise updates install honge,
+ * isse pata chalega kaunsa PC kis version par hai.
+ */
+function bumpPatchVersion() {
+    let info = getLocalVersionInfo();
+    const parts = String(info.version || '1.0.0').replace(/^v/i, '').split('.').map(Number);
+    const major = parts[0] || 1;
+    const minor = parts[1] || 0;
+    const patch = (parts[2] || 0) + 1;
+    const newVersion = `${major}.${minor}.${patch}`;
+    const newInfo = {
+        version: newVersion,
+        releasedAt: new Date().toISOString().split('T')[0],
+        repo: info.repo || `sanjaynag28-jpg/CSC-BC-apna-hisaab`,
+        branch: info.branch || 'main',
+        notes: info.notes || `Auto-bumped to v${newVersion} after silent update`
+    };
+    fs.writeFileSync(VERSION_FILE, JSON.stringify(newInfo, null, 2) + '\n', 'utf8');
+    state.currentVersion = newVersion;
+    logUpdate(`Version auto-bumped: ${info.version} -> ${newVersion}`);
 }
 
 /**

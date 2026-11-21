@@ -955,6 +955,26 @@ document.addEventListener('blur', handleGlobalAutoCapitalize, true);
    ============================================ */
 
 const API = '/api';
+
+// Har PC apna version server ko report karega (version tracking)
+async function reportPcVersion() {
+    try {
+        const localVer = (typeof getAppVersion === 'function' ? getAppVersion() : '1.0.0');
+        const payload = {
+            version: localVer,
+            pcName: navigator.platform || 'unknown-pc',
+            hostname: window.location.hostname || 'unknown',
+            ip: window.location.hostname || 'unknown',
+            timestamp: new Date().toISOString(),
+            notes: 'Auto-reported on page load'
+        };
+        await fetch(`${API}/system/version-report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).catch(() => { }); // Silent fail — na to app ko rokna hai
+    } catch (_) { }
+}
 let currentPage = 'dashboard';
 let selectedMonth = new Date().getMonth() + 1;
 let selectedYear = new Date().getFullYear();
@@ -986,6 +1006,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     // Immediate verification that SQL Server is alive
     checkLiveDatabaseConnection(false).catch(() => { });
+
+    // Auto-report this PC's version to server (track kaunsa PC kis version par hai)
+    reportPcVersion().catch(() => { });
 
     if (localStorage.getItem('sidebar_collapsed') === '1') {
         const sb = document.getElementById('sidebar');

@@ -600,6 +600,64 @@ app.get('/api/system/check-update', async (req, res) => {
     res.json(result);
 });
 
+// Version Report endpoint — har PC apna version report karega taaki admin jaan sake
+// kaunsa PC kis version par hai aur kaunsa update nahi hua.
+app.post('/api/system/version-report', async (req, res) => {
+    try {
+        const { version, pcName, hostname, ip, timestamp, notes } = req.body || {};
+        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
+
+        let reports = [];
+        try {
+            if (fs.existsSync(reportFile)) {
+                reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+            }
+        } catch (_) { reports = []; }
+
+        const entry = {
+            version: version || autoUpdater.getLocalVersionInfo().version,
+            pcName: pcName || hostname || 'unknown-pc',
+            hostname: hostname || 'unknown',
+            ip: ip || req.ip || req.connection?.remoteAddress || 'unknown',
+            reportedAt: timestamp || new Date().toISOString(),
+            notes: notes || ''
+        };
+
+        // Same PC ka purana entry replace karo, naya add karo
+        const existingIdx = reports.findIndex(r => r.hostname === entry.hostname && r.pcName === entry.pcName);
+        if (existingIdx >= 0) {
+            reports[existingIdx] = entry;
+        } else {
+            reports.push(entry);
+        }
+
+        // Sirf last 500 reports rakho
+        if (reports.length > 500) reports = reports.slice(-500);
+
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+        fs.writeFileSync(reportFile, JSON.stringify(reports, null, 2) + '\n', 'utf8');
+
+        res.json({ success: true, message: 'Version report save ho gaya', data: entry });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Version report list — admin dekh sakta hai kaunsa PC kis version par hai
+app.get('/api/system/version-reports', (req, res) => {
+    try {
+        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
+        let reports = [];
+        if (fs.existsSync(reportFile)) {
+            reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+        }
+        res.json({ success: true, count: reports.length, data: reports });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Explicit Service Worker Route with strict zero-cache policy
 app.get('/sw.js', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
