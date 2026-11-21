@@ -1,7 +1,7 @@
 {
-  "version": "1.0.33",
+  "version": "1.0.34",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Adds a guarded project-only uninstaller and preserves shared Node and SQL Server installations."
+  "notes": "Fixes WPF wizard background thread execution, removes emojis to prevent mojibake, and adds jsDelivr fast Indian CDN failover."
 }
