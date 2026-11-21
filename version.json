@@ -1,7 +1,7 @@
 {
-  "version": "1.0.25",
+  "version": "1.0.27",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "UCL delete fix: deleting a UCL entry now recomputes affected account balances via sp_UpdateAccountBalance (stale cash drift fixed), UCL audit logs corrected, plus Aadhaar last-4 normalisation and column-length validation from v1.0.24."
+  "notes": "Silent auto-update reliability: fix updater startup, preserve release version across installs, and repair local login fallback."
 }

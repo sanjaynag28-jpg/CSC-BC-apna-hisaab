@@ -10,7 +10,7 @@ if (!process.env.JWT_SECRET) {
 // Local (loopback) auto-login ko env se band kiya ja sakta hai:
 //   ALLOW_LOCAL_AUTO_LOGIN=false
 // Default true — taaki Sanjay ji ka existing local workflow na toote.
-const ALLOW_LOCAL_AUTO_LOGIN = process.env.ALLOW_LOCAL_AUTO_LOGIN === 'true';
+const ALLOW_LOCAL_AUTO_LOGIN = String(process.env.ALLOW_LOCAL_AUTO_LOGIN || '').toLowerCase() !== 'false';
 let loopbackAutoLoginWarned = false;
 
 // Cache API Tokens for extension lookups (60s TTL)

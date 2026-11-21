@@ -31,7 +31,7 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 ---
 
 ## 🔄 Automatic Silent Updates (Lifetime Auto-Update)
-- Jab bhi aap Desktop shortcut (`START.bat`) ya server open karte hain, app silently GitHub se latest `version.json` check karta hai. Uske baad **har raat 2:30 AM** par bhi check hota hai — restart sirf tab jab app idle ho (koi transaction na chal rahi ho).
+- Server start hote hi, phir **har 4 ghante** aur **har raat 2:30 AM**, app silently GitHub se latest `version.json` check karta hai — restart sirf tab jab app idle ho (koi transaction na chal rahi ho).
 - Naya update milte hi:
   1. Pehle aapke SQL Server database ka **automatic backup** hota hai (`backups/`).
   2. Sirf code files update hoti hain — **aapka database, `.env`, `public/uploads/`, aur `backups/` 100% safe rehta hai** (Git ho ya ZIP install — dono mein kaam karta hai!).
