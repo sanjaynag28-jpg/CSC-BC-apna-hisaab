@@ -56,7 +56,9 @@ const state = {
     currentVersion: null,
     latestVersion: null,
     releaseNotes: null,
-    lastError: null
+    lastError: null,
+    periodicTimer: null,
+    periodicIntervalMs: null
 };
 
 function loadDotEnvIfNeeded() {
@@ -394,10 +396,12 @@ async function checkForUpdate() {
         state.latestVersion = remoteInfo.version || localInfo.version;
         state.releaseNotes = remoteInfo.notes || '';
         const hasUpdate = compareVersions(state.latestVersion, state.currentVersion) > 0;
-        state.lastResult = hasUpdate ? 'update-available' : 'up-to-date';
+        const critical = String(remoteInfo.critical || '').toLowerCase() === 'true';
+        state.lastResult = hasUpdate ? (critical ? 'critical-update-available' : 'update-available') : 'up-to-date';
         return {
             success: true,
             hasUpdate,
+            critical,
             currentVersion: state.currentVersion,
             latestVersion: state.latestVersion,
             notes: state.releaseNotes,
@@ -450,21 +454,21 @@ function triggerCleanRestart() {
 }
 
 async function runSilentAutoUpdate(options = {}) {
-    const { force = false, restartOnUpdate = true, isCli = false } = options;
+    const { force = false, restartOnUpdate = true, isCli = false, forceCritical = false } = options;
 
     if (state.updating) {
         return { success: false, skipped: true, reason: 'Update already in progress' };
     }
 
     const disabledFlag = String(process.env.AUTO_UPDATE_DISABLED || '').toLowerCase() === 'true';
-    if (disabledFlag && !force) {
+    if (disabledFlag && !force && !forceCritical) {
         state.lastResult = 'disabled-in-env';
         return { success: true, updated: false, skipped: true, reason: 'AUTO_UPDATE_DISABLED=true in .env' };
     }
 
     // Busy guard: agar koi request abhi chal rahi hai (transaction/save), update skip karo.
-    // Manual --force update is guard ko bypass karta hai.
-    if (!force && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+    // Critical update ya force mode is guard ko bypass karta hai.
+    if (!force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
         state.lastResult = 'skipped-busy';
         logUpdate('Update skipped: app busy hai (request in-flight). Next idle window me try hoga.');
         return { success: true, updated: false, skipped: true, reason: 'App busy — update skipped safely' };
@@ -475,9 +479,15 @@ async function runSilentAutoUpdate(options = {}) {
         return { success: check.success, updated: false, currentVersion: check.currentVersion, latestVersion: check.latestVersion };
     }
 
+    // Critical update: force install even if busy (user safety fix)
+    const isCritical = check.critical || forceCritical;
+    if (isCritical && !force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+        logUpdate('🚨 Critical update detected — forcing install at next idle window...');
+    }
+
     state.updating = true;
     state.lastResult = 'updating';
-    logUpdate(`New update detected: v${check.currentVersion} -> v${check.latestVersion} (${check.notes || 'New release'})`);
+    logUpdate(`New update detected: v${check.currentVersion} -> v${check.latestVersion}${isCritical ? ' (CRITICAL)' : ''} (${check.notes || 'New release'})`);
 
     const pkgHashBefore = fileHash(PKG_FILE);
 
@@ -558,6 +568,42 @@ async function runSilentAutoUpdate(options = {}) {
         return { success: false, updated: false, error: err.message };
     } finally {
         state.updating = false;
+    }
+}
+
+/**
+ * Background mein har X ghante mein update check karein (silent).
+ * Server chalu rehne par naya version turant pakad liya jata hai,
+ * raat 2:30 AM tak wait nahi karni padti.
+ * @param {number} intervalMs - Check interval in milliseconds (default 4 hours)
+ * @param {Function} [isIdle] - Optional function returning true if app is idle
+ */
+function startPeriodicCheck(intervalMs = 4 * 60 * 60 * 1000, isIdle = null) {
+    if (state.periodicTimer) {
+        clearInterval(state.periodicTimer);
+    }
+    state.periodicIntervalMs = intervalMs;
+    const idleFn = isIdle || (() => true);
+    state.periodicTimer = setInterval(async () => {
+        try {
+            logUpdate('Periodic auto-update check chal raha hai...');
+            await runSilentAutoUpdate({
+                restartOnUpdate: true,
+                requireIdle: true,
+                isIdle: idleFn
+            });
+        } catch (_) { }
+    }, intervalMs);
+    state.periodicTimer.unref?.();
+    logUpdate(`Periodic auto-update check start: har ${Math.round(intervalMs / 1000 / 60)} minute`);
+}
+
+function stopPeriodicCheck() {
+    if (state.periodicTimer) {
+        clearInterval(state.periodicTimer);
+        state.periodicTimer = null;
+        state.periodicIntervalMs = null;
+        logUpdate('Periodic auto-update check band kiya gaya.');
     }
 }
 

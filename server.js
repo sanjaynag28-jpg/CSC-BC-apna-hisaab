@@ -3,6 +3,7 @@ const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const { getPool, isDbAlive, query, sql } = require('./database/db');
 const { runPendingMigrations } = require('./database/migrationRunner');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
@@ -17,11 +18,26 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 process.on('uncaughtException', (err) => {
     uncaughtCount++;
-    console.error(`💥 [Server] Uncaught Exception (#${uncaughtCount}):`, err);
-    if (process.env.EXIT_ON_UNCAUGHT === 'true') {
-        console.error('💥 [Server] EXIT_ON_UNCAUGHT=true — process exit kar raha hai (PM2 restart karega).');
-        process.exit(1);
-    }
+    console.error(`💥 [Server] Uncaught Exception (#${uncaughtCount}):`, err.message);
+    console.error('💥 [Server] Crash supervisor: 3 second mein auto-restart hoga...');
+    // SSE clients ko close karo
+    try { for (const c of sseClients) { try { c.end(); } catch (_) {} } } catch (_) {}
+    sseClients.clear();
+    // Supervisor: naya process spawn karke current ko exit karo
+    setTimeout(() => {
+        try {
+            const child = spawn('cmd.exe', ['/c', 'timeout /t 2 /nobreak >nul && node server.js'], {
+                cwd: ROOT_DIR,
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+            });
+            child.unref();
+        } catch (spawnErr) {
+            console.error('💥 [Server] Supervisor respawn failed:', spawnErr.message);
+        }
+    }, 3000);
+    setTimeout(() => process.exit(1), 3500);
 });
 
 const app = express();
@@ -913,18 +929,22 @@ function startServer() {
                 try { require('./utils/windows_autostart').ensureWindowsAutostart(); } catch (e) { }
             }, 10000);
 
-            // Automatic Silent Update from GitHub:
-            // boot ke 5s baad ek check + har raat 2:30 AM (idle hone par hi restart).
-            // Din me restart nahi hoga, isliye kisi transaction ke beech update ka risk nahi.
-            setTimeout(() => {
-                autoUpdater.runSilentAutoUpdate({
-                    restartOnUpdate: true,
-                    requireIdle: true,
-                    isIdle: () => activeRequests === 0
-                }).catch(() => { });
-            }, 5000);
+// Automatic Silent Update from GitHub:
+// boot ke 5s baad ek check + har raat 2:30 AM (idle hone par hi restart).
+// Din me restart nahi hoga, isliye kisi transaction ke beech update ka risk nahi.
+setTimeout(() => {
+    autoUpdater.runSilentAutoUpdate({
+        restartOnUpdate: true,
+        requireIdle: true,
+        isIdle: () => activeRequests === 0
+    }).catch(() => { });
+}, 5000);
 
-            scheduleNightlyUpdate();
+// Background periodic auto-update check: har 4 ghante mein GitHub se naya version check karega.
+// Agar naya version mila to silent install hoga (idle hone par restart).
+autoUpdater.startPeriodicCheck(4 * 60 * 60 * 1000, () => activeRequests === 0);
+
+scheduleNightlyUpdate();
         });
     } catch (err) {
         console.error('');
