@@ -1,7 +1,7 @@
 {
-  "version": "1.0.34",
+  "version": "1.0.35",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fixes WPF wizard background thread execution, removes emojis to prevent mojibake, and adds jsDelivr fast Indian CDN failover."
+  "notes": "Master Enterprise Installer: multi-threaded background Runspace, real-time download speed & sub-step percentages, mini progress bars on each of 11 cards, cyber terminal console, and zero mojibake."
 }
