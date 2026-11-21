@@ -1,6 +1,6 @@
 {
   "name": "cash-management",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "Aapka Personal Cash Management System - BC ka Hisaab Kitaab",
   "main": "server.js",
   "scripts": {

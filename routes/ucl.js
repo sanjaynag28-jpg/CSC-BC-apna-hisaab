@@ -48,6 +48,42 @@ const upload = multer({
     limits: { fileSize: 25 * 1024 * 1024 }
 });
 
+// ---------------------------------------------------------------------------
+// Aadhaar input normalisation.
+// UI me "12-Digit ya Last 4" allowed hai aur user spaced Aadhaar bhi paste
+// kar sakta hai (e.g. "9626 0210 9626"). UCLUpdates.AadhaarLast4 sirf
+// varchar(10) hai, isliye raw input kabhi DB me nahi bhejna - hamesha digits
+// nikaal kar sirf last 4 store karna hai.
+// ---------------------------------------------------------------------------
+function parseAadhaarInput(raw) {
+    const digits = String(raw == null ? '' : raw).replace(/\D/g, '');
+    if (!digits) return { last4: null, full: null };
+    return {
+        last4: digits.length >= 4 ? digits.slice(-4) : digits,
+        full: digits.length === 12 ? digits : null
+    };
+}
+
+// DB truncation jaise raw SQL errors ko user-friendly message me badalta hai.
+function friendlyUclError(err) {
+    const msg = err && err.message ? err.message : String(err);
+    if (/truncat/i.test(msg)) {
+        return 'Kuch field ki value bahut lambi hai (DB limit se zyada). Aadhaar last-4, SID aur Notes check karke dobara save karein.';
+    }
+    return msg;
+}
+
+// Insert se pehle DB column limits check karta hai taaki SQL truncation error
+// na aaye aur user ko saaf message mile. (Silently data cut nahi karte.)
+function uclLengthError(fields) {
+    for (const [label, value, max] of fields) {
+        if (value != null && String(value).length > max) {
+            return `${label} bahut lamba hai (max ${max} characters, aapne ${String(value).length} diye). Kripya chhota karke dobara save karein.`;
+        }
+    }
+    return null;
+}
+
 // ============================================================================
 // Intelligent UIDAI UCL Acknowledgement / Consent Slip Parser
 // ============================================================================
@@ -410,7 +446,9 @@ router.post('/', async (req, res) => {
         }
 
         const phone = (body.customerPhone || body.CustomerPhone || '').trim();
-        const aadhaarLast4 = (body.aadhaarLast4 || body.AadhaarLast4 || '').trim();
+        const rawAadhaar = (body.aadhaarLast4 || body.AadhaarLast4 || '').trim();
+        const aadhaarInput = parseAadhaarInput(rawAadhaar);
+        const aadhaarLast4 = aadhaarInput.last4;
         const sid = (body.sid || body.SID || '').trim();
         const updateType = (body.updateType || body.UpdateType || 'Demographics Update').trim();
         const pacCode = (body.pacCode || body.PACCode || '').trim();
@@ -445,12 +483,28 @@ router.post('/', async (req, res) => {
         const receiptPath = body.receiptPath || body.ReceiptPath || null;
         const notes = body.notes || body.Notes || null;
 
+        // Column-limit validation (DB truncation se pehle saaf error).
+        const lengthErr = uclLengthError([
+            ['Customer naam', customerName, 150],
+            ['Mobile number', phone, 20],
+            ['SID / URN', sid, 60],
+            ['Update Type', updateType, 100],
+            ['PAC Code', pacCode, 50],
+            ['Payment mode', paymentMode, 50],
+            ['Status', status, 50],
+            ['Receipt path', receiptPath, 500],
+            ['Notes', notes, 500]
+        ]);
+        if (lengthErr) {
+            return res.status(400).json({ success: false, error: lengthErr });
+        }
+
         // Auto Customer Resolution (Rule: Zero Duplicates, Auto-Enrichment)
         const custRes = await resolveOrCreateCustomer({
             customerId: body.customerId ? parseInt(body.customerId) : null,
             customerName,
             customerPhone: phone,
-            customerAadhaar: aadhaarLast4,
+            customerAadhaar: aadhaarInput.full || null,
             source: 'Aadhaar UCL Update',
             skipFamilyLink: !!(body.SkipFamilyLink || body.skipFamilyLink),
             userId
@@ -675,7 +729,7 @@ router.post('/', async (req, res) => {
         });
     } catch (err) {
         console.error('[UCL Create Error]:', err);
-        res.status(500).json({ success: false, error: 'UCL update save nahi ho saka: ' + err.message });
+        res.status(500).json({ success: false, error: 'UCL update save nahi ho saka: ' + friendlyUclError(err) });
     }
 });
 
@@ -721,8 +775,7 @@ router.put('/:id', async (req, res) => {
         const customerName = (body.customerName || body.CustomerName || '').trim();
         const phone = (body.customerPhone || body.CustomerPhone || '').trim();
         const rawAadhaar = (body.aadhaarLast4 || body.AadhaarLast4 || '').trim();
-        const aadhaarDigits = rawAadhaar.replace(/\D/g, '');
-        const aadhaarLast4 = aadhaarDigits.length >= 4 ? aadhaarDigits.slice(-4) : (rawAadhaar || null);
+        const aadhaarLast4 = parseAadhaarInput(rawAadhaar).last4;
         const sid = (body.sid || body.SID || '').trim();
         const updateType = (body.updateType || body.UpdateType || 'Demographics Update').trim();
         const biometrics = body.biometricsUpdate || body.BiometricsUpdate || 'No';
@@ -735,6 +788,20 @@ router.put('/:id', async (req, res) => {
         const paidAmount = parseFloat(body.paidAmount ?? body.PaidAmount ?? totalAmount);
         const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
         const paymentMode = body.paymentMode || body.PaymentMode || (balanceAmount > 0 ? 'Khata' : 'Cash');
+
+        // Column-limit validation (DB truncation se pehle saaf error).
+        const lengthErr = uclLengthError([
+            ['Customer naam', customerName, 150],
+            ['Mobile number', phone, 20],
+            ['SID / URN', sid, 60],
+            ['Update Type', updateType, 100],
+            ['Payment mode', paymentMode, 50],
+            ['Status', status, 50],
+            ['Notes', notes, 500]
+        ]);
+        if (lengthErr) {
+            return res.status(400).json({ success: false, error: lengthErr });
+        }
 
         await withTransaction(async (tQuery) => {
             const curRes = await tQuery(`SELECT * FROM UCLUpdates WHERE UCLID = @id AND UserID = @userId AND IsDeleted = 0`, { id, userId });
@@ -881,7 +948,7 @@ router.put('/:id', async (req, res) => {
         res.json({ success: true, message: 'UCL record safaltapoorvak update ho gaya' });
     } catch (err) {
         console.error('[UCL Update Error]:', err);
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: friendlyUclError(err) });
     }
 });
 

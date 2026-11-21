@@ -1,7 +1,7 @@
 {
-  "version": "1.0.23",
+  "version": "1.0.24",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Auto-update delivery fix (version bump so installed PCs receive latest code), fresh-install schema parity (006-008), metadata-driven modules, UCL/OCR features, auto-start task name fix"
+  "notes": "UCL save fix: Aadhaar input (12-digit/spaced/masked) auto-normalised to last 4 digits, column-length pre-validation with clear errors, no more 'String or binary data would be truncated'. Also includes archiver v8 backup fix and v1.0.23 automation fixes."
 }

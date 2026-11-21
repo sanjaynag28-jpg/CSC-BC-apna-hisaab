@@ -23686,12 +23686,19 @@ async function saveUCLUpdate(printSlip = false) {
     const method = editId ? 'PUT' : 'POST';
 
     const phoneInp = document.getElementById('uclCustPhone');
+    // Aadhaar field me full 12-digit ya spaced value ho sakti hai. DB me sirf
+    // last-4 digits jate hain (UCLUpdates.AadhaarLast4 varchar(10)).
+    const aadhaarRaw = document.getElementById('uclCustAadhaar')?.value?.trim() || '';
+    const aadhaarDigits = aadhaarRaw.replace(/\D/g, '');
+    const aadhaarLast4 = aadhaarDigits
+        ? (aadhaarDigits.length >= 4 ? aadhaarDigits.slice(-4) : aadhaarDigits)
+        : null;
     const payload = {
         customerId: document.getElementById('uclCustomerSelect')?.value || null,
         customerName: custName,
         customerPhone: phoneInp?.value?.trim() || null,
         skipFamilyLink: phoneInp?._skipFamilyLink === true,
-        aadhaarLast4: document.getElementById('uclCustAadhaar')?.value?.trim() || null,
+        aadhaarLast4: aadhaarLast4,
         sid: document.getElementById('uclSID')?.value?.trim() || null,
         updateType: document.getElementById('uclUpdateType')?.value || 'Demographics Update',
         pacCode: document.getElementById('uclPACSelect')?.value || null,
