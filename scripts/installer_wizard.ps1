@@ -1,4 +1,4 @@
-﻿<#
+<#
     scripts/installer_wizard.ps1
     ============================================================================
     CSC & BC Apna Hisaab - Professional 1-Click GUI Setup & Health Wizard (WPF)

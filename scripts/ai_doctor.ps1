@@ -1,4 +1,4 @@
-﻿<#
+<#
     scripts/ai_doctor.ps1
     ============================================================================
     CSC & BC Apna Hisaab - 100% Free AI Live Self-Healing & Diagnostic Engine
