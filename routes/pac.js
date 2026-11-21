@@ -125,7 +125,17 @@ router.post('/', async (req, res) => {
 
         const pacId = insertRes.recordset[0].PACID;
 
-        await logAudit(userId, 'CREATE', 'PACEntries', pacId, null, { pacCode, walletDeduction });
+        await logAudit({
+            userId,
+            action: 'CREATE',
+            module: 'PAC',
+            tableName: 'PACEntries',
+            recordId: pacId,
+            entityName: pacCode,
+            amount: walletDeduction,
+            description: `PAC Code ${pacCode} darz ho gaya!`,
+            newData: { pacCode, walletDeduction }
+        });
 
         res.json({
             success: true,

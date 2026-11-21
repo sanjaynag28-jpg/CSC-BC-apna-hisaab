@@ -106,7 +106,7 @@ async function query(queryStr, params = {}) {
         return await request.query(queryStr);
     } catch (err) {
         // If connection is dead or lost, reset pool
-        if (err.code === 'ECONNCLOSED' || err.code === 'ETIMEDOUT' || err.code === 'ESOCKET') {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNCLOSED' || err.code === 'ETIMEDOUT' || err.code === 'ESOCKET') {
             pool = null;
         }
         throw err;
@@ -136,7 +136,7 @@ async function withTransaction(callback) {
         try {
             await transaction.rollback();
         } catch (rollbackErr) {}
-        if (err.code === 'ECONNCLOSED' || err.code === 'ETIMEDOUT' || err.code === 'ESOCKET') {
+        if (err.code === 'ECONNRESET' || err.code === 'ECONNCLOSED' || err.code === 'ETIMEDOUT' || err.code === 'ESOCKET') {
             pool = null;
         }
         throw err;

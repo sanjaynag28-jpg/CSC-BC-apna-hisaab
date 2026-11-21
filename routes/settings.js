@@ -128,8 +128,8 @@ const {
 
 // Customers Excel
 router.get('/customers/export/excel', async (req, res) => {
-    const userId = req.user.UserID;
-    await exportCustomersToExcel(res, userId);
+        const userId = req.user?.UserID || 1;
+        await exportCustomersToExcel(res, userId);
 });
 
 router.get('/customers/template/excel', async (req, res) => {
@@ -141,7 +141,7 @@ router.post('/customers/import/excel', upload.single('file'), async (req, res) =
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file upload karein' });
         }
-        const userId = req.user.UserID;
+        const userId = req.user?.UserID || 1;
         const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, userId);
         res.json(result);
     } catch (err) {
@@ -152,7 +152,7 @@ router.post('/customers/import/excel', upload.single('file'), async (req, res) =
 
 // CSC Work Tracker Excel
 router.get('/csc/export/excel', async (req, res) => {
-    const userId = req.user.UserID;
+    const userId = req.user?.UserID || 1;
     await exportCSCToExcel(req.query, res, userId);
 });
 
@@ -165,7 +165,7 @@ router.post('/csc/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file upload karein' });
         }
-        const userId = req.user.UserID;
+        const userId = req.user?.UserID || 1;
         const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, userId);
         res.json(result);
     } catch (err) {

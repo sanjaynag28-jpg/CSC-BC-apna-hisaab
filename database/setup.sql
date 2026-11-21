@@ -694,21 +694,7 @@ BEGIN
 END
 GO
 
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ApiIdempotencyRequests')
-BEGIN
-    CREATE TABLE [dbo].[ApiIdempotencyRequests] (
-        [UserID] INT NOT NULL,
-        [RequestKey] UNIQUEIDENTIFIER NOT NULL,
-        [RequestHash] CHAR(64) NOT NULL,
-        [State] NVARCHAR(16) NOT NULL,
-        [HttpStatus] INT NULL,
-        [ResponseBody] NVARCHAR(MAX) NULL,
-        [CreatedAt] DATETIME2 NOT NULL DEFAULT (SYSUTCDATETIME()),
-        [CompletedAt] DATETIME2 NULL,
-        CONSTRAINT [PK_ApiIdempotencyRequests] PRIMARY KEY CLUSTERED ([UserID], [RequestKey])
-    );
-END
-GO
+
 
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AppLicenses')
 BEGIN

@@ -1515,8 +1515,8 @@ async function importCSCFromExcel(fileBuffer, originalName, userId) {
                 // User-scoped cash and bank account lookup
                 const cashAcc = await tQuery("SELECT TOP 1 AccountID FROM Accounts WHERE UserID = @userId AND AccountType = 'Cash' AND IsActive = 1 ORDER BY AccountID ASC", { userId });
                 const bankAcc = await tQuery("SELECT TOP 1 AccountID FROM Accounts WHERE UserID = @userId AND AccountType = 'Bank' AND IsActive = 1 ORDER BY AccountID ASC", { userId });
-                const userCashAccId = cashAcc.recordset[0]?.AccountID || (userId === 1 ? 1 : null);
-                const userBankAccId = bankAcc.recordset[0]?.AccountID || (userId === 1 ? 2 : null);
+                const userCashAccId = cashAcc.recordset[0]?.AccountID || null;
+                const userBankAccId = bankAcc.recordset[0]?.AccountID || null;
 
                 const insertSql = `
                     INSERT INTO CSCApplications (

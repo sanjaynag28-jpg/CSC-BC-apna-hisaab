@@ -492,7 +492,7 @@ router.get('/next-id', async (req, res) => {
 // 2.6 CUSTOMERS EXCEL EXPORT, TEMPLATE & IMPORT
 // --------------------------------------------------------------------------
 router.get('/export/excel', async (req, res) => {
-    await exportCustomersToExcel(res, req.user.UserID);
+    await exportCustomersToExcel(res, req.user?.UserID || 1);
 });
 
 router.get('/template/excel', async (req, res) => {
@@ -504,7 +504,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file (.xlsx, .xls, .csv) upload karein.' });
         }
-        const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, req.user.UserID);
+        const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, req.user?.UserID || 1);
         res.json(result);
     } catch (err) {
         console.error('Error importing customer excel:', err);

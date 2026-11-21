@@ -390,7 +390,7 @@ router.delete('/services/:id', async (req, res) => {
 // 2.9 CSC EXCEL EXPORT, TEMPLATE & IMPORT
 // ==========================================================================
 router.get('/export/excel', async (req, res) => {
-    await exportCSCToExcel(req.query, res, req.user.UserID);
+    await exportCSCToExcel(req.query, res, req.user?.UserID || 1);
 });
 
 router.get('/template/excel', async (req, res) => {
@@ -402,7 +402,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file (.xlsx, .xls, .csv) upload karein.' });
         }
-        const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, req.user.UserID);
+        const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, req.user?.UserID || 1);
         res.json(result);
     } catch (err) {
         console.error('Error importing CSC excel:', err);
@@ -562,7 +562,7 @@ router.post(['/', '/applications'], async (req, res) => {
                 division,
                 subDivision,
                 totalBill: totalBillAmt,
-                paidAmount: numGovtFee,
+                paidAmount: numPaid,
                 remainingBill,
                 customerCharge: custCharge,
                 commission: commEarned,

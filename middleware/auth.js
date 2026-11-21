@@ -2,15 +2,15 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../database/db');
 const { getActiveSession } = require('../utils/sessionStore');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cash-management-bc-super-secure-secret-2026-key';
+const JWT_SECRET = process.env.JWT_SECRET;
 if (!process.env.JWT_SECRET) {
-    console.warn('⚠️ [Auth] JWT_SECRET env var set nahi hai — built-in secret use ho raha hai. Shared/remote access ke liye JWT_SECRET set karein.');
+    console.warn('⚠️ [Auth] JWT_SECRET env var set nahi hai — token signing fail hoga. JWT_SECRET set karein.');
 }
 
 // Local (loopback) auto-login ko env se band kiya ja sakta hai:
 //   ALLOW_LOCAL_AUTO_LOGIN=false
 // Default true — taaki Sanjay ji ka existing local workflow na toote.
-const ALLOW_LOCAL_AUTO_LOGIN = process.env.ALLOW_LOCAL_AUTO_LOGIN !== 'false';
+const ALLOW_LOCAL_AUTO_LOGIN = process.env.ALLOW_LOCAL_AUTO_LOGIN === 'true';
 let loopbackAutoLoginWarned = false;
 
 // Cache API Tokens for extension lookups (60s TTL)

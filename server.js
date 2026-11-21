@@ -4,6 +4,7 @@ const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 const { getPool, isDbAlive, query, sql } = require('./database/db');
+const { runPendingMigrations } = require('./database/migrationRunner');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
 const { createIdempotencyMiddleware } = require('./utils/idempotencyMiddleware');
 
@@ -525,7 +526,7 @@ async function getDbAliveCached() {
 }
 
 app.use('/api', async (req, res, next) => {
-    if (req.path === '/health' || req.path === '/live-events' || req.path.startsWith('/logs') ||
+    if (req.path === '/api/health' || req.path === '/api/live-events' || req.path.startsWith('/api/logs') ||
         req.headers['idempotency-key'] !== undefined) return next();
     let alive = false;
     try {
@@ -766,7 +767,7 @@ app.use('/api', (req, res) => {
 });
 
 // SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache)
-app.get('/{*splat}', (req, res) => {
+app.get('*', (req, res) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -813,6 +814,12 @@ async function connectDbInBackground() {
                 } catch (sErr) {
                     console.error('⚠️ Schema bootstrap warning:', sErr.message);
                 }
+                // Auto-run pending schema migrations (UCL/PAC tables etc.) after DB connect
+                try {
+                    await runPendingMigrations({ backup: false });
+                } catch (mErr) {
+                    console.error('⚠️ Migration run warning:', mErr.message);
+                }
                 // Recurring Transactions: startup par process karo (missed entries catch-up)
                 runRecurring();
                 // Har 1 ghante baad dobara check (server lambe time chalne par bhi due entries generate hoti rahein)
@@ -841,6 +848,11 @@ async function connectDbInBackground() {
                         await ensureAutoSchemaBootstrapped();
                     } catch (sErr) {
                         console.error('⚠️ Schema bootstrap warning:', sErr.message);
+                    }
+                    try {
+                        await runPendingMigrations({ backup: false });
+                    } catch (mErr) {
+                        console.error('⚠️ Migration run warning:', mErr.message);
                     }
                     runRecurring();
                     setInterval(runRecurring, 60 * 60 * 1000);
