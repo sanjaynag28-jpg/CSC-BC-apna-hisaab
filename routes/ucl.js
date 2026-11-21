@@ -716,10 +716,16 @@ router.post('/', async (req, res) => {
             };
         });
 
-        await logAudit(userId, 'CREATE', 'UCLUpdates', savedRecord.uclId, null, {
-            serialNo: savedRecord.serialNo,
-            customerName,
-            totalAmount
+        await logAudit({
+            userId,
+            action: 'CREATE',
+            module: 'UCL',
+            tableName: 'UCLUpdates',
+            recordId: savedRecord.uclId,
+            entityName: customerName,
+            amount: totalAmount,
+            description: `UCL Update ${savedRecord.serialNo} - ${customerName}`,
+            newData: { serialNo: savedRecord.serialNo, customerName, totalAmount }
         });
 
         res.json({
@@ -938,11 +944,16 @@ router.put('/:id', async (req, res) => {
             }
         });
 
-        await logAudit(userId, 'UPDATE', 'UCLUpdates', id, null, {
-            customerName: customerName,
-            totalAmount,
-            paidAmount,
-            status
+        await logAudit({
+            userId,
+            action: 'UPDATE',
+            module: 'UCL',
+            tableName: 'UCLUpdates',
+            recordId: id,
+            entityName: customerName || null,
+            amount: totalAmount,
+            description: `UCL Update #${id} updated`,
+            newData: { customerName, totalAmount, paidAmount, status }
         });
 
         res.json({ success: true, message: 'UCL record safaltapoorvak update ho gaya' });
@@ -961,6 +972,14 @@ router.delete('/:id', async (req, res) => {
         const id = parseInt(req.params.id);
 
         await withTransaction(async (tQuery) => {
+            // Record owner + account BEFORE deleting mirrors (delete ke baad nahi milega).
+            const uclRec = await tQuery(
+                `SELECT CustomerID, AccountID FROM UCLUpdates WHERE UCLID = @id AND UserID = @userId`,
+                { id, userId }
+            );
+            const custId = uclRec.recordset[0]?.CustomerID;
+            const uclAccountId = uclRec.recordset[0]?.AccountID || null;
+
             // Soft delete UCL
             await tQuery(`
                 UPDATE UCLUpdates
@@ -971,15 +990,25 @@ router.delete('/:id', async (req, res) => {
             // Deactivate global registry
             await deactivateGlobalTransaction('UCL', id, tQuery);
 
-            // Soft delete mirror transactions
+            // Kaun-kaun se accounts is UCL ke mirror transactions se affected hain
+            // (delete se pehle capture karo, warna rows gayab ho jayengi).
+            const accRes = await tQuery(`
+                SELECT DISTINCT AccountID FROM Transactions
+                WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId AND AccountID IS NOT NULL
+                UNION
+                SELECT DISTINCT ToAccountID AS AccountID FROM Transactions
+                WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId AND ToAccountID IS NOT NULL
+            `, { id, userId });
+            const affectedAccounts = new Set(
+                accRes.recordset.map(r => parseInt(r.AccountID)).filter(n => n > 0)
+            );
+            if (uclAccountId) affectedAccounts.add(parseInt(uclAccountId));
+
+            // Remove mirror transactions
             await tQuery(`
                 DELETE FROM Transactions
                 WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId
             `, { id, userId });
-
-            // Lookup CustomerID for balance refresh
-            const uclRec = await tQuery(`SELECT CustomerID FROM UCLUpdates WHERE UCLID = @id`, { id });
-            const custId = uclRec.recordset[0]?.CustomerID;
 
             // Remove Khata entries
             await tQuery(`
@@ -987,9 +1016,23 @@ router.delete('/:id', async (req, res) => {
                 WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId
             `, { id, userId });
 
+            // Recompute affected account balances from ledgers.
+            // Warna delete ke baad cash/bank balance stale (inflated) reh jata hai.
+            for (const accId of affectedAccounts) {
+                await tQuery(`EXEC sp_UpdateAccountBalance @id`, { id: accId });
+            }
+
             if (custId) {
                 await refreshCustomerBalance(tQuery, custId);
             }
+        });
+
+        await logAudit({
+            userId,
+            action: 'DELETE',
+            module: 'UCL',
+            tableName: 'UCLUpdates',
+            recordId: id
         });
 
         res.json({ success: true, message: 'UCL record hata diya gaya' });
