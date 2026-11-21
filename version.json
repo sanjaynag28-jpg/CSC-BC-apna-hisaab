@@ -1,7 +1,7 @@
 {
-  "version": "1.0.28",
+  "version": "1.0.29",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Startup wait screen with live SQL Server connection and schema progress."
+  "notes": "Repairs missing npm dependencies on update/startup and prevents duplicate crash restarts."
 }

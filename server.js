@@ -3,16 +3,12 @@ const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
-const ROOT_DIR = path.resolve(__dirname);
 const { getPool, isDbAlive, query, sql } = require('./database/db');
 const { runPendingMigrations } = require('./database/migrationRunner');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
 const { createIdempotencyMiddleware } = require('./utils/idempotencyMiddleware');
 
-// Global safety crash guards: prevents unexpected unhandled promise rejections from killing server.
-// NOTE: uncaughtException ke baad process ki state bharosemand nahi rehti. Default me sirf
-// log hota hai (existing behaviour); EXIT_ON_UNCAUGHT=true karke PM2 managed restart use karein.
+// Global safety crash guards: an uncaught exception exits so the external supervisor can restart.
 let uncaughtCount = 0;
 process.on('unhandledRejection', (reason, promise) => {
     console.error('⚠️ [Server] Unhandled Promise Rejection:', reason);
@@ -20,25 +16,11 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err) => {
     uncaughtCount++;
     console.error(`💥 [Server] Uncaught Exception (#${uncaughtCount}):`, err.message);
-    console.error('💥 [Server] Crash supervisor: 3 second mein auto-restart hoga...');
+    console.error('💥 [Server] Exiting so the process supervisor can restart cleanly...');
     // SSE clients ko close karo
     try { for (const c of sseClients) { try { c.end(); } catch (_) {} } } catch (_) {}
     sseClients.clear();
-    // Supervisor: naya process spawn karke current ko exit karo
-    setTimeout(() => {
-        try {
-            const child = spawn('cmd.exe', ['/c', 'timeout /t 2 /nobreak >nul && node server.js'], {
-                cwd: ROOT_DIR,
-                detached: true,
-                stdio: 'ignore',
-                windowsHide: true
-            });
-            child.unref();
-        } catch (spawnErr) {
-            console.error('💥 [Server] Supervisor respawn failed:', spawnErr.message);
-        }
-    }, 3000);
-    setTimeout(() => process.exit(1), 3500);
+    setTimeout(() => process.exit(1), 1000);
 });
 
 const app = express();

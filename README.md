@@ -38,7 +38,8 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
   2. Sirf code files update hoti hain — **aapka database, `.env`, `public/uploads/`, aur `backups/` 100% safe rehta hai** (Git ho ya ZIP install — dono mein kaam karta hai!).
   3. Safe DB migration chalti hai aur server gracefully restart hota hai.
 - Offline hone par update silently skip ho jata hai aur app bina ruke chalta hai.
-- Manual force-update ke liye **`UPDATE_APP.bat`** double-click karein.
+- Missing npm package (jaise `sharp`) detect hone par updater package ko repair karta hai, chahe `package.json` badla na ho.
+- Manual update/repair ke liye **`UPDATE_APP.bat`** double-click karein; yeh update ke baad hidden server launcher bhi chalata hai.
 
 ---
 

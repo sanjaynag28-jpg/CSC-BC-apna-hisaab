@@ -458,6 +458,39 @@ function triggerCleanRestart() {
     setTimeout(() => process.exit(0), 500);
 }
 
+function findMissingDependencies(dependencies, resolveModule = (name) => require.resolve(name, { paths: [ROOT_DIR] })) {
+    return Object.keys(dependencies || {}).filter((name) => {
+        try {
+            resolveModule(name);
+            return false;
+        } catch (_) {
+            return true;
+        }
+    });
+}
+
+function installDependenciesIfNeeded(force = false) {
+    const packageJson = JSON.parse(fs.readFileSync(PKG_FILE, 'utf8'));
+    const missing = findMissingDependencies(packageJson.dependencies);
+    if (!force && missing.length === 0) return false;
+
+    logUpdate(`Installing npm dependencies${missing.length ? ` (missing: ${missing.join(', ')})` : ''}...`);
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    execFileSync(npmCmd, ['install', '--omit=dev', '--no-audit', '--no-fund'], {
+        cwd: ROOT_DIR,
+        stdio: 'ignore',
+        timeout: 300000
+    });
+
+    const stillMissing = findMissingDependencies(packageJson.dependencies);
+    if (stillMissing.length > 0) {
+        throw new Error(`Dependencies are still missing after npm install: ${stillMissing.join(', ')}`);
+    }
+
+    logUpdate('npm dependencies are ready.');
+    return true;
+}
+
 async function runSilentAutoUpdate(options = {}) {
     const { force = false, restartOnUpdate = true, isCli = false, forceCritical = false } = options;
 
@@ -479,9 +512,31 @@ async function runSilentAutoUpdate(options = {}) {
         return { success: true, updated: false, skipped: true, reason: 'App busy — update skipped safely' };
     }
 
+    let dependenciesRepaired = false;
+    try {
+        if (findMissingDependencies(JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')).dependencies).length > 0) {
+            state.updating = true;
+            state.lastResult = 'repairing-dependencies';
+            dependenciesRepaired = installDependenciesIfNeeded();
+        }
+    } catch (err) {
+        state.lastError = err.message;
+        state.lastResult = 'error';
+        logUpdate(`Dependency repair failed: ${err.message}`);
+        return { success: false, updated: false, error: err.message };
+    } finally {
+        state.updating = false;
+    }
+
     const check = await checkForUpdate();
     if (!check.success || !check.hasUpdate) {
-        return { success: check.success, updated: false, currentVersion: check.currentVersion, latestVersion: check.latestVersion };
+        return {
+            success: check.success,
+            updated: false,
+            dependenciesRepaired,
+            currentVersion: check.currentVersion,
+            latestVersion: check.latestVersion
+        };
     }
 
     // Critical update: force install even if busy (user safety fix)
@@ -524,17 +579,9 @@ async function runSilentAutoUpdate(options = {}) {
             await applyCodeUpdateViaZip();
         }
 
-        // Step 3: Install new dependencies ONLY if package.json changed
+        // Also repair missing modules, even when package.json itself did not change.
         const pkgHashAfter = fileHash(PKG_FILE);
-        if (pkgHashBefore !== pkgHashAfter) {
-            logUpdate('package.json changed — installing updated dependencies...');
-            const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-            execFileSync(npmCmd, ['install', '--omit=dev', '--no-audit', '--no-fund'], {
-                cwd: ROOT_DIR,
-                stdio: 'ignore',
-                timeout: 180000
-            });
-        }
+        dependenciesRepaired = installDependenciesIfNeeded(pkgHashBefore !== pkgHashAfter) || dependenciesRepaired;
 
         // Step 4: Run safe idempotent database migration (zero data loss)
         const setupDbScript = path.join(ROOT_DIR, 'setup-database.js');
@@ -562,6 +609,7 @@ async function runSilentAutoUpdate(options = {}) {
         return {
             success: true,
             updated: true,
+            dependenciesRepaired,
             fromVersion: check.currentVersion,
             toVersion: state.currentVersion,
             notes: check.notes
@@ -632,20 +680,26 @@ if (require.main === module) {
         .then((res) => {
             if (res.updated) {
                 console.log(`✅ Updated successfully: v${res.fromVersion} -> v${res.toVersion}`);
+            } else if (res.dependenciesRepaired) {
+                console.log('✅ Missing npm dependencies repaired.');
             } else if (!process.argv.includes('--silent')) {
                 console.log(`ℹ️ App is up-to-date (v${res.currentVersion || getLocalVersionInfo().version}).`);
             }
-            process.exit(0);
+            if (!res.success) {
+                console.error(`❌ Update/repair failed: ${res.error || state.lastError || 'unknown error'}`);
+                process.exitCode = 1;
+            }
         })
-        .catch(() => {
-            // Never block app startup if updater encounters a network issue
-            process.exit(0);
+        .catch((err) => {
+            console.error(`❌ Update/repair failed: ${err.message}`);
+            process.exitCode = 1;
         });
 }
 
 module.exports = {
     checkForUpdate,
     runSilentAutoUpdate,
+    findMissingDependencies,
     getUpdateStatus,
     getLocalVersionInfo,
     startPeriodicCheck,

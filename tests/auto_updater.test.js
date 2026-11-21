@@ -14,3 +14,15 @@ test('periodic updater is exported and update status is JSON serializable', (t) 
     assert.equal('periodicTimer' in status, false);
     assert.doesNotThrow(() => JSON.stringify(status));
 });
+
+test('missing declared npm dependencies are detected for repair', () => {
+    const missing = autoUpdater.findMissingDependencies(
+        { express: '^5.0.0', sharp: '^0.35.0' },
+        (name) => {
+            if (name === 'sharp') throw new Error('module missing');
+            return name;
+        }
+    );
+
+    assert.deepEqual(missing, ['sharp']);
+});
