@@ -44,6 +44,10 @@ process.on('uncaughtException', (err) => {
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+const DB_STARTUP_MAX_ATTEMPTS = 30;
+let dbStartupReady = false;
+let dbStartupStage = 'connecting';
+let dbStartupAttempt = 0;
 
 const os = require('os');
 const currentHostname = (os.hostname() || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -140,6 +144,20 @@ app.use('/api', (req, res, next) => {
 
 // 2. Dedicated Health Check Endpoint
 app.get('/api/health', async (req, res) => {
+    const uptimeSeconds = Math.round((Date.now() - serverStartTime) / 1000);
+    if (!dbStartupReady) {
+        return res.status(503).json({
+            success: false,
+            status: dbStartupStage === 'waiting' ? 'WAITING' : 'CONNECTING',
+            dbReady: false,
+            isDatabaseDown: true,
+            startupStage: dbStartupStage,
+            connectionAttempt: dbStartupAttempt,
+            maxAttempts: DB_STARTUP_MAX_ATTEMPTS,
+            uptimeSeconds
+        });
+    }
+
     const alive = await isDbAlive();
     if (alive) {
         res.json({
@@ -147,7 +165,8 @@ app.get('/api/health', async (req, res) => {
             status: 'CONNECTED',
             dbReady: true,
             database: process.env.DB_NAME || 'CashManagement',
-            uptimeSeconds: Math.round((Date.now() - serverStartTime) / 1000),
+            startupStage: 'ready',
+            uptimeSeconds,
             serverTime: new Date()
         });
     } else {
@@ -156,7 +175,8 @@ app.get('/api/health', async (req, res) => {
             status: 'DISCONNECTED',
             dbReady: false,
             isDatabaseDown: true,
-            uptimeSeconds: Math.round((Date.now() - serverStartTime) / 1000),
+            startupStage: 'reconnecting',
+            uptimeSeconds,
             error: 'SQL Server connection is DOWN. Check SQL Server (SQLEXPRESS) service.'
         });
     }
@@ -533,6 +553,11 @@ let dbAliveCache = { value: false, checkedAt: 0 };
 const DB_ALIVE_TTL_MS = 5000;
 
 async function getDbAliveCached() {
+    if (!dbStartupReady) {
+        dbAliveCache = { value: false, checkedAt: Date.now() };
+        return false;
+    }
+
     const now = Date.now();
     if (now - dbAliveCache.checkedAt < DB_ALIVE_TTL_MS) {
         return dbAliveCache.value;
@@ -884,17 +909,20 @@ app.use((err, req, res, next) => {
 
 // Background SQL Server connection manager with auto-retry
 async function connectDbInBackground() {
-    const maxRetries = 30;
+    const maxRetries = DB_STARTUP_MAX_ATTEMPTS;
     let attempts = 0;
     let connected = false;
 
     console.log('🔄 SQL Server se connection ka intezaar...');
     while (attempts < maxRetries && !connected) {
         attempts++;
+        dbStartupAttempt = attempts;
+        dbStartupStage = 'connecting';
         try {
             connected = await isDbAlive();
             if (connected) {
                 console.log(`✅ SQL Server se successfully connect ho gaya (Attempt: ${attempts})!`);
+                dbStartupStage = 'schema';
                 // Self-Healing Dynamic Schema Bootstrapper: Ensures all tables, columns, dynamic fields exist automatically
                 try {
                     const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
@@ -903,11 +931,15 @@ async function connectDbInBackground() {
                     console.error('⚠️ Schema bootstrap warning:', sErr.message);
                 }
                 // Auto-run pending schema migrations (UCL/PAC tables etc.) after DB connect
+                dbStartupStage = 'migrations';
                 try {
                     await runPendingMigrations({ backup: false });
                 } catch (mErr) {
                     console.error('⚠️ Migration run warning:', mErr.message);
                 }
+                dbStartupReady = true;
+                dbStartupStage = 'ready';
+                dbAliveCache = { value: true, checkedAt: Date.now() };
                 // Recurring Transactions: startup par process karo (missed entries catch-up)
                 runRecurring();
                 // Har 1 ghante baad dobara check (server lambe time chalne par bhi due entries generate hoti rahein)
@@ -925,23 +957,29 @@ async function connectDbInBackground() {
     }
 
     if (!connected) {
+        dbStartupStage = 'waiting';
         console.error('⚠️ SQL Server se connect nahi ho paya. Periodic checks background mein jari rahenge.');
         const retryTimer = setInterval(async () => {
             try {
                 if (await isDbAlive()) {
                     console.log('✅ SQL Server ab ready ho gaya hai!');
                     clearInterval(retryTimer);
+                    dbStartupStage = 'schema';
                     try {
                         const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
                         await ensureAutoSchemaBootstrapped();
                     } catch (sErr) {
                         console.error('⚠️ Schema bootstrap warning:', sErr.message);
                     }
+                    dbStartupStage = 'migrations';
                     try {
                         await runPendingMigrations({ backup: false });
                     } catch (mErr) {
                         console.error('⚠️ Migration run warning:', mErr.message);
                     }
+                    dbStartupReady = true;
+                    dbStartupStage = 'ready';
+                    dbAliveCache = { value: true, checkedAt: Date.now() };
                     runRecurring();
                     setInterval(runRecurring, 60 * 60 * 1000);
                 }

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.27",
+  "version": "1.0.28",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Silent auto-update reliability: fix updater startup, preserve release version across installs, and repair local login fallback."
+  "notes": "Startup wait screen with live SQL Server connection and schema progress."
 }

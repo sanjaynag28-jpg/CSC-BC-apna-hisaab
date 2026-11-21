@@ -4,7 +4,7 @@
 ' 3) Phir browser kholta hai. DB connect hone tak app khud "Please wait" screen dikhata hai.
 Option Explicit
 
-Dim fso, sh, baseDir, tries, url
+Dim fso, sh, baseDir, url
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
@@ -15,11 +15,8 @@ If Not ServerReady(url) Then
     sh.Run "cmd /c """ & baseDir & "\server-supervisor.bat""", 0, False
 End If
 
-tries = 0
-Do While tries < 40
-    If ServerReady(url) Then Exit Do
+Do While Not ServerReady(url)
     WScript.Sleep 750
-    tries = tries + 1
 Loop
 
 sh.Run url, 1, False

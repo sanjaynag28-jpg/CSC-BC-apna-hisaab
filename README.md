@@ -24,6 +24,7 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 - ✅ Desktop par **`CSC BC Apna Hisaab`** shortcut banata hai
 - ✅ PC on hote hi server **silently auto-start** hota hai (Windows Task Scheduler) aur background me hamesha chalta rehta hai — crash hone par khud restart
 - ✅ Install ke baad **koi cmd/console window nahi** khulti — sab silent
+- ✅ SQL Server connect hone tak **animated wait screen** server, database connection, retries aur schema preparation ka live status dikhati hai; ready hote hi app khud khul jata hai
 - ✅ **Self-Healing:** internet slow/fail ho to download **auto-retry** (backoff ke saath), adhoora/corrupt download detect hoke **fresh copy**, missing/corrupt project file mile to **auto-repair**, `npm install` aur database step fail ho to **khud dobara** try
 - ✅ Server start hone ke baad **health-check** — na chale to khud restart, phir bhi na chale to log path batata hai
 - ✅ Server start karke browser mein **`http://localhost:3000`** khol deta hai — **Project turant Ready!**
