@@ -59,6 +59,7 @@ scratch/*
 !scratch/verify_all.js
 
 scripts/*
+!scripts/installer_wizard.ps1
 !scripts/auto_setup_windows.ps1
 !scripts/sql_fix.ps1
 !scripts/doctor.ps1

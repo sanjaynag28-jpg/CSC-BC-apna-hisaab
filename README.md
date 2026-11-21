@@ -4,16 +4,23 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 
 ---
 
-## ⚡ 1-Click Direct Download & Complete Auto-Install (Sab Kuch Automatic!)
+## ⚡ 1-Click Master Installer & High-Tech Setup Wizard (Sab Kuch 100% Automatic!)
 
-### Option A — Direct ZIP Download (Sabse Aasan — Bina Coding)
-1. **Direct ZIP Download Karein:**  
-   👉 **[Download Complete Project ZIP](https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip)**
-2. ZIP ko extract (unzip) karein.
-3. Folder ke andar **`ONE_CLICK_SETUP.bat`** par double-click karein!
-
-### Option B — Single-File Installer (WhatsApp/Share ke liye)
-- Bas **`INSTALL_FROM_GITHUB.bat`** download karein aur double-click karein - wo khud GitHub se poora project `%USERPROFILE%\CSC-BC-Apna-Hisaab` (jaise `C:\Users\AapkaNaam\CSC-BC-Apna-Hisaab`) mein download karke complete setup chala dega!
+### Option A — Ek Click me Install (Sabse Aasan — Single-File Download)
+1. GitHub se sirf ek file download karein:  
+   👉 **`INSTALL_NOW.bat`** (ya pura ZIP download karke extract karein).
+2. Double-click karke chalayein — **Khoobsoorat High-Tech Dark Mode Window (GUI)** khulegi!
+3. Yeh tool step-by-step sab check aur verify karega:
+   - File Integrity Check (Corrupt ya missing files GitHub se turant fresh download)
+   - Node.js LTS Runtime Verify/Auto-Install
+   - NPM Packages & Dependencies Auto-Install
+   - Microsoft SQL Server Express Auto-Detect / Silent Setup
+   - TCP/IP Protocols & Mixed Mode Registry Settings
+   - Database Tables, Stored Procedures & Starter Data Seeding
+   - Windows Firewall Port 3000 Access Rule
+   - Desktop Shortcut & Windows Boot Auto-Start
+   - Live Server Health Verification & Browser Auto-Launch (`http://localhost:3000`)
+4. **100% Data Safe:** Aapka `.env`, database, aur uploaded documents kabhi overwrite ya delete nahi hote.
 
 ### `ONE_CLICK_SETUP.bat` Automatically Kya-Kya Karta Hai?
 - ✅ **Node.js LTS** nahi hai toh automatically install karta hai

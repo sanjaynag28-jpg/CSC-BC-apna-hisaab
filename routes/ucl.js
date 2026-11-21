@@ -107,15 +107,22 @@ function parseUCLReceipt(text) {
     };
 
     // 1. SID / Enrollment number (e.g. S325112317949020261120155058)
-    const sidMatch = text.match(/(?:SID|नामांकन|URN)[^\n\r]*?([S§$5\d][\d\s]{18,35})/i) || text.match(/\b([S§$][\d\s]{20,32})\b/i);
+    const sidMatch = text.match(/(?:SID|नामांकन|URN)[^\n\r]*?([S§$5I\d][\d\sIOol|]{18,35})/i) ||
+        text.match(/\b([S§$5I][\d\sIOol|]{20,32})\b/i);
     if (sidMatch) {
-        res.sid = sidMatch[1].replace(/[§$]/g, 'S').replace(/\s+/g, '');
+        res.sid = sidMatch[1].replace(/\s+/g, '').replace(/^[§$5]/, 'S').replace(/[Il|]/g, '1').replace(/[Oo]/g, '0');
+        // UIDAI SID timestamp extraction: Machine (13-14 chars) + YYYYMMDD (8) + HHMMSS (6)
+        const sidDateMatch = res.sid.match(/\d{13,14}(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
+        if (sidDateMatch) {
+            res.date = `${sidDateMatch[1]}-${sidDateMatch[2]}-${sidDateMatch[3]}`;
+            res.time = `${sidDateMatch[4]}:${sidDateMatch[5]}:${sidDateMatch[6]}`;
+        }
     }
 
-    // 2. Date & Time (e.g. 20/11/2026 15:50:58)
+    // 2. Date & Time from printed header (if not already extracted or as verification)
     const dateMatch = text.match(/(?:Date|तिथि)[^\n\r]*?(\d{2})[\/\.\-0]?(\d{2})[\/\.\-0]?(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?/i)
         || text.match(/\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b/);
-    if (dateMatch && dateMatch[3] && dateMatch[3].length === 4) {
+    if ((!res.date || res.date.length < 10) && dateMatch && dateMatch[3] && dateMatch[3].length === 4) {
         res.date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
         if (dateMatch[4]) res.time = dateMatch[4];
     }
@@ -131,16 +138,18 @@ function parseUCLReceipt(text) {
 
     // 4. Resident Name (after Name: or नाम: or Update(s) made as per request)
     const nameMatch = text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i) ||
+        text.match(/नाम\s*[:\-]?\s*([A-Za-z\s]{2,35})/i) ||
         text.match(/(?:Update\(s\)\s*made[^\n\r]*?[:\-]\s*)([A-Za-z\s]{2,30})/i);
     if (nameMatch) {
         let n = nameMatch[1].trim().split('\n')[0].trim();
-        n = n.replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
+        n = n.replace(/^[^a-zA-Z]+/, '').replace(/^(?:M\/s\.?|Shri|Smt|Mr|Mrs|Ms)\s*/i, '').trim();
         if (n.length >= 2) res.customerName = n;
     }
 
     // 5. Masked Aadhaar / Last 4 Digits (e.g. XXXXXXXX1047)
-    const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?(?:[X\dO0]{4,14}\s*)(\d{3,4})/i) ||
-        text.match(/(?:[X\dO0]{6,14}\s*)(\d{3,4})/i);
+    const aadhaarMatch = text.match(/(?:AADHAAR|आधार)[^\n\r]*?(?:[X\dO0\s]{4,14}\s*)(\d{4})\b/i) ||
+        text.match(/(?:[X\dO0\s]{6,14}\s*)(\d{4})\b/i) ||
+        text.match(/(?:AADHAAR|आधार)[^\n\r]*?(?:[X\dO0]{4,14}\s*)(\d{3,4})/i);
     if (aadhaarMatch) {
         res.aadhaarLast4 = aadhaarMatch[1];
         res.aadhaarMasked = 'XXXX-XXXX-' + (res.aadhaarLast4 || 'XXXX');
@@ -194,14 +203,18 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
 
         // Run Sharp preprocessing + Tesseract OCR on the receipt
         let ocrText = '';
+        let imgMeta = null;
         try {
             let imageSource = filePath;
             if (fileType.startsWith('image/')) {
                 try {
-                    const meta = await sharp(filePath).metadata();
-                    const targetWidth = meta.width && meta.width < 1800 ? 1800 : meta.width;
+                    imgMeta = await sharp(filePath).metadata();
+                    const targetWidth = Math.max(2200, imgMeta.width || 0);
                     imageSource = await sharp(filePath)
                         .resize({ width: targetWidth, kernel: sharp.kernel.lanczos3 })
+                        .grayscale()
+                        .gamma(1.2)
+                        .sharpen()
                         .png()
                         .toBuffer();
                 } catch (sharpErr) {
@@ -218,29 +231,86 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
         // Parse extracted text
         const parsed = parseUCLReceipt(ocrText);
 
-        // Targeted Aadhaar Crop Fallback if Aadhaar not cleanly detected
-        if (fileType.startsWith('image/') && (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4)) {
+        // Targeted Regional Crops Fallback for high precision
+        if (fileType.startsWith('image/') && imgMeta) {
+            // 1. Targeted Aadhaar Crop if missing or incomplete
+            if (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4) {
+                try {
+                    const cropBuf = await sharp(filePath)
+                        .extract({
+                            left: Math.round(imgMeta.width * 0.20),
+                            top: Math.round(imgMeta.height * 0.28),
+                            width: Math.round(imgMeta.width * 0.40),
+                            height: Math.round(imgMeta.height * 0.08)
+                        })
+                        .resize({ width: 1200 })
+                        .grayscale()
+                        .gamma(1.3)
+                        .sharpen()
+                        .png()
+                        .toBuffer();
+                    const aadhRes = await Tesseract.recognize(cropBuf, 'eng');
+                    const aadhM = aadhRes.data.text.match(/(?:[X\dO0\s]{4,14})(\d{4})\b/i) ||
+                        aadhRes.data.text.match(/(\d{4})\b/);
+                    if (aadhM) {
+                        parsed.aadhaarLast4 = aadhM[1];
+                        parsed.aadhaarMasked = `XXXX-XXXX-${aadhM[1]}`;
+                    }
+                } catch (aadhErr) {
+                    console.warn('[UCL Aadhaar Crop Fallback Warning]:', aadhErr.message);
+                }
+            }
+
+            // 2. Targeted Mobile Crop (always verify against cropped phone box for 100% accuracy)
             try {
-                const meta = await sharp(filePath).metadata();
-                const cropBuf = await sharp(filePath)
+                const mobCropBuf = await sharp(filePath)
                     .extract({
-                        left: Math.round(meta.width * 0.05),
-                        top: Math.round(meta.height * 0.28),
-                        width: Math.round(meta.width * 0.55),
-                        height: Math.round(meta.height * 0.08)
+                        left: Math.round(imgMeta.width * 0.40),
+                        top: Math.round(imgMeta.height * 0.53),
+                        width: Math.round(imgMeta.width * 0.40),
+                        height: Math.round(imgMeta.height * 0.10)
                     })
                     .resize({ width: 1200 })
                     .grayscale()
+                    .gamma(1.3)
+                    .sharpen()
                     .png()
                     .toBuffer();
-                const aadhRes = await Tesseract.recognize(cropBuf, 'eng');
-                const aadhM = aadhRes.data.text.match(/(?:[X\dO0]{4,14}\s*)(\d{4})/i) || aadhRes.data.text.match(/(\d{4})\s*$/m);
-                if (aadhM) {
-                    parsed.aadhaarLast4 = aadhM[1];
-                    parsed.aadhaarMasked = `XXXX-XXXX-${aadhM[1]}`;
+                const mobRes = await Tesseract.recognize(mobCropBuf, 'eng');
+                const mobM = mobRes.data.text.match(/([6-9]\d{9})/);
+                if (mobM) {
+                    parsed.customerPhone = mobM[1];
                 }
-            } catch (aadhErr) {
-                console.warn('[UCL Aadhaar Crop Fallback Warning]:', aadhErr.message);
+            } catch (mobErr) {
+                console.warn('[UCL Mobile Crop Fallback Warning]:', mobErr.message);
+            }
+
+            // 3. Targeted Name Crop if missing
+            if (!parsed.customerName || parsed.customerName.length < 2) {
+                try {
+                    const nameCropBuf = await sharp(filePath)
+                        .extract({
+                            left: Math.round(imgMeta.width * 0.10),
+                            top: Math.round(imgMeta.height * 0.40),
+                            width: Math.round(imgMeta.width * 0.50),
+                            height: Math.round(imgMeta.height * 0.15)
+                        })
+                        .resize({ width: 1400 })
+                        .grayscale()
+                        .gamma(1.3)
+                        .sharpen()
+                        .png()
+                        .toBuffer();
+                    const nameRes = await Tesseract.recognize(nameCropBuf, 'eng');
+                    const nameM = nameRes.data.text.match(/(?:Name|नाम)\s*[:\-]\s*([A-Za-z\s]{2,35})/i) ||
+                        nameRes.data.text.match(/([A-Za-z\s]{2,30})\s*$/m);
+                    if (nameM) {
+                        let cleanN = nameM[1].trim().replace(/^[^a-zA-Z]+/, '');
+                        if (cleanN.length >= 2) parsed.customerName = cleanN;
+                    }
+                } catch (nameErr) {
+                    console.warn('[UCL Name Crop Fallback Warning]:', nameErr.message);
+                }
             }
         }
 

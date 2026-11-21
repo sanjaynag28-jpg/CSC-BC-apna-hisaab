@@ -1,4 +1,4 @@
-﻿<#
+<#
   scripts/auto_setup_windows.ps1
   ============================================================================
   1-Click Full Automatic Setup Engine for CSC & BC Apna Hisaab (Windows)
