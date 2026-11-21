@@ -469,17 +469,29 @@ function findMissingDependencies(dependencies, resolveModule = (name) => require
     });
 }
 
+function npmInstallCommand(platform = process.platform, commandShell = process.env.ComSpec || 'cmd.exe') {
+    const npmArgs = ['install', '--omit=dev', '--no-audit', '--no-fund'];
+    if (platform === 'win32') {
+        return {
+            command: commandShell,
+            args: ['/d', '/c', `npm.cmd ${npmArgs.join(' ')}`]
+        };
+    }
+    return { command: 'npm', args: npmArgs };
+}
+
 function installDependenciesIfNeeded(force = false) {
     const packageJson = JSON.parse(fs.readFileSync(PKG_FILE, 'utf8'));
     const missing = findMissingDependencies(packageJson.dependencies);
     if (!force && missing.length === 0) return false;
 
     logUpdate(`Installing npm dependencies${missing.length ? ` (missing: ${missing.join(', ')})` : ''}...`);
-    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    execFileSync(npmCmd, ['install', '--omit=dev', '--no-audit', '--no-fund'], {
+    const npmCommand = npmInstallCommand();
+    execFileSync(npmCommand.command, npmCommand.args, {
         cwd: ROOT_DIR,
         stdio: 'ignore',
-        timeout: 300000
+        timeout: 300000,
+        windowsHide: true
     });
 
     const stillMissing = findMissingDependencies(packageJson.dependencies);
@@ -687,8 +699,9 @@ if (require.main === module) {
             }
             if (!res.success) {
                 console.error(`❌ Update/repair failed: ${res.error || state.lastError || 'unknown error'}`);
-                process.exitCode = 1;
+                process.exit(1);
             }
+            process.exit(0);
         })
         .catch((err) => {
             console.error(`❌ Update/repair failed: ${err.message}`);
@@ -700,6 +713,7 @@ module.exports = {
     checkForUpdate,
     runSilentAutoUpdate,
     findMissingDependencies,
+    npmInstallCommand,
     getUpdateStatus,
     getLocalVersionInfo,
     startPeriodicCheck,

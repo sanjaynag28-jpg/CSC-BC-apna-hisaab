@@ -39,6 +39,7 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
   3. Safe DB migration chalti hai aur server gracefully restart hota hai.
 - Offline hone par update silently skip ho jata hai aur app bina ruke chalta hai.
 - Missing npm package (jaise `sharp`) detect hone par updater package ko repair karta hai, chahe `package.json` badla na ho.
+- Windows par npm install ko `cmd.exe` ke through chalaya jata hai, isliye `spawnSync npm.cmd EINVAL` se update rukta nahi.
 - Manual update/repair ke liye **`UPDATE_APP.bat`** double-click karein; yeh update ke baad hidden server launcher bhi chalata hai.
 
 ---

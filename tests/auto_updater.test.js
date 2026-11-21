@@ -26,3 +26,13 @@ test('missing declared npm dependencies are detected for repair', () => {
 
     assert.deepEqual(missing, ['sharp']);
 });
+
+test('Windows dependency installation runs npm.cmd through the command interpreter', () => {
+    assert.deepEqual(
+        autoUpdater.npmInstallCommand('win32', 'C:\\Windows\\System32\\cmd.exe'),
+        {
+            command: 'C:\\Windows\\System32\\cmd.exe',
+            args: ['/d', '/c', 'npm.cmd install --omit=dev --no-audit --no-fund']
+        }
+    );
+});
