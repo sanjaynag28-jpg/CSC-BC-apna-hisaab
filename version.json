@@ -1,7 +1,7 @@
 {
-  "version": "1.0.31",
+  "version": "1.0.32",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Adds one-click legacy dependency repair and keeps updater running after preflight errors."
+  "notes": "Makes database setup stored procedures compatible with SQL Server 2012 and newer."
 }

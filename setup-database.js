@@ -31,6 +31,36 @@ function safeBracketIdent(name) {
     return '[' + String(name || 'CashManagement').replace(/\]/g, ']]') + ']';
 }
 
+function getStoredProcedureName(batch) {
+    const match = String(batch).match(/^CREATE\s+OR\s+ALTER\s+PROCEDURE\s+((?:\[?\w+\]?\.)?\[?\w+\]?)/i);
+    if (!match) return null;
+
+    const parts = match[1].split('.').map((part) => part.replace(/^\[|\]$/g, ''));
+    if (parts.length === 1) parts.unshift('dbo');
+
+    return {
+        objectName: parts.join('.'),
+        declarationName: parts.map((part) => `[${part.replace(/\]/g, ']]')}]`).join('.')
+    };
+}
+
+function prepareStoredProcedureBatch(batch, exists) {
+    let trimmed = String(batch).trim();
+    if (!/CREATE\s+OR\s+ALTER\s+PROCEDURE/i.test(trimmed)) return trimmed;
+
+    trimmed = trimmed.replace(/^(\s*--[^\r\n]*\r?\n)+/i, '').trim();
+    const procedure = getStoredProcedureName(trimmed);
+    if (!procedure) {
+        throw new Error('Unsupported stored procedure declaration in database/setup.sql');
+    }
+
+    const verb = exists ? 'ALTER' : 'CREATE';
+    return trimmed.replace(
+        /^CREATE\s+OR\s+ALTER\s+PROCEDURE\s+(?:\[?\w+\]?\.)?\[?\w+\]?/i,
+        `${verb} PROCEDURE ${procedure.declarationName}`
+    );
+}
+
 async function ensureDatabaseExists(baseCfg) {
     const dbName = baseCfg.database;
     const masterCfg = { ...baseCfg, database: 'master' };
@@ -203,7 +233,17 @@ async function setup() {
             if (/^\s*IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+name\s+FROM\s+sys\.databases/i.test(trimmed)) continue;
             if (/^\s*USE\s+\[?CashManagement\]?\s*;?\s*$/i.test(trimmed)) continue;
             if (/CREATE\s+OR\s+ALTER\s+PROCEDURE/i.test(trimmed)) {
-                trimmed = trimmed.replace(/^(\s*--[^\r\n]*\r?\n)+/i, '').trim();
+                const procedure = getStoredProcedureName(
+                    trimmed.replace(/^(\s*--[^\r\n]*\r?\n)+/i, '').trim()
+                );
+                if (!procedure) {
+                    throw new Error('Unsupported stored procedure declaration in database/setup.sql');
+                }
+
+                const result = await pool.request()
+                    .input('objectName', sql.NVarChar(776), procedure.objectName)
+                    .query("SELECT OBJECT_ID(@objectName, 'P') AS ObjectId");
+                trimmed = prepareStoredProcedureBatch(trimmed, Boolean(result.recordset[0].ObjectId));
             }
             if (trimmed) {
                 await pool.request().query(trimmed);
@@ -235,4 +275,11 @@ async function setup() {
     }
 }
 
-setup();
+if (require.main === module) {
+    setup();
+}
+
+module.exports = {
+    getStoredProcedureName,
+    prepareStoredProcedureBatch
+};
