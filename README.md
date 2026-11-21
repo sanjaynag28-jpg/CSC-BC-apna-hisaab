@@ -29,6 +29,12 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 - ✅ Server start hone ke baad **health-check** — na chale to khud restart, phir bhi na chale to log path batata hai
 - ✅ Server start karke browser mein **`http://localhost:3000`** khol deta hai — **Project turant Ready!**
 
+### Project Uninstall
+- **`UNINSTALL_PROJECT.bat`** ko Run as administrator karein. Yeh exact project folder aur app ke startup entries, scheduled tasks, shortcuts, firewall rule, aur diagnostic files ko hi target karta hai.
+- Project folder (including uploads, backups, `.env`, and `node_modules`) permanently delete karne se pehle exact confirmation maangta hai. `.env` se pehchane gaye local `CashManagement` database ke liye alag confirmation hoti hai.
+- Global Node.js aur default SQL Server (`MSSQLSERVER`) ko nahi hatata. `CMBCSQL` instance ko sirf tab uninstall karne ka option deta hai jab usmein koi user database na ho, aur alag confirmation di jaye.
+- Unrelated databases, services, shortcuts, and firewall rules preserve kiye jaate hain. Fresh install ke liye existing `INSTALL_FROM_GITHUB.bat` ya `ONE_CLICK_SETUP.bat` use karein.
+
 ---
 
 ## 🔄 Automatic Silent Updates (Lifetime Auto-Update)

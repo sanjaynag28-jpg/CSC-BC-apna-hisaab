@@ -1,7 +1,7 @@
 {
-  "version": "1.0.32",
+  "version": "1.0.33",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Makes database setup stored procedures compatible with SQL Server 2012 and newer."
+  "notes": "Adds a guarded project-only uninstaller and preserves shared Node and SQL Server installations."
 }

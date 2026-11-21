@@ -62,6 +62,7 @@ scripts/*
 !scripts/auto_setup_windows.ps1
 !scripts/sql_fix.ps1
 !scripts/doctor.ps1
+!scripts/uninstall_project.ps1
 !scripts/migration_rule1_sourceline.js
 !scripts/reconcile_and_backfill_all_sn.js
 !scripts/create_project_zip.js
