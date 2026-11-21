@@ -719,8 +719,6 @@ app.get('/api/badges', async (req, res) => {
                 (SELECT COUNT(*) FROM KhataEntries WHERE UserID = @userId) AS khatabook,
                 (SELECT COUNT(*) FROM Documents WHERE UserID = @userId) AS documents,
                 (SELECT COUNT(*) FROM CSCApplications WHERE IsActive = 1 AND UserID = @userId) AS csc,
-                (SELECT COUNT(*) FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId) AS ucl,
-                (SELECT COUNT(*) FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId) AS pac,
                 (SELECT COUNT(*) FROM Budgets WHERE UserID = @userId) AS budgets,
                 (SELECT COUNT(*) FROM Bills WHERE UserID = @userId) AS bills,
                 (SELECT COUNT(*) FROM Categories WHERE IsActive = 1 AND UserID = @userId) AS categories,
@@ -732,7 +730,22 @@ app.get('/api/badges', async (req, res) => {
                 ) AS recyclebin
         `;
         const result = await query(sql, { userId });
-        res.json({ success: true, data: result.recordset[0] || {} });
+        const base = result.recordset[0] || {};
+
+        // UCL/PAC counts: alag se try karo taaki purane PCs par (jahan migration 010 abhi nahi chali)
+        // UCLUpdates/PACEntries table missing hone par poora API fail na ho.
+        let ucl = 0;
+        let pac = 0;
+        try {
+            const uclRes = await query('SELECT COUNT(*) AS c FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId', { userId });
+            ucl = uclRes.recordset?.[0]?.c || 0;
+        } catch (_) { ucl = 0; }
+        try {
+            const pacRes = await query("SELECT COUNT(*) AS c FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId", { userId });
+            pac = pacRes.recordset?.[0]?.c || 0;
+        } catch (_) { pac = 0; }
+
+        res.json({ success: true, data: { ...base, ucl, pac } });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
