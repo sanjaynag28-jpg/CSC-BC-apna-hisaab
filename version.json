@@ -1,7 +1,7 @@
 {
-  "version": "1.0.22",
-  "releasedAt": "2026-11-18",
+  "version": "1.0.23",
+  "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Sidebar header me live app version badge (HisaabBC ke aage) - auto-update par khud badalta hai"
+  "notes": "Auto-update delivery fix (version bump so installed PCs receive latest code), fresh-install schema parity (006-008), metadata-driven modules, UCL/OCR features, auto-start task name fix"
 }

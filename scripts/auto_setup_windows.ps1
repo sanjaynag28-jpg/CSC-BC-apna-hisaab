@@ -906,10 +906,17 @@ function Register-AutoStartTask {
 function Install-AutoStart {
     Write-Step 6 8 "Configuring silent auto-start on every PC boot..."
     try {
-        $taskName = "CSC BC Apna Hissab Server"
+        # Canonical task name — Launch-App/doctor bhi yahi naam use karte hain.
+        $taskName = "CSC BC Apna Hisaab Server"
+
+        # Legacy typo tasks (purane installs) hata do taaki duplicate launcher na chale.
+        foreach ($legacy in @("CSC BC Apna Hissab Server", "CSC BC Apna Hissab Server (Login)", "CSC BC Apna Hisaab Server (Login)")) {
+            schtasks /Query /TN "$legacy" > $null 2>&1
+            if ($LASTEXITCODE -eq 0) { schtasks /Delete /TN "$legacy" /F > $null 2>&1 }
+        }
+
         $vbs = Join-Path $ProjectDir "start-hidden.vbs"
         $ok = Register-AutoStartTask -TaskName $taskName -VbsPath $vbs
-        [void](Register-AutoStartTask -TaskName "$taskName (Login)" -VbsPath $vbs)
         if ($ok) {
             Write-Ok "Auto-start task installed (login par server silently chalu)."
         } else {
