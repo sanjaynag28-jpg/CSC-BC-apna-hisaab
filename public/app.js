@@ -15518,7 +15518,7 @@ function renderUniversalSearchResults(json, q) {
         } else if (um.SourceModule === 'Khata') {
             jumpFn = `onUniSelectKhata(${um.RecordID}, ${um.details?.CustomerID || 0})`;
             jumpLabel = 'Khata Slip';
-        } else if (um.SourceModule === 'Invoices') {
+        } else if (um.SourceModule === 'Invoices' || um.SourceModule === 'Invoice') {
             jumpFn = `onUniSelectInvoice(${um.RecordID})`;
             jumpLabel = 'Invoice Bill';
         } else if (um.SourceModule === 'Cashbook') {
@@ -15899,7 +15899,7 @@ window.openUniversalRecordDetail = async function (sourceModule, recordId, snCod
             if (um.SourceModule === 'CSC') return openCSCDetailModal(um.RecordID);
             if (um.SourceModule === 'BC') return onUniSelectBC(um.RecordID);
             if (um.SourceModule === 'Khata') return onUniSelectKhata(um.RecordID, um.details?.CustomerID || 0);
-            if (um.SourceModule === 'Invoices') return onUniSelectInvoice(um.RecordID);
+            if (um.SourceModule === 'Invoices' || um.SourceModule === 'Invoice') return onUniSelectInvoice(um.RecordID);
             if (um.SourceModule === 'Cashbook') return onUniSelectTrans(um.RecordID);
         }
 

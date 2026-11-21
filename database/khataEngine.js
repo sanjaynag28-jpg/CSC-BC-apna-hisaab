@@ -46,7 +46,7 @@ async function addKhataEntry(tQuery, {
     if (!resolvedSourceModule) {
         if (CSCAppID) { resolvedSourceModule = 'CSC'; resolvedSourceID = parseInt(CSCAppID); }
         else if (BCID) { resolvedSourceModule = 'BC'; resolvedSourceID = parseInt(BCID); }
-        else if (InvoiceID) { resolvedSourceModule = 'Invoice'; resolvedSourceID = parseInt(InvoiceID); }
+        else if (InvoiceID) { resolvedSourceModule = 'Invoices'; resolvedSourceID = parseInt(InvoiceID); }
         else if (PaymentID) { resolvedSourceModule = 'BillPay'; resolvedSourceID = parseInt(PaymentID); }
         else if (ReferenceNo && ReferenceNo.startsWith('BP-')) {
             resolvedSourceModule = 'BillPay';

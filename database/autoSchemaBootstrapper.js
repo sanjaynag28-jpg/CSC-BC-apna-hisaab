@@ -333,7 +333,7 @@ async function ensureAutoSchemaBootstrapped() {
                         WHEN k.SourceModule IS NOT NULL THEN k.SourceModule
                         WHEN k.CSCAppID IS NOT NULL THEN 'CSC'
                         WHEN k.BCID IS NOT NULL THEN 'BC'
-                        WHEN k.InvoiceID IS NOT NULL THEN 'Invoice'
+                        WHEN k.InvoiceID IS NOT NULL THEN 'Invoices'
                         WHEN k.PaymentID IS NOT NULL THEN 'BillPay'
                         WHEN k.ReferenceNo LIKE 'BP-%' THEN 'BillPay'
                         ELSE 'Khata'

@@ -509,7 +509,7 @@ router.get('/master', async (req, res) => {
 
                     -- 5. Sale Invoices
                     SELECT 
-                        'Invoice' as SourceModule,
+                        'Invoices' as SourceModule,
                         i.InvoiceID as RecordID,
                         i.GlobalSerialNo as GlobalSerialNo,
                         i.SNCode as SNCode,
@@ -988,7 +988,7 @@ router.get('/master', async (req, res) => {
 
             const sql = `
                 SELECT 
-                    'Invoice' as SourceModule,
+                    'Invoices' as SourceModule,
                     i.InvoiceID as RecordID,
                     i.GlobalSerialNo as GlobalSerialNo,
                     i.SNCode as SNCode,
@@ -1330,7 +1330,7 @@ router.get('/export/excel', async (req, res) => {
             } else if (type === 'Cashbook') {
                 typeCond = " AND t.SourceModule = 'Cashbook'";
             } else if (type === 'Invoice' || type === 'Invoices') {
-                typeCond = " AND t.SourceModule = 'Invoice'";
+                typeCond = " AND t.SourceModule IN ('Invoices', 'Invoice')";
             } else {
                 typeCond = ' AND t.EntryType = @type';
                 params.type = type;
@@ -1631,7 +1631,7 @@ router.get('/export/csv', async (req, res) => {
             if (type === 'CSC' || type === 'CSC Application') { csvExtraParts.push("t.SourceModule = 'CSC'"); }
             else if (type === 'BC' || type === 'BC Banking') { csvExtraParts.push("t.SourceModule = 'BC Banking'"); }
             else if (type === 'Cashbook') { csvExtraParts.push("t.SourceModule = 'Cashbook'"); }
-            else if (type === 'Invoice' || type === 'Invoices') { csvExtraParts.push("t.SourceModule = 'Invoice'"); }
+            else if (type === 'Invoice' || type === 'Invoices') { csvExtraParts.push("t.SourceModule IN ('Invoices', 'Invoice')"); }
             else { csvExtraParts.push('t.EntryType = @type'); params.type = type; }
         }
         if (status && status !== 'all') {
