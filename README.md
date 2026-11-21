@@ -1,4 +1,4 @@
-﻿# CSC & BC Apna Hisaab (Cash Management System)
+# CSC & BC Apna Hisaab (Cash Management System)
 
 Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Payments, Khatabook, Customer 360 & Invoicing** software built with Node.js, Express, and SQL Server.
 
@@ -20,7 +20,9 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
    - Windows Firewall Port 3000 Access Rule
    - Desktop Shortcut & Windows Boot Auto-Start
    - Live Server Health Verification & Browser Auto-Launch (`http://localhost:3000`)
-4. **100% Data Safe:** Aapka `.env`, database, aur uploaded documents kabhi overwrite ya delete nahi hote.
+4. **🤖 Free AI Auto-Fix & Self-Healing:** Agar kisi PC par koi problem aati hai (Port 3000 block, SQL service logon error, missing Visual C++, TLS issues), toh built-in Free AI Engine live commands chala kar use khud theek kar deta hai.
+5. **`AI_DOCTOR.bat` (1-Click Emergency Doctor):** Kabhi bhi kisi PC par software na chale, bas `AI_DOCTOR.bat` double-click karein — AI poori machine diagnose karke live repair kar dega!
+6. **100% Data Safe:** Aapka `.env`, database, aur uploaded documents kabhi overwrite ya delete nahi hote.
 
 ### `ONE_CLICK_SETUP.bat` Automatically Kya-Kya Karta Hai?
 - ✅ **Node.js LTS** nahi hai toh automatically install karta hai

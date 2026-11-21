@@ -650,6 +650,31 @@ function Exec-Step11-HealthCheck {
     return $true
 }
 
+function Repair-WithAiDoctor([int]$FailedStep, [string]$Reason = '') {
+    Write-WizardLog "🤖 [Free AI Auto-Fix] Step $FailedStep me rukawat aayi. AI live repair engine execute ho raha hai..." 'WARN'
+    $docScript = Join-Path $PSScriptRoot 'ai_doctor.ps1'
+    if (-not (Test-Path $docScript)) {
+        $docScript = Join-Path $ProjectDir 'scripts\ai_doctor.ps1'
+    }
+    if (-not (Test-Path $docScript)) {
+        $docScript = Join-Path $env:TEMP 'cmbc_ai_doctor.ps1'
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/ai_doctor.ps1" -OutFile $docScript -UseBasicParsing -TimeoutSec 30
+        } catch { }
+    }
+    if (Test-Path $docScript) {
+        try {
+            & $docScript -ProjectDir $ProjectDir -AutoFix | Out-Null
+            Write-WizardLog "🤖 [Free AI Auto-Fix] AI live auto-remediation completed. Resuming installation..." 'OK'
+            return $true
+        } catch {
+            Write-WizardLog "🤖 [Free AI Auto-Fix] Notice: $($_.Exception.Message)" 'WARN'
+        }
+    }
+    return $false
+}
+
 # ----------------------------------------------------------------------------
 # MAIN WORKFLOW RUNNER
 # ----------------------------------------------------------------------------
@@ -658,20 +683,21 @@ function Start-FullSetupWorkflow {
         try {
             Write-WizardLog "========================================================"
             Write-WizardLog " CSC & BC Apna Hisaab - Automatic Setup & Repair Wizard"
+            Write-WizardLog " 🤖 Free AI Live Problem Solver & Self-Healing: ACTIVE"
             Write-WizardLog " Project Directory: $ProjectDir"
             Write-WizardLog "========================================================"
 
-            $null = Exec-Step1-Environment
-            $null = Exec-Step2-Integrity
-            $null = Exec-Step3-NodeJs
-            $null = Exec-Step4-Dependencies
-            $null = Exec-Step5-SqlServer
-            $null = Exec-Step6-TcpAndAuth
-            $null = Exec-Step7-LoginAndEnv
-            $null = Exec-Step8-DatabaseTables
-            $null = Exec-Step9-Firewall
-            $null = Exec-Step10-Shortcuts
-            $null = Exec-Step11-HealthCheck
+            $s1 = Exec-Step1-Environment;   if (-not $s1) { [void](Repair-WithAiDoctor 1); $null = Exec-Step1-Environment }
+            $s2 = Exec-Step2-Integrity;     if (-not $s2) { [void](Repair-WithAiDoctor 2); $null = Exec-Step2-Integrity }
+            $s3 = Exec-Step3-NodeJs;        if (-not $s3) { [void](Repair-WithAiDoctor 3); $null = Exec-Step3-NodeJs }
+            $s4 = Exec-Step4-Dependencies;  if (-not $s4) { [void](Repair-WithAiDoctor 4); $null = Exec-Step4-Dependencies }
+            $s5 = Exec-Step5-SqlServer;     if (-not $s5) { [void](Repair-WithAiDoctor 5); $null = Exec-Step5-SqlServer }
+            $s6 = Exec-Step6-TcpAndAuth;    if (-not $s6) { [void](Repair-WithAiDoctor 6); $null = Exec-Step6-TcpAndAuth }
+            $s7 = Exec-Step7-LoginAndEnv;   if (-not $s7) { [void](Repair-WithAiDoctor 7); $null = Exec-Step7-LoginAndEnv }
+            $s8 = Exec-Step8-DatabaseTables;if (-not $s8) { [void](Repair-WithAiDoctor 8); $null = Exec-Step8-DatabaseTables }
+            $s9 = Exec-Step9-Firewall;      if (-not $s9) { [void](Repair-WithAiDoctor 9); $null = Exec-Step9-Firewall }
+            $s10 = Exec-Step10-Shortcuts;   if (-not $s10) { [void](Repair-WithAiDoctor 10); $null = Exec-Step10-Shortcuts }
+            $s11 = Exec-Step11-HealthCheck; if (-not $s11) { [void](Repair-WithAiDoctor 11); $null = Exec-Step11-HealthCheck }
 
             Write-WizardLog "========================================================"
             Write-WizardLog " 🎉 SETUP & HEALTH VERIFICATION 100% COMPLETE!" 'OK'
@@ -743,8 +769,8 @@ if ($guiAvailable) {
                     <TextBlock Text="CSC &amp; BC Apna Hisaab" FontSize="19" FontWeight="Bold" Foreground="#34d399"/>
                     <TextBlock Text="1-Click Enterprise Setup &amp; Auto-Repair Engine • Zero Manual Work" FontSize="12.5" Foreground="#94a3b8" Margin="0,2,0,0"/>
                 </StackPanel>
-                <Border Grid.Column="2" Background="#1e293b" CornerRadius="8" Padding="10,6" VerticalAlignment="Center">
-                    <TextBlock Text="100% AUTOMATED" FontSize="11" FontWeight="Bold" Foreground="#38bdf8"/>
+                <Border Grid.Column="2" Background="#064e3b" BorderBrush="#059669" BorderThickness="1" CornerRadius="8" Padding="10,6" VerticalAlignment="Center">
+                    <TextBlock Text="🤖 FREE AI AUTO-FIX ACTIVE" FontSize="11" FontWeight="Bold" Foreground="#34d399"/>
                 </Border>
             </Grid>
         </Border>

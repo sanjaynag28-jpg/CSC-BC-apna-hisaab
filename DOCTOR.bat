@@ -15,6 +15,11 @@ echo   CSC ^& BC APNA HISAAB - DOCTOR (Auto-Diagnose ^& Fix)
 echo ============================================================
 echo.
 
+if exist "%~dp0scripts\ai_doctor.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ai_doctor.ps1" -ProjectDir "%~dp0" -AutoFix
+    set "RC=%errorlevel%"
+    goto finish
+)
 if exist "%~dp0scripts\doctor.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\doctor.ps1"
     set "RC=%errorlevel%"
