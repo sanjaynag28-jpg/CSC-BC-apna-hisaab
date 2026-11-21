@@ -827,7 +827,7 @@ if ($guiAvailable) {
                     <TextBlock Text="BC" FontSize="18" FontWeight="Bold" Foreground="#34d399" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="CSC &amp; BC APNA HISAAB" FontSize="18" FontWeight="Bold" Foreground="#38bdf8" LetterSpacing="0.5"/>
+                    <TextBlock Text="CSC &amp; BC APNA HISAAB" FontSize="18" FontWeight="Bold" Foreground="#38bdf8"/>
                     <TextBlock Text="Master Enterprise 1-Click Automated Setup &amp; Health Engine - Zero Manual Work" FontSize="11.5" Foreground="#94a3b8" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Border Grid.Column="2" Background="#064e3b" BorderBrush="#059669" BorderThickness="1" CornerRadius="8" Padding="10,6" VerticalAlignment="Center">
@@ -1037,142 +1037,149 @@ if ($guiAvailable) {
 </Window>
 '@
 
-    $reader = New-Object System.Xml.XmlNodeReader $xaml
-    $global:Window = [System.Windows.Markup.XamlReader]::Load($reader)
+    try {
+        $reader = New-Object System.Xml.XmlNodeReader $xaml
+        $global:Window = [System.Windows.Markup.XamlReader]::Load($reader)
 
-    # UI Element Handles
-    $global:CurrentActionText = $global:Window.FindName("CurrentActionText")
-    $global:TimerText = $global:Window.FindName("TimerText")
-    $global:SpeedProgressText = $global:Window.FindName("SpeedProgressText")
-    $global:SubStepPctText = $global:Window.FindName("SubStepPctText")
-    $global:OverallPctText = $global:Window.FindName("OverallPctText")
-    $global:OverallProgressBar = $global:Window.FindName("OverallProgressBar")
-    $global:LogTextBox = $global:Window.FindName("LogTextBox")
-    $global:LaunchBtn = $global:Window.FindName("LaunchBtn")
-    $global:LaunchBtnText = $global:Window.FindName("LaunchBtnText")
+        # UI Element Handles
+        $global:CurrentActionText = $global:Window.FindName("CurrentActionText")
+        $global:TimerText = $global:Window.FindName("TimerText")
+        $global:SpeedProgressText = $global:Window.FindName("SpeedProgressText")
+        $global:SubStepPctText = $global:Window.FindName("SubStepPctText")
+        $global:OverallPctText = $global:Window.FindName("OverallPctText")
+        $global:OverallProgressBar = $global:Window.FindName("OverallProgressBar")
+        $global:LogTextBox = $global:Window.FindName("LogTextBox")
+        $global:LaunchBtn = $global:Window.FindName("LaunchBtn")
+        $global:LaunchBtnText = $global:Window.FindName("LaunchBtnText")
 
-    $global:LaunchBtn.Add_Click({
-        Start-Process "http://localhost:3000"
-        $global:Window.Close()
-    })
+        $global:LaunchBtn.Add_Click({
+            Start-Process "http://localhost:3000"
+            $global:Window.Close()
+        })
 
-    # Setup Background Worker Runspace
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
-    $ps = [powershell]::Create()
-    $ps.Runspace = $rs
-    [void]$ps.AddScript($workerBlock.ToString())
-    [void]$ps.AddArgument($sync)
-    [void]$ps.AddArgument($ProjectDir)
-    [void]$ps.AddArgument($isAdmin)
-    [void]$ps.AddArgument($RequiredFiles)
-    [void]$ps.AddArgument($LogFile)
+        # Setup Background Worker Runspace
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript($workerBlock.ToString())
+        [void]$ps.AddArgument($sync)
+        [void]$ps.AddArgument($ProjectDir)
+        [void]$ps.AddArgument($isAdmin)
+        [void]$ps.AddArgument($RequiredFiles)
+        [void]$ps.AddArgument($LogFile)
 
-    # High-FPS UI Dispatcher Timer (Updates UI every 40ms without any freeze)
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $logIndex = 0
+        # High-FPS UI Dispatcher Timer (Updates UI every 40ms without any freeze)
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $logIndex = 0
 
-    $timer = New-Object System.Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(40)
-    $timer.Add_Tick({
-        # Update Timer Elapsed
-        $ts = $stopwatch.Elapsed
-        $global:TimerText.Text = "{0:D2}:{1:D2}" -f [int]$ts.TotalMinutes, $ts.Seconds
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromMilliseconds(40)
+        $timer.Add_Tick({
+            # Update Timer Elapsed
+            $ts = $stopwatch.Elapsed
+            $global:TimerText.Text = "{0:D2}:{1:D2}" -f [int]$ts.TotalMinutes, $ts.Seconds
 
-        # Update Live Banners
-        $global:CurrentActionText.Text = $sync.CurrentAction
-        $global:SpeedProgressText.Text = $sync.SpeedProgressText
-        $global:SubStepPctText.Text = $sync.SubStepPctText
+            # Update Live Banners
+            $global:CurrentActionText.Text = $sync.CurrentAction
+            $global:SpeedProgressText.Text = $sync.SpeedProgressText
+            $global:SubStepPctText.Text = $sync.SubStepPctText
 
-        # Update Main Overall Progress Bar
-        $pct = [int]$sync.OverallPct
-        $global:OverallProgressBar.Value = $pct
-        $global:OverallPctText.Text = "$pct%"
-        $global:LaunchBtnText.Text = "Setup Chal Raha Hai... Kripya Wait Karein ($pct%)"
+            # Update Main Overall Progress Bar
+            $pct = [int]$sync.OverallPct
+            $global:OverallProgressBar.Value = $pct
+            $global:OverallPctText.Text = "$pct%"
+            $global:LaunchBtnText.Text = "Setup Chal Raha Hai... Kripya Wait Karein ($pct%)"
 
-        # Update Each of 11 Step Cards
-        for ($k = 1; $k -le 11; $k++) {
-            $statusEl = $global:Window.FindName("StepStatus$k")
-            $subEl = $global:Window.FindName("StepSub$k")
-            $barEl = $global:Window.FindName("StepMiniBar$k")
-            $cardEl = $global:Window.FindName("StepCard$k")
+            # Update Each of 11 Step Cards
+            for ($k = 1; $k -le 11; $k++) {
+                $statusEl = $global:Window.FindName("StepStatus$k")
+                $subEl = $global:Window.FindName("StepSub$k")
+                $barEl = $global:Window.FindName("StepMiniBar$k")
+                $cardEl = $global:Window.FindName("StepCard$k")
 
-            $st = $sync.StepStates[$k]
-            $sp = [int]$sync.StepPercents[$k]
-            $sb = $sync.StepSubTexts[$k]
+                $st = $sync.StepStates[$k]
+                $sp = [int]$sync.StepPercents[$k]
+                $sb = $sync.StepSubTexts[$k]
 
-            if ($barEl) { $barEl.Value = $sp }
-            if ($subEl -and $sb) { $subEl.Text = $sb }
+                if ($barEl) { $barEl.Value = $sp }
+                if ($subEl -and $sb) { $subEl.Text = $sb }
 
-            if ($statusEl -and $cardEl) {
-                switch ($st) {
-                    'RUNNING' {
-                        $statusEl.Text = "[ $sp% RUNNING ]"
-                        $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#38bdf8")
-                        $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#172554")
-                        $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#38bdf8")
-                    }
-                    'SUCCESS' {
-                        $statusEl.Text = "[ 100% READY ]"
-                        $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
-                        $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#064e3b")
-                        $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
-                    }
-                    'REPAIRED' {
-                        $statusEl.Text = "[ AUTO-FIXED ]"
-                        $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
-                        $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#064e3b")
-                        $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
-                    }
-                    'FAILED' {
-                        $statusEl.Text = "[ FAILED ]"
-                        $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f87171")
-                        $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#450a0a")
-                        $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#dc2626")
-                    }
-                    default {
-                        $statusEl.Text = "[ WAITING ]"
-                        $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#64748b")
-                        $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0f172a")
-                        $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1e293b")
+                if ($statusEl -and $cardEl) {
+                    switch ($st) {
+                        'RUNNING' {
+                            $statusEl.Text = "[ $sp% RUNNING ]"
+                            $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#38bdf8")
+                            $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#172554")
+                            $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#38bdf8")
+                        }
+                        'SUCCESS' {
+                            $statusEl.Text = "[ 100% READY ]"
+                            $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
+                            $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#064e3b")
+                            $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
+                        }
+                        'REPAIRED' {
+                            $statusEl.Text = "[ AUTO-FIXED ]"
+                            $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
+                            $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#064e3b")
+                            $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
+                        }
+                        'FAILED' {
+                            $statusEl.Text = "[ FAILED ]"
+                            $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#f87171")
+                            $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#450a0a")
+                            $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#dc2626")
+                        }
+                        default {
+                            $statusEl.Text = "[ WAITING ]"
+                            $statusEl.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#64748b")
+                            $cardEl.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#0f172a")
+                            $cardEl.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1e293b")
+                        }
                     }
                 }
             }
-        }
 
-        # Drain Logs
-        while ($logIndex -lt $sync.Logs.Count) {
-            $msg = $sync.Logs[$logIndex]
-            $global:LogTextBox.AppendText("$msg`r`n")
-            $global:LogTextBox.ScrollToEnd()
-            $logIndex++
-        }
+            # Drain Logs
+            while ($logIndex -lt $sync.Logs.Count) {
+                $msg = $sync.Logs[$logIndex]
+                $global:LogTextBox.AppendText("$msg`r`n")
+                $global:LogTextBox.ScrollToEnd()
+                $logIndex++
+            }
 
-        # Completion Handling
-        if ($sync.IsComplete) {
-            $timer.Stop()
-            $stopwatch.Stop()
-            $global:LaunchBtn.IsEnabled = $true
-            $global:LaunchBtn.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#10b981")
-            $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
-            $global:LaunchBtnText.Text = "Open CSC & BC Apna Hisaab (http://localhost:3000)"
-            $global:CurrentActionText.Text = "ALL 11 STEPS 100% VERIFIED & CONFIGURED!"
-            $global:CurrentActionText.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
-        }
-    })
+            # Completion Handling
+            if ($sync.IsComplete) {
+                $timer.Stop()
+                $stopwatch.Stop()
+                $global:LaunchBtn.IsEnabled = $true
+                $global:LaunchBtn.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#10b981")
+                $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
+                $global:LaunchBtnText.Text = "Open CSC & BC Apna Hisaab (http://localhost:3000)"
+                $global:CurrentActionText.Text = "ALL 11 STEPS 100% VERIFIED & CONFIGURED!"
+                $global:CurrentActionText.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34d399")
+            }
+        })
 
-    # Start Worker when Window Loads
-    $global:Window.Add_Loaded({
-        $null = $ps.BeginInvoke()
-        $timer.Start()
-    })
+        # Start Worker when Window Loads
+        $global:Window.Add_Loaded({
+            $null = $ps.BeginInvoke()
+            $timer.Start()
+        })
 
-    # Show Window
-    $global:Window.ShowDialog() | Out-Null
-    $ps.Dispose()
-    $rs.Close()
-    $rs.Dispose()
-    exit 0
+        # Show Window
+        $global:Window.ShowDialog() | Out-Null
+        $ps.Dispose()
+        $rs.Close()
+        $rs.Dispose()
+        exit 0
+    } catch {
+        Write-Host "GUI Launch Notice: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Running in High-Speed Console Mode..." -ForegroundColor Cyan
+        & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile
+        exit 0
+    }
 } else {
     # Headless Console Runner
     & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile

@@ -47,6 +47,7 @@ try {
     $assets = @(
         @{ Name = 'INSTALL_NOW.exe';            Path = (Join-Path $root 'INSTALL_NOW.exe') },
         @{ Name = 'INSTALL_NOW.bat';            Path = (Join-Path $root 'INSTALL_NOW.bat') },
+        @{ Name = 'CLEAN_FRESH_INSTALL.bat';    Path = (Join-Path $root 'CLEAN_FRESH_INSTALL.bat') },
         @{ Name = 'INSTALL_NOW.zip';            Path = (Join-Path $root 'INSTALL_NOW.zip') },
         @{ Name = 'AI_DOCTOR.bat';              Path = (Join-Path $root 'AI_DOCTOR.bat') },
         @{ Name = 'SETUP.bat';                  Path = (Join-Path $root 'INSTALL_NOW.bat') },

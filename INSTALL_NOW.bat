@@ -14,7 +14,14 @@ cd /d "%~dp0"
 
 :: Case 1: Running inside existing project folder
 if exist "%~dp0scripts\installer_wizard.ps1" (
+    echo [..] Checking for latest Setup Engine updates...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri 'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1' -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0"
+    if errorlevel 1 (
+        echo.
+        echo [!] Setup notice: Process finished with code %errorlevel%
+        pause
+    )
     exit /b %errorlevel%
 )
 
@@ -22,13 +29,16 @@ if exist "%~dp0scripts\installer_wizard.ps1" (
 set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
+:: Clean any cached temp wizard
+del /f /q "%TEMP%\cmbc_installer_wizard.ps1" 2>nul
+
 cls
 echo ======================================================================
 echo   CSC ^& BC APNA HISAAB - 100%% AUTOMATIC 1-CLICK INSTALLER
 echo ======================================================================
 echo.
 echo   Target Folder : %TARGET_DIR%
-echo   Status        : Connecting to GitHub...
+echo   Status        : Connecting to High-Speed CDN...
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -45,11 +55,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "foreach($u in $urls){" ^
   "  for($i=1; $i -le 2 -and -not $downloaded; $i++){" ^
   "    try {" ^
-  "      Write-Host ('  [..] Connecting to GitHub (' + ([Uri]$u).Host + ' attempt ' + $i + ')...') -ForegroundColor Yellow;" ^
+  "      Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + ' (attempt ' + $i + ')...') -ForegroundColor Yellow;" ^
   "      Invoke-WebRequest -Uri $u -OutFile $tempWiz -UseBasicParsing -TimeoutSec 12;" ^
   "      if((Test-Path $tempWiz) -and (Get-Item $tempWiz).Length -gt 5000){" ^
   "        $downloaded = $true;" ^
-  "        Write-Host '  [OK] GUI Setup Wizard loaded successfully!' -ForegroundColor Green;" ^
+  "        Write-Host '  [OK] Setup Wizard loaded successfully!' -ForegroundColor Green;" ^
   "        break;" ^
   "      }" ^
   "    } catch { Write-Host ('  [!] Server notice: ' + $_.Exception.Message) -ForegroundColor Gray; Start-Sleep -Seconds 1 }" ^
@@ -59,7 +69,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  & $tempWiz -ProjectDir $targetDir;" ^
   "  exit $LASTEXITCODE;" ^
   "}" ^
-  "Write-Host '  [!] Direct script blocked by ISP. Downloading full package from GitHub...' -ForegroundColor Yellow;" ^
+  "Write-Host '  [!] Direct script blocked. Downloading full package from GitHub archive...' -ForegroundColor Yellow;" ^
   "$zipUrl = 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip';" ^
   "$zipFile = Join-Path $env:TEMP 'cmbc_archive.zip';" ^
   "try {" ^
@@ -75,8 +85,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 
 if errorlevel 1 (
     echo.
-    echo [X] Internet timeout: ISP ne GitHub download block kiya hua hai.
-    echo     Kripya phone ke hotspot se connect karein ya Pendrive se install karein.
+    echo ======================================================================
+    echo   [!] Setup ruk gaya hai.
+    echo       Kripya upar ka error dekhein ya Phone ke hotspot se connect karein.
+    echo ======================================================================
     pause
     exit /b 1
 )

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.35",
+  "version": "1.0.36",
   "releasedAt": "2026-11-21",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Master Enterprise Installer: multi-threaded background Runspace, real-time download speed & sub-step percentages, mini progress bars on each of 11 cards, cyber terminal console, and zero mojibake."
+  "notes": "Removes invalid XAML LetterSpacing attribute, wraps GUI in safe fallback, adds pause on error, and provides CLEAN_FRESH_INSTALL for broken/incomplete installs."
 }
