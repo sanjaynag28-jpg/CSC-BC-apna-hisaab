@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # utils/publish_release_assets.ps1
 # PUBLISH_UPDATE.bat ke baad chalta hai:
 # - version.json ka version uthata hai (e.g. 1.0.3 -> v1.0.3)
@@ -45,6 +45,7 @@ try {
     }
 
     $assets = @(
+        @{ Name = 'INSTALL_NOW.exe';            Path = (Join-Path $root 'INSTALL_NOW.exe') },
         @{ Name = 'INSTALL_NOW.bat';            Path = (Join-Path $root 'INSTALL_NOW.bat') },
         @{ Name = 'INSTALL_NOW.zip';            Path = (Join-Path $root 'INSTALL_NOW.zip') },
         @{ Name = 'AI_DOCTOR.bat';              Path = (Join-Path $root 'AI_DOCTOR.bat') },
