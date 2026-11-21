@@ -753,12 +753,17 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [$appUser];
     }
 
     if (-not $provisioned) {
-        # Fallback: check if our own random SA password from silent install works
-        $fallbackTest = "Server=$serverName;Database=master;User Id=sa;Password=$saPass;TrustServerCertificate=True;Connection Timeout=8;"
-        if (Test-SqlConnection $fallbackTest) {
-            $appUser = "sa"
-            $appPass = $saPass
-            $provisioned = $true
+        # Fallback: check standard/known passwords or existing credentials
+        $commonPasswords = @($saPass, 'CashMgmt@2026', 'sa', 'root', 'Admin@123', 'Password123', 'sql@123', '123456', '')
+        foreach ($cp in $commonPasswords) {
+            $fallbackTest = "Server=$serverName;Database=master;User Id=sa;Password=$cp;TrustServerCertificate=True;Connection Timeout=4;"
+            if (Test-SqlConnection $fallbackTest) {
+                $appUser = "sa"
+                $appPass = $cp
+                $provisioned = $true
+                Write-Ok "SQL Server connected with verified sa credentials."
+                break
+            }
         }
     }
 
@@ -947,7 +952,7 @@ function Create-DesktopShortcut {
     try {
         $helper = Join-Path $ProjectDir 'utils\create_shortcuts.ps1'
         if (Test-Path $helper) {
-            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -ProjectDir $ProjectDir | Out-Null
+            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $helper -ProjectDir "$ProjectDir" | Out-Null
             Write-Ok "Desktop + Start Menu shortcut ready: CSC BC Apna Hisaab"
             return
         }

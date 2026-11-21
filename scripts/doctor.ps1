@@ -40,6 +40,10 @@ Write-Log ''
 Write-Log '--- 1) Project folder ---'
 $candidates = @()
 if ($ProjectDir) { $candidates += $ProjectDir }
+try {
+    $parentDir = Split-Path -Parent $PSScriptRoot
+    if ($parentDir -and (Test-Path $parentDir)) { $candidates += $parentDir }
+} catch { }
 $candidates += (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab')
 $candidates += 'C:\CSC-BC-Apna-Hisaab'
 $candidates += (Join-Path $env:USERPROFILE 'Documents\CSC-BC-Apna-Hisaab')
@@ -292,12 +296,24 @@ Write-Log '--- 4) Server start + verify ---'
 if (Test-ServerPort) {
     Write-Log 'Server pehle se chal raha hai - start ki zaroorat nahi.' 'OK'
 } else {
+    $setupPs1 = Join-Path $proj 'scripts\auto_setup_windows.ps1'
+    if ((-not $nodeExe -or -not (Test-Path (Join-Path $proj '.env')) -or -not (Test-Path (Join-Path $proj 'node_modules'))) -and (Test-Path $setupPs1)) {
+        Write-Log 'Node.js, .env ya node_modules missing hai — Auto-Setup se theek kiya ja raha hai...' 'WARN'
+        try {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $setupPs1
+            # Refresh node status after auto-setup
+            try { $nodeVer = (& node -v) 2>$null; if ($nodeVer) { $nodeExe = 'node' } } catch { }
+        } catch {
+            Write-Log ("Auto-Setup warning: " + $_.Exception.Message) 'WARN'
+        }
+    }
+
     if (-not $nodeExe) {
-        Write-Log 'Node.js nahi hai - pehle SETUP.bat chalayein.' 'ERROR'
+        Write-Log 'Node.js nahi hai — ONE_CLICK_SETUP.bat chalayein.' 'ERROR'
     } elseif (-not (Test-Path (Join-Path $proj '.env'))) {
-        Write-Log '.env nahi hai - pehle SETUP.bat chalayein.' 'ERROR'
+        Write-Log '.env nahi hai — ONE_CLICK_SETUP.bat chalayein.' 'ERROR'
     } elseif (-not (Test-Path $supervisorBat)) {
-        Write-Log 'server-supervisor.bat nahi hai - SETUP.bat chalayein.' 'ERROR'
+        Write-Log 'server-supervisor.bat nahi hai — ONE_CLICK_SETUP.bat chalayein.' 'ERROR'
     } else {
         try {
             Start-Process -FilePath (Join-Path $env:WINDIR 'System32\wscript.exe') -ArgumentList ('"' + $hiddenVbs + '"') -WorkingDirectory $proj -WindowStyle Hidden | Out-Null
