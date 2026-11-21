@@ -525,6 +525,7 @@ async function runSilentAutoUpdate(options = {}) {
     }
 
     let dependenciesRepaired = false;
+    let dependencyRepairError = null;
     try {
         if (findMissingDependencies(JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')).dependencies).length > 0) {
             state.updating = true;
@@ -535,7 +536,7 @@ async function runSilentAutoUpdate(options = {}) {
         state.lastError = err.message;
         state.lastResult = 'error';
         logUpdate(`Dependency repair failed: ${err.message}`);
-        return { success: false, updated: false, error: err.message };
+        dependencyRepairError = err.message;
     } finally {
         state.updating = false;
     }
@@ -543,9 +544,10 @@ async function runSilentAutoUpdate(options = {}) {
     const check = await checkForUpdate();
     if (!check.success || !check.hasUpdate) {
         return {
-            success: check.success,
+            success: check.success && !dependencyRepairError,
             updated: false,
             dependenciesRepaired,
+            error: dependencyRepairError || undefined,
             currentVersion: check.currentVersion,
             latestVersion: check.latestVersion
         };

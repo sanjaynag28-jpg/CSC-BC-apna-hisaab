@@ -41,6 +41,7 @@ Complete local-first **Cash Management, BC/AEPS Banking, CSC Services, Bill Paym
 - Missing npm package (jaise `sharp`) detect hone par updater package ko repair karta hai, chahe `package.json` badla na ho.
 - Windows par npm install ko `cmd.exe` ke through chalaya jata hai, isliye `spawnSync npm.cmd EINVAL` se update rukta nahi.
 - Manual update/repair ke liye **`UPDATE_APP.bat`** double-click karein; yeh update ke baad hidden server launcher bhi chalata hai.
+- Purane Windows install par updater npm install error de to project folder me **`REPAIR_DEPENDENCIES.vbs`** download karke double-click karein; yeh packages ko silently repair karke app start karta hai.
 
 ---
 
