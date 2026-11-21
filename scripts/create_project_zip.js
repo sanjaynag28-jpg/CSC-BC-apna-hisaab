@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+const archiverModule = require('archiver');
+// archiver v8+ named classes export karta hai; purane versions factory function.
+const createZipArchive = (options = {}) => {
+    const ZipArchive = archiverModule.ZipArchive || (archiverModule.default && archiverModule.default.ZipArchive);
+    if (ZipArchive) return new ZipArchive(options);
+    if (typeof archiverModule === 'function') return archiverModule('zip', options);
+    throw new Error('archiver: unsupported export shape');
+};
 const { execSync } = require('child_process');
 
 async function createBackupZip() {
@@ -45,7 +52,7 @@ async function createBackupZip() {
     console.log(`📁 Target: ${outZipPath}`);
 
     const output = fs.createWriteStream(outZipPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = createZipArchive({ zlib: { level: 9 } });
 
     const projectRoot = path.join(__dirname, '..');
     const excludeDirs = new Set(['node_modules', '.git', 'brain', 'scratch', '.vscode', 'data']);
