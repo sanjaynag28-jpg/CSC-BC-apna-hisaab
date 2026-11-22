@@ -113,7 +113,7 @@ app.use(compression({
     }
 }));
 
-// 1. Strict Real-Time No-Cache Middleware for ALL API routes
+// 1. Strict Real-Time No-Cache Middleware for ALL API routes + Instant Silent Sync Hook
 app.use('/api', (req, res, next) => {
     res.set({
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
@@ -121,6 +121,16 @@ app.use('/api', (req, res, next) => {
         'Expires': '0',
         'Surrogate-Control': 'no-store'
     });
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+        res.on('finish', () => {
+            if (res.statusCode >= 200 && res.statusCode < 400) {
+                try {
+                    const { triggerSilentRealtimeSync } = require('./utils/realtime_sync');
+                    triggerSilentRealtimeSync(250);
+                } catch (_) { }
+            }
+        });
+    }
     next();
 });
 
@@ -937,6 +947,14 @@ function startServer() {
 
             // Background mein SQL Server se connect karein bina port 3000 block kiye
             connectDbInBackground();
+
+            // Real-Time Silent Sync engine to keep Port 4000 (SQLite) synced with Port 3000 (SQL Server)
+            setTimeout(() => {
+                try {
+                    const { initRealtimeSyncDaemon } = require('./utils/realtime_sync');
+                    initRealtimeSyncDaemon(15);
+                } catch (e) { }
+            }, 3000);
 
             // Windows self-heal: PC boot par silent auto-start (task + startup entry)
             // aur Desktop/Start Menu shortcut ensure karo. Purane installs par bhi
