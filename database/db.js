@@ -73,11 +73,8 @@ function getDb() {
 
         // Auto-heal / Ensure schema & columns are up to date on boot
         try {
-            const hasUsers = db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='Users'").get();
-            if (!hasUsers || hasUsers.cnt === 0) {
-                const { setupSQLite } = require('./setup_sqlite');
-                setupSQLite(db);
-            }
+            const { setupSQLite } = require('./setup_sqlite');
+            setupSQLite(db);
         } catch (e) {
             console.warn('⚠️ [DB Init] auto-setup notice:', e.message);
         }
