@@ -1,5 +1,5 @@
 /**
- * Cash Management - Automated SQLite Database Setup & Starter Seeding
+ * Cash Management - Automated SQLite Database Setup & Live Self-Healing Seeding
  * 100% Pure Embedded Zero-Install SQLite Edition
  */
 const fs = require('fs');
@@ -7,6 +7,103 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
+
+function autoRepairSchema(db, schemaSql) {
+    try {
+        const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([A-Za-z0-9_]+)["`]?\s*\(([\s\S]*?)\n\s*\);/gi;
+        let tm;
+        const schemaTables = new Map();
+        while ((tm = tableRegex.exec(schemaSql)) !== null) {
+            schemaTables.set(tm[1], {
+                createStmt: tm[0],
+                body: tm[2]
+            });
+        }
+
+        // 1. First run full DDL to create any completely missing tables
+        try {
+            db.exec(schemaSql);
+        } catch (_) { }
+
+        // 2. Validate columns for every table in the canonical schema
+        for (const [tName, tMeta] of schemaTables.entries()) {
+            const tableExists = db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").get(tName).cnt > 0;
+            if (!tableExists) {
+                try { db.exec(tMeta.createStmt); } catch (_) { }
+                continue;
+            }
+
+            const existingCols = db.prepare(`PRAGMA table_info("${tName}")`).all().map(r => r.name);
+            const existingColLower = new Set(existingCols.map(c => c.toLowerCase()));
+
+            const expectedCols = [];
+            for (const rawLine of tMeta.body.split('\n')) {
+                const line = rawLine.trim().replace(/,\s*$/, '');
+                if (!line || line.startsWith('--') || line.startsWith('CONSTRAINT') || line.startsWith('PRIMARY KEY')) continue;
+                const colM = line.match(/^["`]?([A-Za-z0-9_]+)["`]?\s+([A-Za-z0-9_]+(?:\([^)]+\))?)([\s\S]*)$/);
+                if (colM) {
+                    expectedCols.push({
+                        name: colM[1],
+                        type: colM[2],
+                        rest: colM[3],
+                        rawDef: line
+                    });
+                }
+            }
+
+            const missingCols = expectedCols.filter(c => !existingColLower.has(c.name.toLowerCase()));
+
+            if (missingCols.length > 0) {
+                let rowCount = 0;
+                try {
+                    rowCount = db.prepare(`SELECT count(*) as cnt FROM "${tName}"`).get().cnt;
+                } catch (_) { }
+
+                const isPkMissing = missingCols.some(c => /PRIMARY\s+KEY/i.test(c.rest) || c.name === 'TransactionID' || c.name === 'GlobalSerialNo' || c.name === 'AccountID' || c.name === 'CustomerID');
+
+                if (rowCount === 0 || isPkMissing) {
+                    if (rowCount === 0) {
+                        console.log(`⚡ [Auto-Repair] Table "${tName}" had 0 rows and missing columns. Re-creating clean table...`);
+                        db.exec(`DROP TABLE IF EXISTS "${tName}"`);
+                        db.exec(tMeta.createStmt);
+                    } else {
+                        console.log(`⚡ [Auto-Repair] Migrating table "${tName}" (${rowCount} rows) to canonical schema...`);
+                        const tempTbl = `${tName}__repair_${Date.now()}`;
+                        const tempCreate = tMeta.createStmt.replace(new RegExp(`"${tName}"`, 'g'), `"${tempTbl}"`);
+                        db.exec(tempCreate);
+
+                        const tempCols = db.prepare(`PRAGMA table_info("${tempTbl}")`).all().map(r => r.name);
+                        const commonCols = existingCols.filter(c => tempCols.some(tc => tc.toLowerCase() === c.toLowerCase()));
+
+                        if (commonCols.length > 0) {
+                            const colList = commonCols.map(c => `"${c}"`).join(', ');
+                            db.exec(`INSERT INTO "${tempTbl}" (${colList}) SELECT ${colList} FROM "${tName}"`);
+                        }
+                        db.exec(`DROP TABLE "${tName}"`);
+                        db.exec(`ALTER TABLE "${tempTbl}" RENAME TO "${tName}"`);
+                    }
+                } else {
+                    for (const mc of missingCols) {
+                        const colDef = `"${mc.name}" ${mc.type} ${mc.rest}`.replace(/NOT\s+NULL/gi, '').trim();
+                        try {
+                            db.exec(`ALTER TABLE "${tName}" ADD COLUMN ${colDef}`);
+                            console.log(`⚡ [Auto-Repair] Added missing column: ${tName}.${mc.name}`);
+                        } catch (altErr) { }
+                    }
+                }
+            }
+        }
+
+        // 3. Ensure all indexes exist
+        const indexRegex = /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+["`]?([A-Za-z0-9_]+)["`]?\s+ON\s+[\s\S]*?;/gi;
+        let im;
+        while ((im = indexRegex.exec(schemaSql)) !== null) {
+            try { db.exec(im[0]); } catch (_) { }
+        }
+    } catch (err) {
+        console.warn('⚠️ [Auto-Repair] Schema validation notice:', err.message);
+    }
+}
 
 function setupSQLite(existingDb) {
     const dataDir = path.join(__dirname, 'data');
@@ -23,42 +120,9 @@ function setupSQLite(existingDb) {
         db.pragma('synchronous = NORMAL');
         db.pragma('foreign_keys = ON');
 
-        // 1. Run schema DDL
+        // 1. Run live schema auto-repair (30 tables & columns)
         const schemaSql = fs.readFileSync(path.join(__dirname, 'sqlite_schema.sql'), 'utf8');
-        db.exec(schemaSql);
-
-        // 1.1 Auto-migrate missing columns in existing tables (Non-destructive)
-        try {
-            const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\n\s*\);/gi;
-            let tm;
-            while ((tm = tableRegex.exec(schemaSql)) !== null) {
-                const tName = tm[1];
-                const body = tm[2];
-                try {
-                    const existingCols = db.prepare(`PRAGMA table_info(${tName})`).all().map(r => r.name.toLowerCase());
-                    const existingColSet = new Set(existingCols);
-                    for (const rawLine of body.split('\n')) {
-                        const line = rawLine.trim().replace(/,\s*$/, '');
-                        if (!line || line.startsWith('--') || line.startsWith('CONSTRAINT') || line.startsWith('PRIMARY KEY')) continue;
-                        const colM = line.match(/^(\w+)\s+([A-Za-z0-9_]+(?:\([^)]+\))?)([\s\S]*)$/);
-                        if (colM) {
-                            const cName = colM[1];
-                            if (!existingColSet.has(cName.toLowerCase())) {
-                                const colDef = `${cName} ${colM[2]} ${colM[3]}`.replace(/NOT\s+NULL/gi, '').trim();
-                                try {
-                                    db.exec(`ALTER TABLE ${tName} ADD COLUMN ${colDef}`);
-                                    console.log(`⚡ [Auto-Migration] Added missing column: ${tName}.${cName}`);
-                                } catch (altErr) { }
-                            }
-                        }
-                    }
-                } catch (_) { }
-            }
-        } catch (migErr) {
-            console.warn('⚠️ [Auto-Migration] Column sync notice:', migErr.message);
-        }
-
-        console.log('✅ SQLite Schema applied (30 tables & indexes 100% verified).');
+        autoRepairSchema(db, schemaSql);
 
         // 2. Starter SuperAdmin user
         const userCount = db.prepare('SELECT COUNT(*) AS cnt FROM Users').get().cnt;
@@ -91,13 +155,7 @@ function setupSQLite(existingDb) {
                     'Settings me apna password set karne ke baad ye file delete kar dein.',
                     ''
                 ].join('\r\n'), 'utf8');
-                console.log('✅ Admin account ready (localhost auto-login active).');
-                console.log(`   Remote/LAN login credentials saved: ${credPath}`);
-            } catch (credErr) {
-                console.warn('⚠️ .admin-login.txt save notice:', credErr.message);
-            }
-        } else {
-            console.log('✅ Admin user already present.');
+            } catch (credErr) { }
         }
 
         // 3. Starter Accounts
@@ -109,9 +167,6 @@ function setupSQLite(existingDb) {
             `);
             insAcc.run({ name: 'PHYSICAL CASH', type: 'Cash', bank: null, color: '#10b981', icon: 'banknote' });
             insAcc.run({ name: 'APNA BANK / PORTAL', type: 'Bank', bank: 'Main Bank', color: '#3b82f6', icon: 'landmark' });
-            console.log('✅ Starter Cash & Bank accounts created.');
-        } else {
-            console.log('✅ Accounts already present.');
         }
 
         // 4. Starter Categories
@@ -136,9 +191,6 @@ function setupSQLite(existingDb) {
                 { name: 'Other Expense', type: 'Expense', icon: 'minus-circle', color: '#64748b' }
             ];
             for (const c of cats) insCat.run(c);
-            console.log('✅ Starter Income & Expense categories created.');
-        } else {
-            console.log('✅ Categories already present.');
         }
 
         // 5. Starter CSC Services
@@ -160,12 +212,27 @@ function setupSQLite(existingDb) {
                 { name: 'Passport Online Apply', gFee: 1500, oFee: 200, days: 15, icon: 'globe', sort: 9 }
             ];
             for (const s of svcs) insCsc.run(s);
-            console.log('✅ Starter CSC services created.');
-        } else {
-            console.log('✅ CSC Services already present.');
         }
 
-        console.log('🎉 SQLite database successfully prepared & seeded!');
+        // 6. Starter SystemSettings
+        try {
+            const settingsCount = db.prepare('SELECT COUNT(*) AS cnt FROM SystemSettings').get().cnt;
+            if (settingsCount === 0) {
+                const insSet = db.prepare(`
+                    INSERT INTO SystemSettings (SettingKey, SettingValue, SettingGroup, Description, UpdatedAt, UserID)
+                    VALUES (@k, @v, @g, @d, datetime('now', 'localtime'), 1)
+                `);
+                const defaultSettings = [
+                    { k: 'ShopName', v: 'AAPKI DUKAAN / HISAB BC', g: 'General', d: 'Dukaan ka naam' },
+                    { k: 'OwnerName', v: 'Shop Owner', g: 'General', d: 'Owner ka naam' },
+                    { k: 'MobileNumber', v: '', g: 'General', d: 'Contact number' },
+                    { k: 'Address', v: 'Main Market, Cash Management Counter', g: 'General', d: 'Dukaan ka pata' },
+                    { k: 'Theme', v: 'light', g: 'Appearance', d: 'UI Theme' }
+                ];
+                for (const s of defaultSettings) insSet.run(s);
+            }
+        } catch (_) { }
+
         return true;
     } finally {
         if (shouldClose && db) {
@@ -176,6 +243,7 @@ function setupSQLite(existingDb) {
 
 if (require.main === module) {
     setupSQLite();
+    console.log('🎉 SQLite database successfully prepared & verified!');
 }
 
-module.exports = { setupSQLite };
+module.exports = { setupSQLite, autoRepairSchema };
