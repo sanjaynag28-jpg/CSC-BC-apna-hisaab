@@ -85,18 +85,21 @@ function parseServerCandidates(rawServer, port) {
 let pool = null;
 let poolPromise = null;
 
-async function getPool() {
-    if (pool && pool.connected) {
+async function getPool(overrides = {}) {
+    const isCustomDb = Boolean(overrides && overrides.database);
+    if (!isCustomDb && pool && pool.connected) {
         return pool;
     }
-    if (poolPromise) {
+    if (!isCustomDb && poolPromise) {
         return poolPromise;
     }
 
     loadDotEnv(true);
 
+    const targetDb = overrides.database || process.env.DB_NAME || 'CashManagement';
+
     const baseConfig = {
-        database: process.env.DB_NAME || 'CashManagement',
+        database: targetDb,
         user: process.env.DB_USER || 'sa',
         password: process.env.DB_PASSWORD || '',
         options: {
@@ -131,32 +134,38 @@ async function getPool() {
 
         try {
             const pending = new sql.ConnectionPool(testCfg).connect();
-            poolPromise = pending;
-            pool = await pending;
-            poolPromise = null;
+            if (!isCustomDb) poolPromise = pending;
+            const connectedPool = await pending;
+            if (!isCustomDb) {
+                pool = connectedPool;
+                poolPromise = null;
+            }
             workingCandidate = cand;
             const instStr = cand.options?.instanceName ? `\\${cand.options.instanceName}` : '';
             const portStr = cand.port ? `:${cand.port}` : '';
-            console.log(`✅ SQL Server se connected (${cand.server}${instStr}${portStr})!`);
-            return pool;
+            console.log(`✅ SQL Server se connected (${cand.server}${instStr}${portStr}) [DB: ${targetDb}]!`);
+            return connectedPool;
         } catch (err) {
-            poolPromise = null;
-            pool = null;
+            if (!isCustomDb) {
+                poolPromise = null;
+                pool = null;
+            }
             lastErr = err;
 
             // Self-Healing: Error 4060 (Database does not exist on this SQL Server)
-            if (err.message && (err.message.includes('Cannot open database') || err.number === 4060)) {
-                console.warn(`⚠️ Database "${baseConfig.database}" nahi mila. Master connection se auto-create kar rahe hain...`);
+            if (targetDb !== 'master' && err.message && (err.message.includes('Cannot open database') || err.number === 4060)) {
+                console.warn(`⚠️ Database "${targetDb}" nahi mila. Master connection se auto-create kar rahe hain...`);
                 try {
                     const masterCfg = { ...testCfg, database: 'master' };
                     const mPool = await new sql.ConnectionPool(masterCfg).connect();
-                    await mPool.request().query(`IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${String(baseConfig.database).replace(/'/g, "''")}') CREATE DATABASE [${String(baseConfig.database).replace(/\]/g, ']]')}]`);
+                    await mPool.request().query(`IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${String(targetDb).replace(/'/g, "''")}') CREATE DATABASE [${String(targetDb).replace(/\]/g, ']]')}]`);
                     await mPool.close();
-                    console.log(`✅ Database "${baseConfig.database}" successfully create ho gaya! Reconnecting...`);
-                    pool = await new sql.ConnectionPool(testCfg).connect();
+                    console.log(`✅ Database "${targetDb}" successfully create ho gaya! Reconnecting...`);
+                    const reconnected = await new sql.ConnectionPool(testCfg).connect();
+                    if (!isCustomDb) pool = reconnected;
                     workingCandidate = cand;
                     console.log('✅ SQL Server se connected!');
-                    return pool;
+                    return reconnected;
                 } catch (createErr) {
                     console.error('❌ Master se database create nahi ho paya:', createErr.message);
                 }
@@ -164,8 +173,12 @@ async function getPool() {
         }
     }
 
-    console.error('❌ SQL Server connection error (all candidates failed):', lastErr?.message);
-    throw lastErr || new Error('SQL Server se connect nahi ho paya');
+    console.error(`❌ SQL Server connection error for DB "${targetDb}":`, lastErr?.message);
+    throw lastErr || new Error(`SQL Server se connect nahi ho paya [DB: ${targetDb}]`);
+}
+
+async function getMasterPool() {
+    return getPool({ database: 'master' });
 }
 
 async function isDbAlive() {
@@ -255,5 +268,5 @@ async function closePool() {
     }
 }
 
-module.exports = { getPool, isDbAlive, query, withTransaction, closePool, sql };
+module.exports = { getPool, getMasterPool, isDbAlive, query, withTransaction, closePool, sql };
 

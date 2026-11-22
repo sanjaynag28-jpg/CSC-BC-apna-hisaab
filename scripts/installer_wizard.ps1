@@ -779,11 +779,16 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
 
         $rc = $false
         for ($i = 1; $i -le 3; $i++) {
+            $currentArgs = @($nodeArgs)
+            if ($i -gt 1) {
+                Log-Msg "[Self-Healing] Database conflict detect hone par fresh alternative database switch active kiya ja raha hai..." 'WARN'
+                $currentArgs += "--force-new-db"
+            }
             Update-Step 8 'RUNNING' (20 + $i * 22) "setup-database.js chal raha hai (koshish $i)..." "Schema aur starter data build ho raha hai..."
             
             $pinfo = New-Object System.Diagnostics.ProcessStartInfo
             $pinfo.FileName = $node
-            $pinfo.Arguments = ($nodeArgs -join ' ')
+            $pinfo.Arguments = ($currentArgs -join ' ')
             $pinfo.WorkingDirectory = $ProjectDir
             $pinfo.RedirectStandardOutput = $true
             $pinfo.RedirectStandardError = $true
@@ -962,7 +967,19 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
         $s5 = Exec-Step5;  if (-not $s5)  { [void](Repair-Step 5);  $null = Exec-Step5 }
         $s6 = Exec-Step6;  if (-not $s6)  { [void](Repair-Step 6);  $null = Exec-Step6 }
         $s7 = Exec-Step7;  if (-not $s7)  { [void](Repair-Step 7);  $null = Exec-Step7 }
-        $s8 = Exec-Step8;  if (-not $s8)  { [void](Repair-Step 8);  $null = Exec-Step8 }
+        $s8 = Exec-Step8
+        if (-not $s8) {
+            [void](Repair-Step 8)
+            $s8 = Exec-Step8
+        }
+        if (-not $s8) {
+            Log-Msg "Database setup fail hua. Step 8 ko fix kiye bina aage nahi badh sakte." 'WARN'
+            Update-Step 8 'FAILED' 100 "Database setup fail" "Step 8 : Database Setup Failed"
+            $sync.OverallPct = 75
+            $sync.CurrentAction = "Database setup me dikkat aayi. Kripya logs check karein."
+            $sync.IsComplete = $false
+            return $false
+        }
         $s9 = Exec-Step9;  if (-not $s9)  { [void](Repair-Step 9);  $null = Exec-Step9 }
         $s10 = Exec-Step10; if (-not $s10) { [void](Repair-Step 10); $null = Exec-Step10 }
         $s11 = Exec-Step11; if (-not $s11) { [void](Repair-Step 11); $null = Exec-Step11 }

@@ -45,6 +45,7 @@ if exist "%TARGET_DIR%\.git" (
 ) else (
     if exist "%TARGET_DIR%" (
         echo   [..] Deleting old project folder: %TARGET_DIR%...
+        attrib -r -s -h "%TARGET_DIR%\*.*" /s /d >nul 2>&1
         rd /s /q "%TARGET_DIR%" >nul 2>&1
     )
     mkdir "%TARGET_DIR%" >nul 2>&1

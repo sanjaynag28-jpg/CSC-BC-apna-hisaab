@@ -9,7 +9,32 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { sql, getPool } = require('./database/db');
+const { sql, getPool, getMasterPool } = require('./database/db');
+
+function updateDotEnv(key, value) {
+    try {
+        const envPath = path.join(__dirname, '.env');
+        let lines = [];
+        if (fs.existsSync(envPath)) {
+            lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+        }
+        let found = false;
+        lines = lines.map(line => {
+            if (line.trim().startsWith(`${key}=`)) {
+                found = true;
+                return `${key}=${value}`;
+            }
+            return line;
+        });
+        if (!found) {
+            lines.push(`${key}=${value}`);
+        }
+        fs.writeFileSync(envPath, lines.join('\n'), 'utf8');
+        process.env[key] = value;
+    } catch (e) {
+        console.warn(`⚠️ .env update warning: ${e.message}`);
+    }
+}
 
 function loadEnvConfig() {
     return {
@@ -61,10 +86,16 @@ function prepareStoredProcedureBatch(batch, exists) {
     );
 }
 
-async function ensureDatabaseExists(baseCfg, isClean = false) {
-    const dbName = baseCfg.database;
-    const masterCfg = { ...baseCfg, database: 'master' };
-    const masterPool = await new sql.ConnectionPool(masterCfg).connect();
+async function ensureDatabaseExists(baseCfg, isClean = false, forceNewDb = false) {
+    let dbName = baseCfg.database || 'CashManagement';
+    if (forceNewDb) {
+        dbName = dbName === 'CashManagement' ? 'CashManagement_v1' : 'CSC_BC_DB';
+        updateDotEnv('DB_NAME', dbName);
+        console.log(`🔄 Force New DB mode: Target database "${dbName}" set kiya gaya.`);
+    }
+
+    console.log(`🔍 SQL Server master pool se connect kar rahe hain...`);
+    const masterPool = await getMasterPool();
     try {
         const res = await masterPool.request()
             .input('dbName', sql.NVarChar(128), dbName)
@@ -72,26 +103,46 @@ async function ensureDatabaseExists(baseCfg, isClean = false) {
         
         if (isClean && res.recordset.length > 0) {
             console.log(`🧹 Clean Install Mode: Database "${dbName}" ko fresh re-create kar rahe hain...`);
+            let dropped = false;
             try {
                 await masterPool.request().query(`
                     ALTER DATABASE ${safeBracketIdent(dbName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                     DROP DATABASE ${safeBracketIdent(dbName)};
                 `);
                 console.log(`🗑️ Purana "${dbName}" database successfully drop ho gaya.`);
+                dropped = true;
             } catch (dropErr) {
-                console.warn(`⚠️ Database drop warning: ${dropErr.message}`);
+                console.warn(`⚠️ Purana database drop warning (${dropErr.message}). Naye database par switch kar rahe hain...`);
+                dbName = dbName === 'CashManagement' ? 'CashManagement_v1' : 'CSC_BC_DB';
+                updateDotEnv('DB_NAME', dbName);
+                console.log(`🔄 Switched target database to: "${dbName}"`);
             }
-            await masterPool.request().query(`CREATE DATABASE ${safeBracketIdent(dbName)}`);
+            await masterPool.request().query(`
+                IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${dbName.replace(/'/g, "''")}')
+                    CREATE DATABASE ${safeBracketIdent(dbName)};
+            `);
             console.log(`✅ Fresh "${dbName}" database create ho gaya!`);
         } else if (res.recordset.length === 0) {
             console.log(`🆕 Database "${dbName}" nahi mila — naya database create kar rahe hain...`);
-            await masterPool.request().query(`CREATE DATABASE ${safeBracketIdent(dbName)}`);
-            console.log(`✅ Database "${dbName}" successfully create ho gaya!`);
+            try {
+                await masterPool.request().query(`CREATE DATABASE ${safeBracketIdent(dbName)}`);
+                console.log(`✅ Database "${dbName}" successfully create ho gaya!`);
+            } catch (createErr) {
+                console.warn(`⚠️ Database "${dbName}" create error (${createErr.message}). Alternate database try kar rahe hain...`);
+                dbName = dbName === 'CashManagement' ? 'CashManagement_v1' : 'CSC_BC_DB';
+                updateDotEnv('DB_NAME', dbName);
+                await masterPool.request().query(`
+                    IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${dbName.replace(/'/g, "''")}')
+                        CREATE DATABASE ${safeBracketIdent(dbName)};
+                `);
+                console.log(`✅ Alternate database "${dbName}" successfully create ho gaya!`);
+            }
         } else {
             console.log(`✅ Database "${dbName}" already exists.`);
         }
+        return dbName;
     } finally {
-        await masterPool.close();
+        try { await masterPool.close(); } catch (_) { }
     }
 }
 
@@ -230,13 +281,18 @@ async function setup(options = {}) {
             process.env.CLEAN_DB === '1' ||
             process.env.CLEAN_INSTALL === '1';
 
+        const forceNewDb = Boolean(options.forceNewDb) ||
+            process.argv.includes('--force-new-db') ||
+            process.env.FORCE_NEW_DB === '1';
+
         const cfg = loadEnvConfig();
 
         // Step 1: Ensure target database exists via master connection (drop & recreate if isClean)
-        await ensureDatabaseExists(cfg, isClean);
+        const actualDb = await ensureDatabaseExists(cfg, isClean, forceNewDb);
+        cfg.database = actualDb;
 
         // Step 2: Connect to target database
-        const pool = await getPool();
+        const pool = await getPool({ database: actualDb });
         const sqlFile = path.join(__dirname, 'database', 'setup.sql');
         if (!fs.existsSync(sqlFile)) {
             console.error('❌ database/setup.sql file not found!');
@@ -249,9 +305,9 @@ async function setup(options = {}) {
         for (const batch of batches) {
             let trimmed = batch.trim();
             if (!trimmed) continue;
-            // Skip CREATE DATABASE / USE CashManagement batches (already connected to target DB!)
+            // Skip CREATE DATABASE / USE <any_db> batches (already connected to target DB!)
             if (/^\s*IF\s+NOT\s+EXISTS\s*\(\s*SELECT\s+name\s+FROM\s+sys\.databases/i.test(trimmed)) continue;
-            if (/^\s*USE\s+\[?CashManagement\]?\s*;?\s*$/i.test(trimmed)) continue;
+            if (/^\s*USE\s+\[?\w+\]?\s*;?\s*$/i.test(trimmed)) continue;
             if (/CREATE\s+OR\s+ALTER\s+PROCEDURE/i.test(trimmed)) {
                 const procedure = getStoredProcedureName(
                     trimmed.replace(/^(\s*--[^\r\n]*\r?\n)+/i, '').trim()
