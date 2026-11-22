@@ -65,12 +65,22 @@ function getDb() {
         db.function('VARCHAR', (len) => 'VARCHAR');
         db.function('NVARCHAR', (len) => 'NVARCHAR');
         db.function('INT', () => 'INT');
-        db.function('GETDATE', () => new Date().toISOString());
 
         db.function('FORMAT', (val, fmt) => {
             if (val === null || val === undefined) return '';
             return String(val);
         });
+
+        // Auto-heal / Ensure schema & columns are up to date on boot
+        try {
+            const hasUsers = db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name='Users'").get();
+            if (!hasUsers || hasUsers.cnt === 0) {
+                const { setupSQLite } = require('./setup_sqlite');
+                setupSQLite(db);
+            }
+        } catch (e) {
+            console.warn('⚠️ [DB Init] auto-setup notice:', e.message);
+        }
     }
     return db;
 }
@@ -155,16 +165,42 @@ function translateSql(queryStr) {
     s = s.replace(/\bSCOPE_IDENTITY\(\)/gi, 'last_insert_rowid()');
     s = s.replace(/\b@@IDENTITY\b/gi, 'last_insert_rowid()');
 
-    // 6. SQL Server Date/Time translations
+    // 6. DATEDIFF & DATEADD unquoted identifier fix: DATEDIFF(day, ...) -> DATEDIFF('day', ...)
+    s = s.replace(/\bDATEDIFF\s*\(\s*([A-Za-z]+)\s*,/gi, "DATEDIFF('$1',");
+    s = s.replace(/\bDATEADD\s*\(\s*([A-Za-z]+)\s*,/gi, "DATEADD('$1',");
+
+    // 7. TRY_CAST(x AS type) -> CAST(x AS NUMERIC)
+    s = s.replace(/\bTRY_CAST\s*\(\s*([\s\S]*?)\s+AS\s+([A-Za-z0-9_]+(?:\s*\([^)]*\))?)\s*\)/gi, (m, expr) => `CAST(${expr} AS NUMERIC)`);
+
+    // 8. VALUES (1),(2)... as tbl(col) -> (SELECT 1 AS col UNION ALL SELECT 2 ...) AS tbl
+    s = s.replace(/\(\s*VALUES\s*(\(\s*\d+\s*\)(?:\s*,\s*\(\s*\d+\s*\))*)\s*\)\s*(?:AS\s+)?(\w+)\s*\(\s*(\w+)\s*\)/gi, (m, vals, tbl, col) => {
+        const numbers = vals.match(/\d+/g) || [];
+        const unionSql = numbers.map(n => `SELECT ${n} AS ${col}`).join(' UNION ALL ');
+        return `(${unionSql}) AS ${tbl}`;
+    });
+
+    // 8. JSON_VALUE(col, path) -> json_extract(col, path)
+    s = s.replace(/\bJSON_VALUE\s*\(/gi, 'json_extract(');
+
+    // 9. CHARINDEX(needle, haystack) -> INSTR(haystack, needle)
+    s = s.replace(/\bCHARINDEX\s*\(\s*('[^']+'|[^,]+)\s*,\s*([^)]+)\s*\)/gi, 'INSTR($2, $1)');
+
+    // 10. String functions: SUBSTRING -> SUBSTR, LEN -> LENGTH
+    s = s.replace(/\bSUBSTRING\s*\(/gi, 'SUBSTR(');
+    s = s.replace(/\bLEN\s*\(/gi, 'LENGTH(');
+
+    // 11. SQL Server Date/Time translations
     s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*5\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*108\s*\)/gi, "strftime('%H:%M', 'now', 'localtime')");
     s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*8\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*108\s*\)/gi, "strftime('%H:%M:%S', 'now', 'localtime')");
     s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*10\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*120\s*\)/gi, "date('now', 'localtime')");
     s = s.replace(/CONVERT\s*\(\s*DATE\s*,\s*GETDATE\s*\(\s*\)\s*\)/gi, "date('now', 'localtime')");
     s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*DATE\s*\)/gi, "date('now', 'localtime')");
     s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*TIME\s*\)/gi, "time('now', 'localtime')");
+    s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+TIME\s*\)/gi, "time($1)");
+    s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+DATE\s*\)/gi, "date($1)");
     s = s.replace(/GETDATE\s*\(\s*\)/gi, "datetime('now', 'localtime')");
 
-    // 7. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
+    // 12. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
     const topMatch = s.match(/^(\s*SELECT(?:\s+DISTINCT)?)\s+TOP\s+(\d+|\(\d+\))\s+([\s\S]+)$/i);
     if (topMatch && !s.includes('UNION') && !s.includes('EXCEPT')) {
         const sel = topMatch[1];
@@ -175,6 +211,10 @@ function translateSql(queryStr) {
             s = `${sel} ${rest} LIMIT ${num}`;
         }
     }
+
+    // 13. OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY -> LIMIT limit OFFSET offset
+    s = s.replace(/OFFSET\s+(@?\w+)\s+ROWS\s+FETCH\s+NEXT\s+(@?\w+)\s+ROWS\s+ONLY/gi, 'LIMIT $2 OFFSET $1');
+    s = s.replace(/FETCH\s+NEXT\s+(@?\w+)\s+ROWS\s+ONLY/gi, 'LIMIT $1');
 
     return s;
 }

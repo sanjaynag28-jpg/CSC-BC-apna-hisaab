@@ -9,4 +9,5 @@ console.log('   CASH MANAGEMENT SYSTEM - SQLITE EDITION SETUP     ');
 console.log('   100% Zero-Install Embedded Database               ');
 console.log('====================================================');
 
-require('./database/setup_sqlite.js');
+const { setupSQLite } = require('./database/setup_sqlite.js');
+setupSQLite();

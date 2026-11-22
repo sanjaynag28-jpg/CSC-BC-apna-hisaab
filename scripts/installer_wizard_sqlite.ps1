@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # CSC & BC Apna Hisaab - SQLite Edition Master Setup & Health Wizard
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # Super-Fast Zero SQL Server Install | 100% Free AI Live Self-Healing & Diagnostics

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * utils/autoUpdater.js
  * ============================================================================
  * Automatic Silent Update Engine for CSC-BC-apna-hisaab
