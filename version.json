@@ -1,7 +1,7 @@
 {
-  "version": "1.0.48",
+  "version": "1.0.49",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fix wizard script path persistence in clean installer, safe copy to target scripts directory before execution."
+  "notes": "Full unattended SQL Server Express install for clean Windows with multi-stage fallback (winget, official silent bootstrapper, offline package) and strict gatekeepers."
 }

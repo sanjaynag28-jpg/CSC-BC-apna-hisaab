@@ -1,4 +1,4 @@
-<#
+﻿<#
     scripts/ai_doctor.ps1
     ============================================================================
     CSC & BC Apna Hisaab - 100% Free AI Live Self-Healing & Diagnostic Engine
@@ -79,7 +79,7 @@ function Write-AiLog {
 }
 
 # Banner
-Clear-Host
+try { Clear-Host } catch { }
 Write-Host "======================================================================" -ForegroundColor Cyan
 Write-Host "   CSC & BC APNA HISAAB - FREE AI LIVE SELF-HEALING ENGINE (DOCTOR)  " -ForegroundColor Cyan
 Write-Host "======================================================================" -ForegroundColor Cyan

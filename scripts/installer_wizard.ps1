@@ -563,10 +563,10 @@ $workerBlock = {
             try { Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
             if ($svc.Status -ne 'Running') {
                 Log-Msg "SQL service start ho rahi hai ($($svc.Name))..." 'SQL'
-                try { Start-Service -Name $svc.Name -ErrorAction Stop; Start-Sleep -Seconds 2 } catch { }
+                try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2 } catch { }
             }
             $svc = Get-Service -Name $svc.Name -ErrorAction SilentlyContinue
-            if ($svc.Status -eq 'Running') {
+            if ($svc -and $svc.Status -eq 'Running') {
                 Log-Msg "SQL Server active hai: $($svc.Name)" 'OK'
                 Update-Step 5 'SUCCESS' 100 "$($svc.Name) active" "Step 5 : SQL Service Running"
                 return $true
@@ -583,36 +583,111 @@ $workerBlock = {
             return $true
         }
 
-        Log-Msg "SQL Server nahi mila. Ab SQL Server 2022 Express download ho raha hai (~250 MB)..." 'WARN'
-        Update-Step 5 'RUNNING' 22 "SQL Express download ho raha hai..." "Microsoft SQL Server 2022 Express download ho raha hai..."
+        Log-Msg "SQL Server nahi mila. Automatic silent install shuru ho raha hai..." 'WARN'
+        Update-Step 5 'RUNNING' 20 "SQL Server Express install shuru..." "Microsoft SQL Server Express setup chal raha hai..."
+
+        # Method 1: Check if winget is available on Windows 10/11
+        $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($winget) {
+            Log-Msg "Windows Package Manager (winget) se SQL Server Express install ho raha hai..." 'INSTALL'
+            Update-Step 5 'RUNNING' 30 "winget install..." "winget se SQL Server Express silently install ho raha hai..."
+            try {
+                $p = Start-Process -FilePath "winget.exe" -ArgumentList "install --id Microsoft.SQLServer.2022Express --silent --accept-package-agreements --accept-source-agreements" -PassThru -WindowStyle Hidden
+                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server winget install" -StartPct 30 -MaxPct 85
+                Start-Sleep -Seconds 4
+            } catch { }
+
+            $svc = Get-SqlSvc
+            if ($svc -and $svc.Status -eq 'Running') {
+                Log-Msg "SQL Express install ho gaya: $($svc.Name)" 'OK'
+                Update-Step 5 'SUCCESS' 100 "$($svc.Name) installed" "Step 5 : SQL Server Installed via winget"
+                return $true
+            }
+        }
+
+        # Method 2: Official Microsoft SQL Server 2022 Bootstrapper with official silent parameters
+        Log-Msg "Microsoft SQL Server 2022 Express download & silent setup chal raha hai..." 'INSTALL'
+        Update-Step 5 'RUNNING' 40 "SQL Express download ho raha hai..." "Microsoft SQL Server 2022 installer load ho raha hai..."
 
         $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
         $ok = Get-FileSmart -Urls @(
             "https://go.microsoft.com/fwlink/p/?linkid=2216019",
-            "https://go.microsoft.com/fwlink/?linkid=2216019"
-        ) -OutFile $sqlExe -Step 5 -FromPct 22 -ToPct 70 -Label "SQL Server Express" -MinBytes 1000000
+            "https://go.microsoft.com/fwlink/p/?LinkID=2164373"
+        ) -OutFile $sqlExe -Step 5 -FromPct 40 -ToPct 65 -Label "SQL Server Bootstrapper" -MinBytes 1000000
 
-        if (-not $ok) {
-            Log-Msg "SQL Express download fail. Internet check karke dobara chalayein." 'WARN'
-            Update-Step 5 'FAILED' 50 "SQL download fail" "Step 5 : SQL Download Failed"
-            return $false
+        if ($ok) {
+            Update-Step 5 'RUNNING' 68 "SQL Server install ho raha hai..." "Background me Microsoft setup chal raha hai (3-5 min)..."
+            Log-Msg "SQL Server 2022 Express unattended install chal rahi hai (kripya 3-5 minute wait karein)..." 'INSTALL'
+            try {
+                $p = Start-Process -FilePath $sqlExe -ArgumentList "/IACCEPTSQLSERVERLICENSETERMS /ENU /ACTION=Install /quiet /InstallPath=`"C:\Program Files\Microsoft SQL Server`"" -PassThru -WindowStyle Hidden
+                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server Express install" -StartPct 68 -MaxPct 92
+            } catch { }
+            Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
         }
 
-        Update-Step 5 'RUNNING' 74 "SQL Server install ho raha hai..." "Unattended install chal rahi hai (kuch min lagenge)..."
-        Log-Msg "SQL Server Express silently install ho raha hai. Kripya wait karein..." 'INSTALL'
-        $p = Start-Process -FilePath $sqlExe -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1" -PassThru -WindowStyle Hidden
-        $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server install" -StartPct 74 -MaxPct 95
-        Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 3
+        # Check if service is now active
+        for ($w = 1; $w -le 25; $w++) {
+            $svc = Get-SqlSvc
+            if ($svc) {
+                if ($svc.Status -ne 'Running') {
+                    try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue } catch { }
+                    Start-Sleep -Seconds 2
+                    $svc = Get-SqlSvc
+                }
+                if ($svc.Status -eq 'Running') { break }
+            }
+            Start-Sleep -Seconds 2
+        }
 
-        $svc = Get-SqlSvc
         if ($svc -and $svc.Status -eq 'Running') {
-            Log-Msg "SQL Express install ho gaya: $($svc.Name)" 'OK'
+            Log-Msg "SQL Express successfully install ho gaya: $($svc.Name)" 'OK'
             Update-Step 5 'SUCCESS' 100 "$($svc.Name) installed" "Step 5 : SQL Server Installed"
             return $true
         }
-        Update-Step 5 'SUCCESS' 100 "Configured" "Step 5 : SQL Configuration Ready"
-        return $true
+
+        # Method 3: Direct standalone offline package fallback (SQL Server 2019 Express complete setup ~260 MB)
+        Log-Msg "Direct standalone SQL Express offline package download ho raha hai (~260 MB)..." 'INSTALL'
+        Update-Step 5 'RUNNING' 60 "Offline SQL package download..." "Microsoft Direct SQL Express package load ho raha hai..."
+        $sqlPkg = Join-Path $env:TEMP "SQLEXPR_x64_ENU.exe"
+        $okPkg = Get-FileSmart -Urls @(
+            "https://download.microsoft.com/download/7/c/1/7c14e92e-bdcb-4f89-b7cf-93543e7112d1/SQLEXPR_x64_ENU.exe"
+        ) -OutFile $sqlPkg -Step 5 -FromPct 60 -ToPct 80 -Label "SQL Server Offline Package (260 MB)" -MinBytes 50000000
+
+        if ($okPkg) {
+            Update-Step 5 'RUNNING' 82 "SQL Server offline install..." "SQLEXPR_x64_ENU unattended installation chal rahi hai..."
+            Log-Msg "SQL Server offline package install ho raha hai..." 'INSTALL'
+            try {
+                $p = Start-Process -FilePath $sqlPkg -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1" -PassThru -WindowStyle Hidden
+                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server Offline Install" -StartPct 82 -MaxPct 95
+            } catch { }
+            Remove-Item $sqlPkg -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+        }
+
+        # Final Verification loop
+        for ($w = 1; $w -le 30; $w++) {
+            $svc = Get-SqlSvc
+            if ($svc) {
+                if ($svc.Status -ne 'Running') {
+                    try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue } catch { }
+                    Start-Sleep -Seconds 2
+                    $svc = Get-SqlSvc
+                }
+                if ($svc.Status -eq 'Running') { break }
+            }
+            Start-Sleep -Seconds 2
+        }
+
+        if ($svc -and $svc.Status -eq 'Running') {
+            Log-Msg "SQL Express successfully install ho gaya: $($svc.Name)" 'OK'
+            Update-Step 5 'SUCCESS' 100 "$($svc.Name) installed" "Step 5 : SQL Server Installed"
+            return $true
+        }
+
+        Log-Msg "SQL Server automatic install nahi ho paya. Kripya Internet check karein." 'WARN'
+        Update-Step 5 'FAILED' 50 "SQL Server missing" "Step 5 : SQL Server Installation Incomplete"
+        return $false
     }
 
     function Exec-Step6 {
@@ -774,6 +849,12 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
                 }
                 if ($connected) { break }
             }
+        }
+
+        if (-not $connected) {
+            Log-Msg "SQL Server se connection establish nahi ho paya. Login create nahi ho saka." 'WARN'
+            Update-Step 7 'FAILED' 50 "SQL connect fail" "Step 7 : SQL Server Connection Failed"
+            return $false
         }
 
         Update-Step 7 'RUNNING' 85 ".env file likhi ja rahi hai..." "Secure .env save ho raha hai..."
@@ -1037,9 +1118,25 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
         $s2 = Exec-Step2;  if (-not $s2)  { [void](Repair-Step 2);  $null = Exec-Step2 }
         $s3 = Exec-Step3;  if (-not $s3)  { [void](Repair-Step 3);  $null = Exec-Step3 }
         $s4 = Exec-Step4;  if (-not $s4)  { [void](Repair-Step 4);  $null = Exec-Step4 }
-        $s5 = Exec-Step5;  if (-not $s5)  { [void](Repair-Step 5);  $null = Exec-Step5 }
+        $s5 = Exec-Step5;  if (-not $s5)  { [void](Repair-Step 5);  $s5 = Exec-Step5 }
+        if (-not $s5) {
+            Log-Msg "SQL Server install nahi mil saka. Step 5 ke bina aage nahi badh sakte." 'WARN'
+            Update-Step 5 'FAILED' 100 "SQL Server missing" "Step 5 : SQL Server Failed"
+            $sync.OverallPct = 45
+            $sync.CurrentAction = "SQL Server install nahi hua. Kripya Internet check karke dobara chalayein."
+            $sync.IsComplete = $false
+            return $false
+        }
         $s6 = Exec-Step6;  if (-not $s6)  { [void](Repair-Step 6);  $null = Exec-Step6 }
-        $s7 = Exec-Step7;  if (-not $s7)  { [void](Repair-Step 7);  $null = Exec-Step7 }
+        $s7 = Exec-Step7;  if (-not $s7)  { [void](Repair-Step 7);  $s7 = Exec-Step7 }
+        if (-not $s7) {
+            Log-Msg "SQL Login connect nahi ho saka. Step 7 ke bina aage nahi badh sakte." 'WARN'
+            Update-Step 7 'FAILED' 100 "SQL Login failed" "Step 7 : SQL Login Failed"
+            $sync.OverallPct = 60
+            $sync.CurrentAction = "SQL Server login connect nahi hua."
+            $sync.IsComplete = $false
+            return $false
+        }
         $s8 = Exec-Step8
         if (-not $s8) {
             [void](Repair-Step 8)
