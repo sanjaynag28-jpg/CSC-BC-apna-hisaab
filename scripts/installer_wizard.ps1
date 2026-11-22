@@ -319,9 +319,14 @@ $workerBlock = {
             }
         } catch { }
 
+        $isCleanActive = ($CleanMode -or ($env:CLEAN_INSTALL -eq '1') -or ($Clean.IsPresent))
         $needsDownload = (-not (Test-Path $serverJs))
         if (-not $needsDownload -and $remoteVer -and ($remoteVer -ne $localVer)) {
             Log-Msg "Naya project version detect hua: v$remoteVer (Aapka local: v$localVer). Latest project se sync ho raha hai..." 'UPDATE'
+            $needsDownload = $true
+        }
+        if ($isCleanActive) {
+            Log-Msg "Clean Install Mode: Purane version ko bypass karke fresh latest project download ho raha hai..." 'UPDATE'
             $needsDownload = $true
         }
 
@@ -669,8 +674,9 @@ $workerBlock = {
         Update-Step 7 'RUNNING' 15 "Step 7 / 11 : SQL login & .env..." "Testing database credentials..."
         Log-Msg "Configuring SQL Login & .env credentials..." 'SECURITY'
 
+        $isCleanActive = ($CleanMode -or ($env:CLEAN_INSTALL -eq '1') -or ($Clean.IsPresent))
         $envPath = Join-Path $ProjectDir '.env'
-        if (Test-Path $envPath) {
+        if ((Test-Path $envPath) -and (-not $isCleanActive)) {
             $content = Get-Content $envPath -ErrorAction SilentlyContinue
             $dbServer = ($content | Where-Object { $_ -match '^DB_SERVER=(.*)$' } | ForEach-Object { $Matches[1].Trim() }) | Select-Object -First 1
             $dbUser = ($content | Where-Object { $_ -match '^DB_USER=(.*)$' } | ForEach-Object { $Matches[1].Trim() }) | Select-Object -First 1

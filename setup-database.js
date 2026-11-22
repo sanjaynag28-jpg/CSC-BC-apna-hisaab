@@ -117,11 +117,22 @@ async function ensureDatabaseExists(baseCfg, isClean = false, forceNewDb = false
                 updateDotEnv('DB_NAME', dbName);
                 console.log(`🔄 Switched target database to: "${dbName}"`);
             }
-            await masterPool.request().query(`
-                IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${dbName.replace(/'/g, "''")}')
-                    CREATE DATABASE ${safeBracketIdent(dbName)};
-            `);
-            console.log(`✅ Fresh "${dbName}" database create ho gaya!`);
+            try {
+                await masterPool.request().query(`
+                    IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${dbName.replace(/'/g, "''")}')
+                        CREATE DATABASE ${safeBracketIdent(dbName)};
+                `);
+                console.log(`✅ Fresh "${dbName}" database create ho gaya!`);
+            } catch (createErr) {
+                console.warn(`⚠️ Database "${dbName}" fresh create error (${createErr.message}). Alternate fresh database par switch kar rahe hain...`);
+                dbName = dbName === 'CashManagement' ? 'CashManagement_v1' : 'CSC_BC_DB';
+                updateDotEnv('DB_NAME', dbName);
+                await masterPool.request().query(`
+                    IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${dbName.replace(/'/g, "''")}')
+                        CREATE DATABASE ${safeBracketIdent(dbName)};
+                `);
+                console.log(`✅ Fresh alternate "${dbName}" database create ho gaya!`);
+            }
         } else if (res.recordset.length === 0) {
             console.log(`🆕 Database "${dbName}" nahi mila — naya database create kar rahe hain...`);
             try {

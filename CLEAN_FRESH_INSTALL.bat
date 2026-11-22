@@ -40,11 +40,11 @@ if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard.ps1"
 
 echo [1/3] Purane adhoore cache saaf kiye ja rahe hain...
-if exist "%TARGET_DIR%\.git" (
-    echo   [INFO] Source git repository detected; files safe rakhi gayi hain.
+if /i "%~dp0"=="%TARGET_DIR%\" (
+    echo   [INFO] Source development workspace detected; files safe rakhi gayi hain.
 ) else (
     if exist "%TARGET_DIR%" (
-        echo   [..] Deleting old project folder: %TARGET_DIR%...
+        echo   [..] Purana version / folder saaf kiya ja raha hai: %TARGET_DIR%...
         attrib -r -s -h "%TARGET_DIR%\*.*" /s /d >nul 2>&1
         rd /s /q "%TARGET_DIR%" >nul 2>&1
     )

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.45",
+  "version": "1.0.46",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "1000% SQL Server & Clean Setup self-healing: uses getMasterPool with smart multi-candidate fallbacks, auto-switches to clean alternate database if locked or corrupted, ensures Step 8 cannot falsely pass, strips read-only attributes on fresh clean install, and updates dynamic batch launcher."
+  "notes": "Always downloads latest code and creates fresh database even if old version or old database already exists on target PC."
 }
