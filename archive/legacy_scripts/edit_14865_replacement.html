@@ -1,0 +1,61 @@
+            <div class="modal-footer" style="padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--border);">
+                <button class="btn-ghost" onclick="closeModal('cscDetailModal')" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-weight: 700; border-radius: 8px; border: 1.5px solid var(--border-row, #cbd5e1); color: var(--text-secondary); background: transparent; cursor: pointer;">
+                    <i data-lucide="x" style="width: 15px; height: 15px;"></i> Band Karein
+                </button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;" id="cscDetailFooterActions">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. CSC Citizen Acknowledgment Receipt Modal (Print Slip) -->
+    <div class="modal-overlay" id="cscReceiptModal">
+        <div class="modal" onclick="event.stopPropagation()" style="width: min(740px, calc(100vw - 36px)); max-width: 740px;">
+            <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="background: rgba(16, 185, 129, 0.12); color: #10b981; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="printer" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">CSC Citizen Acknowledgment Slip (पावती पर्ची)</h2>
+                        <p style="margin: 2px 0 0 0; font-size: 12.5px; color: var(--text-muted);">Grahak ko aavedan acknowledgment receipt print ya WhatsApp share karein</p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscReceiptModal')"><i data-lucide="x"></i></button>
+            </div>
+
+            <div class="modal-body" style="padding: 10px 18px 6px;">
+                <div class="print-format-bar" style="margin-bottom: 8px; padding: 6px 12px;">
+                    <span class="pfb-label"><i data-lucide="printer"></i> Print Format:</span>
+                    <div class="pfb-pills">
+                        <button class="pfb-btn active" data-format="a4" onclick="setPrintFormat('a4', 'csc')">📄 Print A4</button>
+                        <button class="pfb-btn" data-format="a4_half" onclick="setPrintFormat('a4_half', 'csc')">📑 Print A4/2</button>
+                        <button class="pfb-btn" data-format="current" onclick="setPrintFormat('current', 'csc')">🧾 Slip (Thermal 80mm)</button>
+                    </div>
+                </div>
+                <!-- Printable Receipt Canvas -->
+                <div id="printableCSCReceipt" class="csc-receipt-container">
+                    <!-- Populated dynamically via renderCSCReceipt() -->
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--border);">
+                <button class="btn-ghost" onclick="closeModal('cscReceiptModal')" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-weight: 700; border-radius: 8px; border: 1.5px solid var(--border-row, #cbd5e1); color: var(--text-secondary); background: transparent; cursor: pointer;">
+                    <i data-lucide="x" style="width: 15px; height: 15px;"></i> Band Karein
+                </button>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+                    <button class="btn-success btn-sm" onclick="shareCSCReceiptWhatsApp()" style="background: linear-gradient(135deg, #16a34a, #15803d); color: white; font-weight: 700; padding: 7px 13px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="message-circle" style="width: 15px; height: 15px;"></i> WhatsApp Share
+                    </button>
+                    <button class="btn-primary btn-sm" onclick="printCSCReceipt('a4')" title="Poora A4 Page Print" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; font-weight: 700; padding: 7px 13px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="file-text" style="width: 15px; height: 15px;"></i> Print A4
+                    </button>
+                    <button class="btn-info btn-sm" onclick="printCSCReceipt('a4_half')" title="1/2 Page (A4/2) Print" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: white; padding: 7px 13px; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="scissors" style="width: 15px; height: 15px;"></i> Print A4/2 (1/2)
+                    </button>
+                    <button class="btn-warning btn-sm" onclick="printCSCReceipt('current')" title="Current Print (Thermal 80mm Slip)" style="background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; padding: 7px 13px; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="printer" style="width: 15px; height: 15px;"></i> Thermal Slip (80mm)
+                    </button>
+                </div>
+            </div>

@@ -1,0 +1,113 @@
+Created At: 2026-10-28T15:00:21+05:30
+Completed At: 2026-10-28T15:00:21+05:30
+Showing lines 7551-7660 of 8325
+7551:                                     <option value="Aay Praman Patra (Income Certificate)">📜 Aay Praman Patra (Income Certificate)</option>
+7552:                                     <option value="Niwas Praman Patra (Domicile / Residence)">🏠 Niwas Praman Patra (Domicile / Residence)</option>
+7553:                                     <option value="Jati Praman Patra (Caste Certificate)">🏛️ Jati Praman Patra (Caste Certificate)</option>
+7554:                                     <option value="Ration Card (नया / संशोधन / यूनिट)">🌾 Ration Card (नया / संशोधन / यूनिट)</option>
+7555:                                     <option value="Voter ID (Pehchan Patra / Form 6, 8)">🗳️ Voter ID (Pehchan Patra / Form 6, 8)</option>
+7556:                                     <option value="Ayushman Card (PMJAY Golden Card)">🏥 Ayushman Card (PMJAY Golden Card)</option>
+7557:                                     <option value="PM Kisan (Registration / eKYC / Land)">🚜 PM Kisan (Registration / eKYC / Land)</option>
+7558:                                     <option value="E-Shram / Labour (Shramik Card)">👷 E-Shram / Labour (Shramik Card)</option>
+7559:                                     <option value="Janma / Mrityu Praman Patra (Birth / Death)">👶 Janma / Mrityu Praman Patra</option>
+7560:                                     <option value="Driving License (Learner / Permanent)">🚗 Driving License (Learner / Permanent)</option>
+7561:                                     <option value="Passport Seva">✈️ Passport Seva</option>
+7562:                                     <option value="Bijli Bill / Electricity Service">⚡ Bijli Bill / Electricity Service</option>
+7563:                                     <option value="Anya Government / CSC Seva">📦 Anya Government / CSC Seva</option>
+7564:                                 </select>
+7565:                             </div>
+7566:                             <div class="form-group" style="margin-bottom: 0;">
+7567:                                 <label for="cscAckNumber">Ack / Token / Aavedan Sankhya *</label>
+7568:                                 <input type="text" id="cscAckNumber" class="form-control" placeholder="e.g. 24158001004523 ya Ack No" required>
+7569:                             </div>
+7570:                         </div>
+7571: 
+7572:                         <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+7573:                             <div class="form-group" style="margin-bottom: 0;">
+7574:                                 <label for="cscApplyDate">Apply Date (Tarikh)</label>
+7575:                                 <input type="date" id="cscApplyDate" class="form-control">
+7576:                             </div>
+7577:                             <div class="form-group" style="margin-bottom: 0;">
+7578:                                 <label for="cscExpectedDate">Target / Ready Date</label>
+7579:                                 <input type="date" id="cscExpectedDate" class="form-control">
+7580:                             </div>
+7581:                         </div>
+7582:                     </div>
+7583: 
+7584:                     <!-- Fees & Payment Calculation Row -->
+7585:                     <div class="form-section-card">
+7586:                         <label class="form-section-title">
+7587:                             <i data-lucide="indian-rupee" style="color: #f59e0b;"></i> Fees, Payment & Bakiya Hisaab
+7588:                         </label>
+7589: 
+7590:                         <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1.2fr 1.2fr 1fr; gap: 10px; align-items: flex-end;">
+7591:                             <div class="form-group" style="margin-bottom: 0;">
+7592:                                 <label for="cscGovtFee">Govt Fee (₹)</label>
+7593:                                 <input type="number" id="cscGovtFee" class="form-control" placeholder="0" min="0" step="any" oninput="calculateCSCFees()">
+7594:                             </div>
+7595:                             <div class="form-group" style="margin-bottom: 0;">
+7596:                                 <label for="cscOperatorFee">Shop Fee (₹)</label>
+7597:                                 <input type="number" id="cscOperatorFee" class="form-control" placeholder="50" min="0" step="any" oninput="calculateCSCFees()">
+7598:                             </div>
+7599:                             <div class="form-group" style="margin-bottom: 0;">
+7600:                                 <label for="cscTotalFee">Kul Fee (₹) *</label>
+7601:                                 <input type="number" id="cscTotalFee" class="form-control" style="font-weight: 700; color: #047857;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+7602:                             </div>
+7603:                             <div class="form-group" style="margin-bottom: 0;">
+7604:                                 <label for="cscPaidAmount">Jama Kiya (₹) *</label>
+7605:                                 <input type="number" id="cscPaidAmount" class="form-control" style="font-weight: 700; color: #1d4ed8;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+7606:                             </div>
+7607:                             <div class="form-group" style="margin-bottom: 0;">
+7608:                                 <label>Bakiya (Due)</label>
+7609:                                 <div id="cscDueAmountDisplay" style="height: 40px; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.15); border: 1.5px solid rgba(239, 68, 68, 0.35); border-radius: 8px; color: #b91c1c; font-weight: 800; font-size: 15px;">
+7610:                                     ₹0
+7611:                                 </div>
+7612:                             </div>
+7613:                         </div>
+7614: 
+7615:                         <div class="form-row" style="display: grid; grid-template-columns: 1.5fr 1.5fr 2fr; gap: 10px; margin-top: 12px;">
+7616:                             <div class="form-group" style="margin-bottom: 0;">
+7617:                                 <label for="cscPaymentMode">Payment Mode</label>
+7618:                                 <select id="cscPaymentMode" class="form-control">
+7619:                                     <option value="Cash">💵 Cash (Rokad)</option>
+7620:                                     <option value="UPI">📱 UPI / QR Code</option>
+7621:                                     <option value="Google Pay">🔵 Google Pay</option>
+7622:                                     <option value="PhonePe">🟣 PhonePe</option>
+7623:                                     <option value="Paytm">🔷 Paytm</option>
+7624:                                     <option value="Khata">📒 Khata (Udhaar)</option>
+7625:                                     <option value="Bank">🏦 Bank Transfer</option>
+7626:                                 </select>
+7627:                             </div>
+7628:                             <div class="form-group" style="margin-bottom: 0;">
+7629:                                 <label for="cscStatus">Initial Status</label>
+7630:                                 <select id="cscStatus" class="form-control">
+7631:                                     <option value="Pending">⏳ Pending (Aavedan Jama)</option>
+7632:                                     <option value="Under Process">⚙️ Under Process (Prastavit)</option>
+7633:                                     <option value="Approved">✅ Approved (Ban Gaya)</option>
+7634:                                 </select>
+7635:                             </div>
+7636:                             <div class="form-group" style="margin-bottom: 0;">
+7637:                                 <label for="cscStatusRemarks">Vivran / Notes</label>
+7638:                                 <input type="text" id="cscStatusRemarks" class="form-control" placeholder="Aadhaar photocopy li, mobile OTP verify kiya...">
+7639:                             </div>
+7640:                         </div>
+7641:                     </div>
+7642: 
+7643:                     <!-- Universal Document Uploader (Multiple Docs + Rename) -->
+7644:                     <div id="cscDocUploader" class="universal-doc-uploader-box" data-entity-type="csc" style="margin-top: 14px;"></div>
+7645:                 </div>
+7646: 
+7647:                 <div class="modal-footer" style="padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; margin-top: auto;">
+7648:                     <div style="display: flex; align-items: center; gap: 8px;">
+7649:                         <input type="checkbox" id="cscAutoOpenSlip" checked style="width: 16px; height: 16px; cursor: pointer;">
+7650:                         <label for="cscAutoOpenSlip" style="font-size: 13.5px; cursor: pointer; color: var(--text-color);">
+7651:                             Save hote hi <b>Customer Slip (Receipt)</b> kholein
+7652:                         </label>
+7653:                     </div>
+7654: 
+7655:                     <div style="display: flex; gap: 10px;">
+7656:                         <button type="button" class="btn-ghost" onclick="closeModal('cscNewAppModal')" style="font-size: 13.5px; padding: 7px 16px;">Radd Karein</button>
+7657:                         <button type="submit" class="btn-primary" id="cscSaveBtn" style="font-size: 13.5px; padding: 7px 18px;">
+7658:                             <i data-lucide="save"></i> <span id="cscSaveBtnText">Aavedan Save Karein</span>
+7659:                         </button>
+7660:                     </div>

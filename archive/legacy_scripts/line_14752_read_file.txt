@@ -1,0 +1,154 @@
+Created At: 2026-11-05T14:08:43+05:30
+Completed At: 2026-11-05T14:08:43+05:30
+Showing lines 8000-8150 of 8784
+8000:                             <div class="form-group" style="margin-bottom: 0;">
+8001:                                 <label for="cscApplyDate">Apply Date (Tarikh)</label>
+8002:                                 <input type="date" id="cscApplyDate" class="form-control">
+8003:                             </div>
+8004:                             <div class="form-group" style="margin-bottom: 0;">
+8005:                                 <label for="cscExpectedDate">Target / Ready Date</label>
+8006:                                 <input type="date" id="cscExpectedDate" class="form-control">
+8007:                             </div>
+8008:                         </div>
+8009:                     </div>
+8010: 
+8011: 
+8012:                     <!-- Fees & Payment Calculation Row -->
+8013:                     <div class="form-section-card">
+8014:                         <label class="form-section-title">
+8015:                             <i data-lucide="indian-rupee" style="color: #f59e0b;"></i> Fees, Payment & Bakiya Hisaab
+8016:                         </label>
+8017: 
+8018:                         <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1.2fr 1.2fr 1fr; gap: 10px; align-items: flex-end;">
+8019:                             <div class="form-group" style="margin-bottom: 0;">
+8020:                                 <label for="cscGovtFee">Govt Fee (₹)</label>
+8021:                                 <input type="number" id="cscGovtFee" class="form-control" placeholder="0" min="0" step="any" oninput="calculateCSCFees()">
+8022:                             </div>
+8023:                             <div class="form-group" style="margin-bottom: 0;">
+8024:                                 <label for="cscOperatorFee">Shop Fee (₹)</label>
+8025:                                 <input type="number" id="cscOperatorFee" class="form-control" placeholder="50" min="0" step="any" oninput="calculateCSCFees()">
+8026:                             </div>
+8027:                             <div class="form-group" style="margin-bottom: 0;">
+8028:                                 <label for="cscTotalFee">Kul Fee (₹) *</label>
+8029:                                 <input type="number" id="cscTotalFee" class="form-control" style="font-weight: 700; color: #047857;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+8030:                             </div>
+8031:                             <div class="form-group" style="margin-bottom: 0;">
+8032:                                 <label for="cscPaidAmount">Jama Kiya (₹) *</label>
+8033:                                 <input type="number" id="cscPaidAmount" class="form-control" style="font-weight: 700; color: #1d4ed8;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+8034:                             </div>
+8035:                             <div class="form-group" style="margin-bottom: 0;">
+8036:                                 <label>Bakiya (Due)</label>
+8037:                                 <div id="cscDueAmountDisplay" style="height: 40px; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.15); border: 1.5px solid rgba(239, 68, 68, 0.35); border-radius: 8px; color: #b91c1c; font-weight: 800; font-size: 15px;">
+8038:                                     ₹0
+8039:                                 </div>
+8040:                             </div>
+8041:                         </div>
+8042: 
+8043:                         <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+8044:                             <div class="form-group" style="margin-bottom: 0;">
+8045:                                 <label for="cscPaymentMode">Payment Mode</label>
+8046:                                 <select id="cscPaymentMode" class="form-control">
+8047:                                     <option value="Cash">💵 Cash (Rokad)</option>
+8048:                                     <option value="UPI">📱 UPI / QR Code</option>
+8049:                                     <option value="Google Pay">🔵 Google Pay</option>
+8050:                                     <option value="PhonePe">🟣 PhonePe</option>
+8051:                                     <option value="Paytm">🔷 Paytm</option>
+8052:                                     <option value="Khata">📒 Khata (Udhaar)</option>
+8053:                                     <option value="Bank">🏦 Bank Transfer</option>
+8054:                                 </select>
+8055:                             </div>
+8056:                             <div class="form-group" style="margin-bottom: 0;">
+8057:                                 <label for="cscStatus">Initial Status</label>
+8058:                                 <select id="cscStatus" class="form-control">
+8059:                                     <option value="Pending">⏳ Pending (Aavedan Jama)</option>
+8060:                                     <option value="Under Process">⚙️ Under Process (Prastavit)</option>
+8061:                                     <option value="Approved">✅ Approved (Ban Gaya)</option>
+8062:                                 </select>
+8063:                             </div>
+8064:                         </div>
+8065: 
+8066:                         <!-- Dynamic Multi-Notes Section -->
+8067:                         <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+8068:                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+8069:                                 <label style="margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px; font-size: 13px;">
+8070:                                     <i data-lucide="file-text" width="14" height="14" style="color: #0284c7;"></i>
+8071:                                     <span>Vivran / Notes (Aavedan Sambandhit Tippani)</span>
+8072:                                 </label>
+8073:                                 <button type="button" class="btn-ghost btn-sm" onclick="addCSCNoteRow()" title="Naya note add karein" style="padding: 3px 10px; font-size: 12px; font-weight: 600; color: #0284c7; background: rgba(2, 132, 199, 0.08); border: 1px dashed #0284c7; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+8074:                                     <i data-lucide="plus" width="12" height="12"></i> + Add More Notes
+8075:                                 </button>
+8076:                             </div>
+8077:                             <!-- Hidden fallback for backward compatibility -->
+8078:                             <input type="hidden" id="cscStatusRemarks" value="">
+8079:                             <div id="cscNotesContainer" style="display: flex; flex-direction: column; gap: 6px;">
+8080:                                 <!-- Dynamic Note rows populated via setCSCNotesInUI / addCSCNoteRow -->
+8081:                             </div>
+8082:                         </div>
+8083:                     </div>
+8084: 
+8085: 
+8086:                     <!-- Universal Document Uploader (Multiple Docs + Rename) -->
+8087:                     <div id="cscDocUploader" class="universal-doc-uploader-box" data-entity-type="csc" style="margin-top: 14px;"></div>
+8088:                 </div>
+8089: 
+8090:                 <div class="modal-footer" style="padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; margin-top: auto;">
+8091:                     <div style="display: flex; align-items: center; gap: 8px;">
+8092:                         <input type="checkbox" id="cscAutoOpenSlip" checked style="width: 16px; height: 16px; cursor: pointer;">
+8093:                         <label for="cscAutoOpenSlip" style="font-size: 13.5px; cursor: pointer; color: var(--text-color);">
+8094:                             Save hote hi <b>Customer Slip (Receipt)</b> kholein
+8095:                         </label>
+8096:                     </div>
+8097: 
+8098:                     <div style="display: flex; gap: 10px;">
+8099:                         <button type="button" class="btn-ghost" onclick="closeModal('cscNewAppModal')" style="font-size: 13.5px; padding: 7px 16px;">Radd Karein</button>
+8100:                         <button type="submit" class="btn-primary" id="cscSaveBtn" style="font-size: 13.5px; padding: 7px 18px;">
+8101:                             <i data-lucide="save"></i> <span id="cscSaveBtnText">Aavedan Save Karein</span>
+8102:                         </button>
+8103:                     </div>
+8104:                 </div>
+8105:             </form>
+8106:         </div>
+8107:     </div>
+8108: 
+8109:     <!-- 2. CSC Status Fast Updater Modal -->
+8110:     <div class="modal-overlay" id="cscStatusModal">
+8111:         <div class="modal csc-status-dialog" onclick="event.stopPropagation()" style="width: min(640px, calc(100vw - 36px)); max-width: 640px; border-radius: 16px; overflow: hidden;">
+8112:             <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+8113:                 <div style="display: flex; align-items: center; gap: 12px;">
+8114:                     <div style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+8115:                         <i data-lucide="rotate-ccw" style="width: 22px; height: 22px;"></i>
+8116:                     </div>
+8117:                     <div>
+8118:                         <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">Status Update Karein</h2>
+8119:                         <p style="margin: 3px 0 0 0; font-size: 12.5px; color: var(--text-muted);">
+8120:                             Aavedan ki pragati (status) badlein aur certificate no darz karein
+8121:                         </p>
+8122:                     </div>
+8123:                 </div>
+8124:                 <button class="modal-close" onclick="closeModal('cscStatusModal')"><i data-lucide="x"></i></button>
+8125:             </div>
+8126: 
+8127:             <form id="cscStatusForm" onsubmit="handleCSCStatusSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; margin: 0;">
+8128:                 <input type="hidden" id="cscStatusUpdateAppId" value="">
+8129:                 
+8130:                 <div class="modal-body" style="padding: 18px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+8131:                     <!-- App Info Pill Card -->
+8132:                     <div class="csc-status-customer-card" style="background: var(--bg-secondary); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+8133:                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+8134:                             <div style="display: flex; align-items: center; gap: 10px;">
+8135:                                 <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(16, 185, 129, 0.14); color: #059669; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0;">
+8136:                                     <i data-lucide="user" style="width: 18px; height: 18px;"></i>
+8137:                                 </div>
+8138:                                 <div>
+8139:                                     <b id="cscStatusCustomerName" style="font-size: 16px; font-weight: 800; color: var(--text-primary); display: block;">-</b>
+8140:                                     <span style="font-size: 12px; color: var(--text-muted); font-family: inherit;">Ack: <b id="cscStatusAckNo" style="color: #0284c7; font-weight: 700;">-</b></span>
+8141:                                 </div>
+8142:                             </div>
+8143:                             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+8144:                                 <span id="cscStatusServiceBadge" class="badge" style="background: rgba(59, 130, 246, 0.14); color: #2563eb; font-weight: 800; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">-</span>
+8145:                                 <span class="csc-pill-neutral">📅 Target: <b id="cscStatusTargetDate">-</b></span>
+8146:                                 <span id="cscStatusDuePill" style="display: none; color: #dc2626; font-weight: 800; font-size: 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 5px 10px; border-radius: 6px;">Due: ₹0</span>
+8147:                             </div>
+8148:                         </div>
+8149:                     </div>
+8150: 

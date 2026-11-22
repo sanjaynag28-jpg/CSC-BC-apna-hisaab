@@ -1,0 +1,492 @@
+
+    <!-- ==========================================================================
+         CSC WORK TRACKER MODALS (New Application, Status Update, Slip Print)
+         ========================================================================== -->
+
+    <!-- 1. CSC New / Edit Application Modal -->
+    <div class="modal-overlay" id="cscNewAppModal">
+        <div class="modal large csc-newapp-dialog" onclick="event.stopPropagation()" style="width: min(1180px, calc(100vw - 32px)); max-width: 1180px; max-height: 95vh;">
+            <div class="modal-header" style="padding: 14px 22px;">
+                <div>
+                    <h2 id="cscModalTitle" style="display: flex; align-items: center; gap: 10px; margin: 0; font-size: 18.5px; font-weight: 700;">
+                        <i data-lucide="clipboard-check" style="color: #10b981; width: 22px; height: 22px;"></i>
+                        <span>Naya CSC Aavedan (Application Entry)</span>
+                    </h2>
+                    <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--text-muted);">
+                        PAN Card, Aay, Niwas, Jati, Ration Card aadi aavedan ki details aur fee save karein
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscNewAppModal')"><i data-lucide="x"></i></button>
+            </div>
+            
+            <form id="cscAppForm" onsubmit="handleCSCFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden;">
+                <input type="hidden" id="cscAppId" value="">
+                
+                <div class="modal-body" style="padding: 16px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+                    <!-- Customer Selection Row -->
+                    <div class="form-section-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <label class="form-section-title" style="margin-bottom: 0;">
+                                <i data-lucide="user-check" style="color: #3b82f6;"></i> Grahak (Customer) Chunein Ya Naya Likhein
+                            </label>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span id="cscCustomerDocBadge" style="display: none; cursor: pointer; padding: 3px 9px; border-radius: 6px; font-weight: 700; font-size: 11.5px; background: rgba(2, 132, 199, 0.2); color: #38bdf8; border: 1.5px solid #0284c7;" onclick="openCSCCustomerDocs()" title="Is Customer ke dastavej (Documents) dekhein">
+                                    📎 Docs (<span id="cscCustomerDocCount">0</span>)
+                                </span>
+                                <span style="font-size: 11.5px; color: var(--text-muted);" class="hide-mobile">Existing customer select karein ya naya naam bharein</span>
+                                <button type="button" class="btn-ghost btn-sm" tabindex="-1" onclick="openNewCustomerFromCSC()" style="font-size: 11.5px; padding: 4px 10px; color: #3b82f6; display: flex; align-items: center; gap: 6px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.08); font-weight: 600;" title="Naya Customer Register Karein [Alt + C] ya [F2]">
+                                    <i data-lucide="user-plus" style="width: 13px; height: 13px;"></i>
+                                    <span>+ Naya Customer</span>
+                                    <kbd style="font-size: 10px; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); padding: 1px 5px; border-radius: 4px; color: #93c5fd; font-family: monospace;">Alt+C</kbd>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                    <label for="cscCustomerSelect" style="margin: 0;">Existing Customer</label>
+                                    <button type="button" class="btn-copy-mini" tabindex="-1" onclick="openNewCustomerFromCSC()" style="color: #3b82f6;" title="Naya Customer Jodein [Alt + C]">
+                                        <i data-lucide="user-plus" width="10" height="10"></i> + Naya (Alt+C)
+                                    </button>
+                                </div>
+                                <select id="cscCustomerSelect" class="form-control searchable-select" data-searchable="true" data-placeholder="🔍 Customer khojein..." onchange="onCSCCustomerSelectChange()">
+                                    <option value="">-- Direct Naya / Walk-in Customer --</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscCustName">Customer Naam *</label>
+                                <input type="text" id="cscCustName" class="form-control" placeholder="Grahak ka naam" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                    <label for="cscCustPhone" style="margin: 0;">Mobile Number <span id="cscPhoneChip"></span></label>
+                                    <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputVal('cscCustPhone', 'Mobile number', event)" title="Mobile number copy karein">
+                                        <i data-lucide="copy" width="10" height="10"></i> Copy
+                                    </button>
+                                </div>
+                                <input type="text" id="cscCustPhone" class="form-control" placeholder="10-digit mobile" maxlength="10" oninput="handleCSCPhoneInput(this)" autocomplete="off">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                    <label for="cscCustAadhaar" style="margin: 0;">Aadhaar (12-Digit) <span id="cscAadhaarChip"></span></label>
+                                    <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputAadhaar('cscCustAadhaar', event)" title="Aadhaar number copy karein (bina space ke)">
+                                        <i data-lucide="copy" width="10" height="10"></i> Copy (Bina Space)
+                                    </button>
+                                </div>
+                                <input type="text" id="cscCustAadhaar" class="form-control font-mono" placeholder="1234 5678 9012" maxlength="14" oninput="handleCSCAadhaarInput(this)" autocomplete="off">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                                    <label for="cscCustDob" style="margin: 0; display: flex; align-items: center; gap: 4px;">🎂 Date of Birth</label>
+                                    <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputVal('cscCustDob', 'Date of Birth', event)" title="DOB copy karein">
+                                        <i data-lucide="copy" width="10" height="10"></i> Copy
+                                    </button>
+                                </div>
+                                <input type="date" id="cscCustDob" class="form-control" autocomplete="off">
+                            </div>
+                        </div>
+                        <input type="hidden" id="cscPortalName" value="">
+                    </div>
+
+                    <!-- Service Details Row -->
+                    <div class="form-section-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <label class="form-section-title" style="margin-bottom: 0;">
+                                <i data-lucide="file-text" style="color: #10b981;"></i> Sewa (Service) & Application Details
+                            </label>
+                            <button type="button" class="btn-ghost btn-sm" tabindex="-1" onclick="openNewCSCServiceModal()" style="font-size: 11.5px; padding: 4px 10px; color: #3b82f6; display: flex; align-items: center; gap: 5px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.3);" title="Nayi Sewa jodein ya default fees set karein">
+                                <i data-lucide="settings" style="width: 13px; height: 13px;"></i>
+                                <span>+ Nayi Sewa / Fees Settings</span>
+                            </button>
+                        </div>
+
+                        <div class="form-row" style="display: grid; grid-template-columns: 1.3fr 1.2fr; gap: 12px; margin-bottom: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscServiceType">Sewa Prakar (Service Type) *</label>
+                                <select id="cscServiceType" class="form-control" required onchange="onCSCServiceTypeChange()">
+                                    <option value="PAN Card (NSDL / UTI)">PAN Card (NSDL / UTI) 💳</option>
+                                    <option value="Aay Praman Patra (Income Certificate)">Aay Praman Patra (Income Certificate) 📜</option>
+                                    <option value="Niwas Praman Patra (Domicile / Residence)">Niwas Praman Patra (Domicile / Residence) 🏠</option>
+                                    <option value="Jati Praman Patra (Caste Certificate)">Jati Praman Patra (Caste Certificate) 🏛️</option>
+                                    <option value="Ration Card (नया / संशोधन / यूनिट)">Ration Card (नया / संशोधन / यूनिट) 🌾</option>
+                                    <option value="Voter ID (Pehchan Patra / Form 6, 8)">Voter ID (Pehchan Patra / Form 6, 8) 🗳️</option>
+                                    <option value="Ayushman Card (PMJAY Golden Card)">Ayushman Card (PMJAY Golden Card) 🏥</option>
+                                    <option value="PM Kisan (Registration / eKYC / Land)">PM Kisan (Registration / eKYC / Land) 🚜</option>
+                                    <option value="E-Shram / Labour (Shramik Card)">E-Shram / Labour (Shramik Card) 👷</option>
+                                    <option value="Janma / Mrityu Praman Patra (Birth / Death)">Janma / Mrityu Praman Patra (Birth / Death) 👶</option>
+                                    <option value="Driving License (Learner / Permanent)">Driving License (Learner / Permanent) 🚗</option>
+                                    <option value="Passport Seva">Passport Seva ✈️</option>
+                                    <option value="Bijli Bill / Electricity Service">Bijli Bill / Electricity Service ⚡</option>
+                                    <option value="Anya Government / CSC Seva">Anya Government / CSC Seva 📦</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscAckNumber">Ack / Token / Aavedan Sankhya *</label>
+                                <input type="text" id="cscAckNumber" class="form-control" placeholder="e.g. 24158001004523 ya Ack No" required>
+                            </div>
+                        </div>
+
+                        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscApplyDate">Apply Date (Tarikh)</label>
+                                <input type="date" id="cscApplyDate" class="form-control">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscExpectedDate">Target / Ready Date</label>
+                                <input type="date" id="cscExpectedDate" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Fees & Payment Calculation Row -->
+                    <div class="form-section-card">
+                        <label class="form-section-title">
+                            <i data-lucide="indian-rupee" style="color: #f59e0b;"></i> Fees, Payment & Bakiya Hisaab
+                        </label>
+
+                        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr 1.2fr 1.2fr 1fr; gap: 10px; align-items: flex-end;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscGovtFee">Govt Fee (₹)</label>
+                                <input type="number" id="cscGovtFee" class="form-control" placeholder="0" min="0" step="any" oninput="calculateCSCFees()">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscOperatorFee">Shop Fee (₹)</label>
+                                <input type="number" id="cscOperatorFee" class="form-control" placeholder="50" min="0" step="any" oninput="calculateCSCFees()">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscTotalFee">Kul Fee (₹) *</label>
+                                <input type="number" id="cscTotalFee" class="form-control" style="font-weight: 700; color: #047857;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscPaidAmount">Jama Kiya (₹) *</label>
+                                <input type="number" id="cscPaidAmount" class="form-control" style="font-weight: 700; color: #1d4ed8;" placeholder="50" min="0" step="any" required oninput="calculateCSCFees(true)">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Bakiya (Due)</label>
+                                <div id="cscDueAmountDisplay" style="height: 40px; display: flex; align-items: center; justify-content: center; background: rgba(239, 68, 68, 0.15); border: 1.5px solid rgba(239, 68, 68, 0.35); border-radius: 8px; color: #b91c1c; font-weight: 800; font-size: 15px;">
+                                    ₹0
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscPaymentMode">Payment Mode</label>
+                                <select id="cscPaymentMode" class="form-control">
+                                    <option value="Cash">💵 Cash (Rokad)</option>
+                                    <option value="UPI">📱 UPI / QR Code</option>
+                                    <option value="Google Pay">🔵 Google Pay</option>
+                                    <option value="PhonePe">🟣 PhonePe</option>
+                                    <option value="Paytm">🔷 Paytm</option>
+                                    <option value="Khata">📒 Khata (Udhaar)</option>
+                                    <option value="Bank">🏦 Bank Transfer</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="cscStatus">Initial Status</label>
+                                <select id="cscStatus" class="form-control">
+                                    <option value="Pending">⏳ Pending (Aavedan Jama)</option>
+                                    <option value="Under Process">⚙️ Under Process (Prastavit)</option>
+                                    <option value="Approved">✅ Approved (Ban Gaya)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Multi-Notes Section -->
+                        <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+                                <label style="margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px; font-size: 13px;">
+                                    <i data-lucide="file-text" width="14" height="14" style="color: #0284c7;"></i>
+                                    <span>Vivran / Notes (Aavedan Sambandhit Tippani)</span>
+                                </label>
+                                <button type="button" class="btn-ghost btn-sm" onclick="addCSCNoteRow()" title="Naya note add karein" style="padding: 3px 10px; font-size: 12px; font-weight: 600; color: #0284c7; background: rgba(2, 132, 199, 0.08); border: 1px dashed #0284c7; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i data-lucide="plus" width="12" height="12"></i> + Add More Notes
+                                </button>
+                            </div>
+                            <!-- Hidden fallback for backward compatibility -->
+                            <input type="hidden" id="cscStatusRemarks" value="">
+                            <div id="cscNotesContainer" style="display: flex; flex-direction: column; gap: 6px;">
+                                <!-- Dynamic Note rows populated via setCSCNotesInUI / addCSCNoteRow -->
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Universal Document Uploader (Multiple Docs + Rename) -->
+                    <div id="cscDocUploader" class="universal-doc-uploader-box" data-entity-type="csc" style="margin-top: 14px;"></div>
+                </div>
+
+                <div class="modal-footer" style="padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; margin-top: auto;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="cscAutoOpenSlip" checked style="width: 16px; height: 16px; cursor: pointer;">
+                        <label for="cscAutoOpenSlip" style="font-size: 13.5px; cursor: pointer; color: var(--text-color);">
+                            Save hote hi <b>Customer Slip (Receipt)</b> kholein
+                        </label>
+                    </div>
+
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn-ghost" onclick="closeModal('cscNewAppModal')" style="font-size: 13.5px; padding: 7px 16px;">Radd Karein</button>
+                        <button type="submit" class="btn-primary" id="cscSaveBtn" style="font-size: 13.5px; padding: 7px 18px;">
+                            <i data-lucide="save"></i> <span id="cscSaveBtnText">Aavedan Save Karein</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. CSC Status Fast Updater Modal -->
+    <div class="modal-overlay" id="cscStatusModal">
+        <div class="modal csc-status-dialog" onclick="event.stopPropagation()" style="width: min(640px, calc(100vw - 36px)); max-width: 640px; border-radius: 16px; overflow: hidden;">
+            <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="rotate-ccw" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">Status Update Karein</h2>
+                        <p style="margin: 3px 0 0 0; font-size: 12.5px; color: var(--text-muted);">
+                            Aavedan ki pragati (status) badlein aur certificate no darz karein
+                        </p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscStatusModal')"><i data-lucide="x"></i></button>
+            </div>
+
+            <form id="cscStatusForm" onsubmit="handleCSCStatusSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; margin: 0;">
+                <input type="hidden" id="cscStatusUpdateAppId" value="">
+                
+                <div class="modal-body" style="padding: 18px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+                    <!-- App Info Pill Card -->
+                    <div class="csc-status-customer-card" style="background: var(--bg-secondary); border: 1.5px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(16, 185, 129, 0.14); color: #059669; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0;">
+                                    <i data-lucide="user" style="width: 18px; height: 18px;"></i>
+                                </div>
+                                <div>
+                                    <b id="cscStatusCustomerName" style="font-size: 16px; font-weight: 800; color: var(--text-primary); display: block;">-</b>
+                                    <span style="font-size: 12px; color: var(--text-muted); font-family: inherit;">Ack: <b id="cscStatusAckNo" style="color: #0284c7; font-weight: 700;">-</b></span>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span id="cscStatusServiceBadge" class="badge" style="background: rgba(59, 130, 246, 0.14); color: #2563eb; font-weight: 800; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">-</span>
+                                <span class="csc-pill-neutral">📅 Target: <b id="cscStatusTargetDate">-</b></span>
+                                <span id="cscStatusDuePill" style="display: none; color: #dc2626; font-weight: 800; font-size: 12px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); padding: 5px 10px; border-radius: 6px;">Due: ₹0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Status Selector -->
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label for="cscStatusSelect" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+                            Naya Status Chunein (Select Application Stage) *
+                        </label>
+                        <select id="cscStatusSelect" class="form-control" style="font-weight: 700; font-size: 14px; height: 44px; border-radius: 10px;" required onchange="onCSCStatusSelectChange()">
+                            <option value="Pending">⏳ Pending (Aavedan Jama Hua Hai)</option>
+                            <option value="Under Process">⚙️ Under Process (Karyavahi Chal Rahi Hai)</option>
+                            <option value="Approved">✅ Approved / Ready (Ban Gaya Hai - Grahak Ko Suchna De)</option>
+                            <option value="Delivered">📦 Delivered (Grahak Ne Prapt Kar Liya)</option>
+                            <option value="Rejected">❌ Rejected / Objection (Aapatti Lagi Ya Nirast)</option>
+                        </select>
+                    </div>
+
+                    <!-- Certificate / Doc Number -->
+                    <div class="form-group" id="cscCertNoGroup" style="margin-bottom: 16px;">
+                        <label for="cscCertificateDocNo" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+                            Certificate / Praman Patra / Dispatch Number
+                        </label>
+                        <input type="text" id="cscCertificateDocNo" class="form-control" placeholder="e.g. 18239001248 ya PAN Dispatch No" style="height: 42px; border-radius: 10px; font-weight: 600;">
+                        <small style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: block;">Ban jane par praman patra sankhya ya dispatch no yahan darz karein</small>
+                    </div>
+
+                    <!-- Status Remarks -->
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label for="cscStatusRemarksInput" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+                            Tippani (Remarks / Objection Reason)
+                        </label>
+                        <textarea id="cscStatusRemarksInput" class="form-control" rows="3" placeholder="e.g. Lekhpal report lag gayi / Grahak ko physical card de diya..." style="border-radius: 10px; font-weight: 500; resize: vertical;"></textarea>
+                    </div>
+
+                    <!-- Due Collection Section (if due exists) -->
+                    <div id="cscCollectDueSection" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1.5px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 16px; margin-top: 10px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                            <label style="font-weight: 800; color: #d97706; font-size: 13.5px; margin: 0; display: flex; align-items: center; gap: 6px;">
+                                <i data-lucide="alert-circle" style="width: 16px; height: 16px;"></i> Bakiya Rashi Collect Karein?
+                            </label>
+                            <span id="cscDueCollectionAmountBadge" style="font-weight: 800; color: #dc2626; font-size: 13px;">₹0 Due</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary);">
+                                <input type="checkbox" id="cscMarkDuePaid" style="width: 16px; height: 16px; cursor: pointer;">
+                                <span>Poora bakiya jama ho gaya (Mark Full Paid)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-top: auto; border-top: 1px solid var(--border);">
+                    <button type="button" class="btn-ghost" onclick="closeModal('cscStatusModal')" style="height: 38px; padding: 0 18px; font-weight: 700; border-radius: 8px;">Radd</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn-success" onclick="sendCSCStatusWhatsAppFromModal()" title="WhatsApp alert bhejein" style="height: 38px; padding: 0 16px; font-weight: 700; border-radius: 8px; background: #16a34a; color: white; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <i data-lucide="message-circle" style="width: 16px; height: 16px;"></i> WhatsApp
+                        </button>
+                        <button type="submit" class="btn-primary" id="cscStatusSaveBtn" style="height: 38px; padding: 0 20px; font-weight: 800; border-radius: 8px;">
+                            <i data-lucide="check" style="width: 16px; height: 16px;"></i> Status Save Karein
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. CSC Service & Fees Configuration Modal -->
+    <div class="modal-overlay" id="cscServiceModal">
+        <div class="modal" onclick="event.stopPropagation()" style="width: min(660px, calc(100vw - 36px)); max-width: 660px;">
+            <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="settings" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h2 id="cscServiceModalTitle" style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">CSC Sewa & Shulk Master (Service Fees)</h2>
+                        <p style="margin: 2px 0 0 0; font-size: 12.5px; color: var(--text-muted);">Sarkari portal shulk aur dukaan commission darz karein</p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscServiceModal')"><i data-lucide="x"></i></button>
+            </div>
+
+            <form id="cscServiceForm" onsubmit="handleCSCServiceFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden;">
+                <input type="hidden" id="cscServiceId" value="">
+                
+                <div class="modal-body" style="padding: 20px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+                    <div class="form-group" style="margin-bottom: 14px;">
+                        <label for="cscServiceNameInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Sewa Ka Naam (Service Name) *</label>
+                        <input type="text" id="cscServiceNameInput" class="form-control" placeholder="e.g. Naya Voter Card, Khatauni Nakal, Pension KYC..." required style="font-weight: 600;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="cscServiceGovtFeeInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Govt Fee (Sarkari Shulk ₹)</label>
+                            <input type="number" id="cscServiceGovtFeeInput" class="form-control font-mono" placeholder="0" min="0" step="any" value="0" oninput="updateCSCServiceTotalPreview()" style="font-weight: 700;">
+                            <small style="color: var(--text-muted); font-size: 11px; margin-top: 2px; display: block;">Portal se katne wala shulk</small>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="cscServiceOpFeeInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Shop Fee (Dukaan Shulk ₹) *</label>
+                            <input type="number" id="cscServiceOpFeeInput" class="form-control font-mono" placeholder="50" min="0" step="any" value="50" required oninput="updateCSCServiceTotalPreview()" style="font-weight: 700;">
+                            <small style="color: var(--text-muted); font-size: 11px; margin-top: 2px; display: block;">Aapka commission / service charge</small>
+                        </div>
+                    </div>
+
+                    <!-- Total Preview Banner -->
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1.5px solid rgba(16, 185, 129, 0.35); border-radius: 10px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <span style="font-size: 13.5px; font-weight: 700; color: var(--text-secondary);">Grahak Se Kul Shulk (Total Customer Fee):</span>
+                        <b id="cscServiceTotalPreview" style="font-size: 18px; color: #10b981; font-weight: 800;">₹50</b>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="cscServiceDaysInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Target Delivery (Din / Days)</label>
+                            <input type="number" id="cscServiceDaysInput" class="form-control font-mono" placeholder="10" min="1" max="180" value="10" style="font-weight: 600;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="cscServiceStatusInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Status</label>
+                            <select id="cscServiceStatusInput" class="form-control" style="font-weight: 600;">
+                                <option value="1">✅ Chalu (Active)</option>
+                                <option value="0">⏸️ Band (Inactive)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer" style="padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-top: auto; border-top: 1px solid var(--border);">
+                    <button type="button" class="btn-ghost" onclick="closeModal('cscServiceModal')">Radd Karein</button>
+                    <button type="submit" class="btn-primary" id="cscServiceSaveBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: white; font-weight: 700; padding: 8px 20px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;">
+                        <i data-lucide="check"></i> <span>Sewa Save Karein</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 4. CSC Application Full Details Modal -->
+    <div class="modal-overlay" id="cscDetailModal">
+        <div class="modal large csc-detail-dialog" onclick="event.stopPropagation()" style="width: min(1080px, calc(100vw - 36px)); max-width: 1080px; max-height: 94vh;">
+            <div class="modal-header" style="padding: 14px 22px;">
+                <div>
+                    <h2 style="margin: 0; display: flex; align-items: center; gap: 10px; font-size: 18.5px; font-weight: 700;">
+                        <i data-lucide="file-text" style="color: #38bdf8; width: 22px; height: 22px;"></i>
+                        <span>Aavedan Ki Poori Detail (Full Application Info)</span>
+                    </h2>
+                    <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--text-muted);" id="cscDetailHeaderSub">
+                        Token / Ack Number aur aavedan ka poora hisaab-kitaab
+                    </p>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscDetailModal')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 16px 22px;" id="cscDetailModalBody">
+                <!-- Populated dynamically via openCSCDetailModal() -->
+            </div>
+            <div class="modal-footer" style="padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <button class="btn-ghost" onclick="closeModal('cscDetailModal')" style="font-size: 13.5px; padding: 7px 16px;">Band Karein</button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;" id="cscDetailFooterActions">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. CSC Citizen Acknowledgment Receipt Modal (Print Slip) -->
+    <div class="modal-overlay" id="cscReceiptModal">
+        <div class="modal" onclick="event.stopPropagation()" style="width: min(780px, calc(100vw - 36px)); max-width: 780px;">
+            <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="background: rgba(16, 185, 129, 0.12); color: #10b981; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <i data-lucide="printer" style="width: 22px; height: 22px;"></i>
+                    </div>
+                    <div>
+                        <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">CSC Citizen Acknowledgment Slip (पावती पर्ची)</h2>
+                        <p style="margin: 2px 0 0 0; font-size: 12.5px; color: var(--text-muted);">Grahak ko aavedan acknowledgment receipt print ya WhatsApp share karein</p>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeModal('cscReceiptModal')"><i data-lucide="x"></i></button>
+            </div>
+
+            <div class="modal-body" style="padding: 10px 18px 6px;">
+                <div class="print-format-bar" style="margin-bottom: 8px; padding: 6px 12px;">
+                    <span class="pfb-label"><i data-lucide="printer"></i> Print Format:</span>
+                    <div class="pfb-pills">
+                        <button class="pfb-btn active" data-format="a4" onclick="setPrintFormat('a4', 'csc')">📄 Print A4</button>
+                        <button class="pfb-btn" data-format="a4_half" onclick="setPrintFormat('a4_half', 'csc')">📑 Print A4/2</button>
+                        <button class="pfb-btn" data-format="current" onclick="setPrintFormat('current', 'csc')">🧾 Slip (Thermal 80mm)</button>
+                    </div>
+                </div>
+                <!-- Printable Receipt Canvas -->
+                <div id="printableCSCReceipt" class="csc-receipt-container">
+                    <!-- Populated dynamically via renderCSCReceipt() -->
+                </div>
+            </div>
+
+            <div class="modal-footer" style="padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px solid var(--border);">
+                <button class="btn-ghost" onclick="closeModal('cscReceiptModal')" style="white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-weight: 700; border-radius: 8px; border: 1.5px solid var(--border-row, #cbd5e1); color: var(--text-secondary); background: transparent; cursor: pointer;">
+                    <i data-lucide="x" style="width: 15px; height: 15px;"></i> Band Karein
+                </button>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">
+                    <button class="btn-success btn-sm" onclick="shareCSCReceiptWhatsApp()" style="background: linear-gradient(135deg, #16a34a, #15803d); color: white; font-weight: 700; padding: 7px 13px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="message-circle" style="width: 15px; height: 15px;"></i> WhatsApp Share
+                    </button>
+                    <button class="btn-primary btn-sm" onclick="printCSCReceipt('a4')" title="Poora A4 Page Print" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; font-weight: 700; padding: 7px 13px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="file-text" style="width: 15px; height: 15px;"></i> Print A4
+                    </button>
+                    <button class="btn-info btn-sm" onclick="printCSCReceipt('a4_half')" title="1/2 Page (A4/2) Print" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: white; padding: 7px 13px; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="scissors" style="width: 15px; height: 15px;"></i> Print A4/2 (1/2)
+                    </button>
+                    <button class="btn-warning btn-sm" onclick="printCSCReceipt('current')" title="Current Print (Thermal 80mm Slip)" style="background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; padding: 7px 13px; font-weight: 700; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25); white-space: nowrap; cursor: pointer;">
+                        <i data-lucide="printer" style="width: 15px; height: 15px;"></i> Thermal Slip (80mm)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>

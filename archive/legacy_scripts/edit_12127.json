@@ -1,0 +1,5 @@
+{
+  "Path": "D:\\Cash Managment BC\\public\\index.html",
+  "Replacement": "                    <p style=\"margin: 3px 0 0 0; font-size: 13px; color: var(--text-muted);\" id=\"cscDetailHeaderSub\">\n                        Token / Ack Number aur aavedan ka poora hisaab-kitaab\n                    </p>\n                </div>\n                <button class=\"modal-close\" onclick=\"closeModal('cscDetailModal')\"><i data-lucide=\"x\"></i></button>",
+  "Target": "                    <p style=\"margin: 3px 0 0 0; font-size: 13px; color: var(--text-muted);\" id=\"cscDetailHeaderSub\">\n                        Token / Ack Number aur aavedan ka poora hisaab-kitaab\n                    </p>\n                </div>\n                <div style=\"display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 12px;\">\n                    <span id=\"cscDetailKhataBalanceVal\" style=\"font-size: 13.5px; font-weight: 600;\"></span>\n                </div>\n                <button class=\"modal-close\" onclick=\"closeModal('cscDetailModal')\"><i data-lucide=\"x\"></i></button>"
+}

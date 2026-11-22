@@ -1,7 +1,7 @@
 {
-  "version": "1.0.40",
+  "version": "1.0.41",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Verified all online endpoints. Replaced jsdelivr bat URLs with multi-mirror raw and release URLs. Confirmed 100% online reachability for dynamic self-updating installers."
+  "notes": "Organizes project architecture: cleans root folder with dedicated START.bat, STOP.bat, BACKUP.bat, moves 18 maintenance tools to tools/, archives 323 legacy scripts to archive/legacy_scripts/, verifies 100% server health and 14 core invariants."
 }

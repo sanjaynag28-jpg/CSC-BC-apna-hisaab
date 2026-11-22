@@ -1,0 +1,134 @@
+Created At: 2026-11-05T14:08:35+05:30
+Completed At: 2026-11-05T14:08:35+05:30
+Showing lines 7870-8000 of 8784
+7870: 
+7871:     <!-- ==========================================================================
+7872:          CSC WORK TRACKER MODALS (New Application, Status Update, Slip Print)
+7873:          ========================================================================== -->
+7874: 
+7875:     <!-- 1. CSC New / Edit Application Modal -->
+7876:     <div class="modal-overlay" id="cscNewAppModal">
+7877:         <div class="modal large csc-newapp-dialog" onclick="event.stopPropagation()" style="width: min(1180px, calc(100vw - 32px)); max-width: 1180px; max-height: 95vh;">
+7878:             <div class="modal-header" style="padding: 14px 22px;">
+7879:                 <div>
+7880:                     <h2 id="cscModalTitle" style="display: flex; align-items: center; gap: 10px; margin: 0; font-size: 18.5px; font-weight: 700;">
+7881:                         <i data-lucide="clipboard-check" style="color: #10b981; width: 22px; height: 22px;"></i>
+7882:                         <span>Naya CSC Aavedan (Application Entry)</span>
+7883:                     </h2>
+7884:                     <p style="margin: 3px 0 0 0; font-size: 13px; color: var(--text-muted);">
+7885:                         PAN Card, Aay, Niwas, Jati, Ration Card aadi aavedan ki details aur fee save karein
+7886:                     </p>
+7887:                 </div>
+7888:                 <button class="modal-close" onclick="closeModal('cscNewAppModal')"><i data-lucide="x"></i></button>
+7889:             </div>
+7890:             
+7891:             <form id="cscAppForm" onsubmit="handleCSCFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden;">
+7892:                 <input type="hidden" id="cscAppId" value="">
+7893:                 
+7894:                 <div class="modal-body" style="padding: 16px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+7895:                     <!-- Customer Selection Row -->
+7896:                     <div class="form-section-card">
+7897:                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+7898:                             <label class="form-section-title" style="margin-bottom: 0;">
+7899:                                 <i data-lucide="user-check" style="color: #3b82f6;"></i> Grahak (Customer) Chunein Ya Naya Likhein
+7900:                             </label>
+7901:                             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+7902:                                 <span id="cscCustomerDocBadge" style="display: none; cursor: pointer; padding: 3px 9px; border-radius: 6px; font-weight: 700; font-size: 11.5px; background: rgba(2, 132, 199, 0.2); color: #38bdf8; border: 1.5px solid #0284c7;" onclick="openCSCCustomerDocs()" title="Is Customer ke dastavej (Documents) dekhein">
+7903:                                     📎 Docs (<span id="cscCustomerDocCount">0</span>)
+7904:                                 </span>
+7905:                                 <span style="font-size: 11.5px; color: var(--text-muted);" class="hide-mobile">Existing customer select karein ya naya naam bharein</span>
+7906:                                 <button type="button" class="btn-ghost btn-sm" tabindex="-1" onclick="openNewCustomerFromCSC()" style="font-size: 11.5px; padding: 4px 10px; color: #3b82f6; display: flex; align-items: center; gap: 6px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.08); font-weight: 600;" title="Naya Customer Register Karein [Alt + C] ya [F2]">
+7907:                                     <i data-lucide="user-plus" style="width: 13px; height: 13px;"></i>
+7908:                                     <span>+ Naya Customer</span>
+7909:                                     <kbd style="font-size: 10px; background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); padding: 1px 5px; border-radius: 4px; color: #93c5fd; font-family: monospace;">Alt+C</kbd>
+7910:                                 </button>
+7911:                             </div>
+7912:                         </div>
+7913:                         
+7914:                         <div class="form-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;">
+7915:                             <div class="form-group" style="margin-bottom: 0;">
+7916:                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+7917:                                     <label for="cscCustomerSelect" style="margin: 0;">Existing Customer</label>
+7918:                                     <button type="button" class="btn-copy-mini" tabindex="-1" onclick="openNewCustomerFromCSC()" style="color: #3b82f6;" title="Naya Customer Jodein [Alt + C]">
+7919:                                         <i data-lucide="user-plus" width="10" height="10"></i> + Naya (Alt+C)
+7920:                                     </button>
+7921:                                 </div>
+7922:                                 <select id="cscCustomerSelect" class="form-control searchable-select" data-searchable="true" data-placeholder="🔍 Customer khojein..." onchange="onCSCCustomerSelectChange()">
+7923:                                     <option value="">-- Direct Naya / Walk-in Customer --</option>
+7924:                                 </select>
+7925:                             </div>
+7926:                             <div class="form-group" style="margin-bottom: 0;">
+7927:                                 <label for="cscCustName">Customer Naam *</label>
+7928:                                 <input type="text" id="cscCustName" class="form-control" placeholder="Grahak ka naam" required>
+7929:                             </div>
+7930:                             <div class="form-group" style="margin-bottom: 0;">
+7931:                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+7932:                                     <label for="cscCustPhone" style="margin: 0;">Mobile Number <span id="cscPhoneChip"></span></label>
+7933:                                     <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputVal('cscCustPhone', 'Mobile number', event)" title="Mobile number copy karein">
+7934:                                         <i data-lucide="copy" width="10" height="10"></i> Copy
+7935:                                     </button>
+7936:                                 </div>
+7937:                                 <input type="text" id="cscCustPhone" class="form-control" placeholder="10-digit mobile" maxlength="10" oninput="handleCSCPhoneInput(this)" autocomplete="off">
+7938:                             </div>
+7939:                             <div class="form-group" style="margin-bottom: 0;">
+7940:                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+7941:                                     <label for="cscCustAadhaar" style="margin: 0;">Aadhaar (12-Digit) <span id="cscAadhaarChip"></span></label>
+7942:                                     <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputAadhaar('cscCustAadhaar', event)" title="Aadhaar number copy karein (bina space ke)">
+7943:                                         <i data-lucide="copy" width="10" height="10"></i> Copy (Bina Space)
+7944:                                     </button>
+7945:                                 </div>
+7946:                                 <input type="text" id="cscCustAadhaar" class="form-control font-mono" placeholder="1234 5678 9012" maxlength="14" oninput="handleCSCAadhaarInput(this)" autocomplete="off">
+7947:                             </div>
+7948:                             <div class="form-group" style="margin-bottom: 0;">
+7949:                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+7950:                                     <label for="cscCustDob" style="margin: 0; display: flex; align-items: center; gap: 4px;">🎂 Date of Birth</label>
+7951:                                     <button type="button" class="btn-copy-mini" tabindex="-1" onclick="copyInputVal('cscCustDob', 'Date of Birth', event)" title="DOB copy karein">
+7952:                                         <i data-lucide="copy" width="10" height="10"></i> Copy
+7953:                                     </button>
+7954:                                 </div>
+7955:                                 <input type="date" id="cscCustDob" class="form-control" autocomplete="off">
+7956:                             </div>
+7957:                         </div>
+7958:                         <input type="hidden" id="cscPortalName" value="">
+7959:                     </div>
+7960: 
+7961:                     <!-- Service Details Row -->
+7962:                     <div class="form-section-card">
+7963:                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+7964:                             <label class="form-section-title" style="margin-bottom: 0;">
+7965:                                 <i data-lucide="file-text" style="color: #10b981;"></i> Sewa (Service) & Application Details
+7966:                             </label>
+7967:                             <button type="button" class="btn-ghost btn-sm" tabindex="-1" onclick="openNewCSCServiceModal()" style="font-size: 11.5px; padding: 4px 10px; color: #3b82f6; display: flex; align-items: center; gap: 5px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.3);" title="Nayi Sewa jodein ya default fees set karein">
+7968:                                 <i data-lucide="settings" style="width: 13px; height: 13px;"></i>
+7969:                                 <span>+ Nayi Sewa / Fees Settings</span>
+7970:                             </button>
+7971:                         </div>
+7972: 
+7973:                         <div class="form-row" style="display: grid; grid-template-columns: 1.3fr 1.2fr; gap: 12px; margin-bottom: 12px;">
+7974:                             <div class="form-group" style="margin-bottom: 0;">
+7975:                                 <label for="cscServiceType">Sewa Prakar (Service Type) *</label>
+7976:                                 <select id="cscServiceType" class="form-control" required onchange="onCSCServiceTypeChange()">
+7977:                                     <option value="PAN Card (NSDL / UTI)">PAN Card (NSDL / UTI) 💳</option>
+7978:                                     <option value="Aay Praman Patra (Income Certificate)">Aay Praman Patra (Income Certificate) 📜</option>
+7979:                                     <option value="Niwas Praman Patra (Domicile / Residence)">Niwas Praman Patra (Domicile / Residence) 🏠</option>
+7980:                                     <option value="Jati Praman Patra (Caste Certificate)">Jati Praman Patra (Caste Certificate) 🏛️</option>
+7981:                                     <option value="Ration Card (नया / संशोधन / यूनिट)">Ration Card (नया / संशोधन / यूनिट) 🌾</option>
+7982:                                     <option value="Voter ID (Pehchan Patra / Form 6, 8)">Voter ID (Pehchan Patra / Form 6, 8) 🗳️</option>
+7983:                                     <option value="Ayushman Card (PMJAY Golden Card)">Ayushman Card (PMJAY Golden Card) 🏥</option>
+7984:                                     <option value="PM Kisan (Registration / eKYC / Land)">PM Kisan (Registration / eKYC / Land) 🚜</option>
+7985:                                     <option value="E-Shram / Labour (Shramik Card)">E-Shram / Labour (Shramik Card) 👷</option>
+7986:                                     <option value="Janma / Mrityu Praman Patra (Birth / Death)">Janma / Mrityu Praman Patra (Birth / Death) 👶</option>
+7987:                                     <option value="Driving License (Learner / Permanent)">Driving License (Learner / Permanent) 🚗</option>
+7988:                                     <option value="Passport Seva">Passport Seva ✈️</option>
+7989:                                     <option value="Bijli Bill / Electricity Service">Bijli Bill / Electricity Service ⚡</option>
+7990:                                     <option value="Anya Government / CSC Seva">Anya Government / CSC Seva 📦</option>
+7991:                                 </select>
+7992:                             </div>
+7993:                             <div class="form-group" style="margin-bottom: 0;">
+7994:                                 <label for="cscAckNumber">Ack / Token / Aavedan Sankhya *</label>
+7995:                                 <input type="text" id="cscAckNumber" class="form-control" placeholder="e.g. 24158001004523 ya Ack No" required>
+7996:                             </div>
+7997:                         </div>
+7998: 
+7999:                         <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+8000:                             <div class="form-group" style="margin-bottom: 0;">

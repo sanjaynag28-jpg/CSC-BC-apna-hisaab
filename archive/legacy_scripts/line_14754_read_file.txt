@@ -1,0 +1,134 @@
+Created At: 2026-11-05T14:08:52+05:30
+Completed At: 2026-11-05T14:08:52+05:30
+Showing lines 8150-8280 of 8784
+8150: 
+8151:                     <!-- Status Selector -->
+8152:                     <div class="form-group" style="margin-bottom: 16px;">
+8153:                         <label for="cscStatusSelect" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+8154:                             Naya Status Chunein (Select Application Stage) *
+8155:                         </label>
+8156:                         <select id="cscStatusSelect" class="form-control" style="font-weight: 700; font-size: 14px; height: 44px; border-radius: 10px;" required onchange="onCSCStatusSelectChange()">
+8157:                             <option value="Pending">⏳ Pending (Aavedan Jama Hua Hai)</option>
+8158:                             <option value="Under Process">⚙️ Under Process (Karyavahi Chal Rahi Hai)</option>
+8159:                             <option value="Approved">✅ Approved / Ready (Ban Gaya Hai - Grahak Ko Suchna De)</option>
+8160:                             <option value="Delivered">📦 Delivered (Grahak Ne Prapt Kar Liya)</option>
+8161:                             <option value="Rejected">❌ Rejected / Objection (Aapatti Lagi Ya Nirast)</option>
+8162:                         </select>
+8163:                     </div>
+8164: 
+8165:                     <!-- Certificate / Doc Number -->
+8166:                     <div class="form-group" id="cscCertNoGroup" style="margin-bottom: 16px;">
+8167:                         <label for="cscCertificateDocNo" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+8168:                             Certificate / Praman Patra / Dispatch Number
+8169:                         </label>
+8170:                         <input type="text" id="cscCertificateDocNo" class="form-control" placeholder="e.g. 18239001248 ya PAN Dispatch No" style="height: 42px; border-radius: 10px; font-weight: 600;">
+8171:                         <small style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: block;">Ban jane par praman patra sankhya ya dispatch no yahan darz karein</small>
+8172:                     </div>
+8173: 
+8174:                     <!-- Status Remarks -->
+8175:                     <div class="form-group" style="margin-bottom: 16px;">
+8176:                         <label for="cscStatusRemarksInput" style="font-weight: 800; font-size: 13.5px; color: var(--text-primary); margin-bottom: 6px; display: block;">
+8177:                             Tippani (Remarks / Objection Reason)
+8178:                         </label>
+8179:                         <textarea id="cscStatusRemarksInput" class="form-control" rows="3" placeholder="e.g. Lekhpal report lag gayi / Grahak ko physical card de diya..." style="border-radius: 10px; font-weight: 500; resize: vertical;"></textarea>
+8180:                     </div>
+8181: 
+8182:                     <!-- Due Collection Section (if due exists) -->
+8183:                     <div id="cscCollectDueSection" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1.5px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 16px; margin-top: 10px;">
+8184:                         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+8185:                             <label style="font-weight: 800; color: #d97706; font-size: 13.5px; margin: 0; display: flex; align-items: center; gap: 6px;">
+8186:                                 <i data-lucide="alert-circle" style="width: 16px; height: 16px;"></i> Bakiya Rashi Collect Karein?
+8187:                             </label>
+8188:                             <span id="cscDueCollectionAmountBadge" style="font-weight: 800; color: #dc2626; font-size: 13px;">₹0 Due</span>
+8189:                         </div>
+8190:                         <div style="display: flex; gap: 10px; align-items: center;">
+8191:                             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-primary);">
+8192:                                 <input type="checkbox" id="cscMarkDuePaid" style="width: 16px; height: 16px; cursor: pointer;">
+8193:                                 <span>Poora bakiya jama ho gaya (Mark Full Paid)</span>
+8194:                             </label>
+8195:                         </div>
+8196:                     </div>
+8197:                 </div>
+8198: 
+8199:                 <div class="modal-footer" style="padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-top: auto; border-top: 1px solid var(--border);">
+8200:                     <button type="button" class="btn-ghost" onclick="closeModal('cscStatusModal')" style="height: 38px; padding: 0 18px; font-weight: 700; border-radius: 8px;">Radd</button>
+8201:                     <div style="display: flex; gap: 10px;">
+8202:                         <button type="button" class="btn-success" onclick="sendCSCStatusWhatsAppFromModal()" title="WhatsApp alert bhejein" style="height: 38px; padding: 0 16px; font-weight: 700; border-radius: 8px; background: #16a34a; color: white; border: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+8203:                             <i data-lucide="message-circle" style="width: 16px; height: 16px;"></i> WhatsApp
+8204:                         </button>
+8205:                         <button type="submit" class="btn-primary" id="cscStatusSaveBtn" style="height: 38px; padding: 0 20px; font-weight: 800; border-radius: 8px;">
+8206:                             <i data-lucide="check" style="width: 16px; height: 16px;"></i> Status Save Karein
+8207:                         </button>
+8208:                     </div>
+8209:                 </div>
+8210:             </form>
+8211:         </div>
+8212:     </div>
+8213: 
+8214:     <!-- 3. CSC Service & Fees Configuration Modal -->
+8215:     <div class="modal-overlay" id="cscServiceModal">
+8216:         <div class="modal" onclick="event.stopPropagation()" style="width: min(660px, calc(100vw - 36px)); max-width: 660px;">
+8217:             <div class="modal-header" style="padding: 16px 22px; border-bottom: 1px solid var(--border);">
+8218:                 <div style="display: flex; align-items: center; gap: 12px;">
+8219:                     <div style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+8220:                         <i data-lucide="settings" style="width: 22px; height: 22px;"></i>
+8221:                     </div>
+8222:                     <div>
+8223:                         <h2 id="cscServiceModalTitle" style="margin: 0; font-size: 18px; font-weight: 800; color: var(--text-primary);">CSC Sewa & Shulk Master (Service Fees)</h2>
+8224:                         <p style="margin: 2px 0 0 0; font-size: 12.5px; color: var(--text-muted);">Sarkari portal shulk aur dukaan commission darz karein</p>
+8225:                     </div>
+8226:                 </div>
+8227:                 <button class="modal-close" onclick="closeModal('cscServiceModal')"><i data-lucide="x"></i></button>
+8228:             </div>
+8229: 
+8230:             <form id="cscServiceForm" onsubmit="handleCSCServiceFormSubmit(event)" style="display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden;">
+8231:                 <input type="hidden" id="cscServiceId" value="">
+8232:                 
+8233:                 <div class="modal-body" style="padding: 20px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+8234:                     <div class="form-group" style="margin-bottom: 14px;">
+8235:                         <label for="cscServiceNameInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Sewa Ka Naam (Service Name) *</label>
+8236:                         <input type="text" id="cscServiceNameInput" class="form-control" placeholder="e.g. Naya Voter Card, Khatauni Nakal, Pension KYC..." required style="font-weight: 600;">
+8237:                     </div>
+8238: 
+8239:                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+8240:                         <div class="form-group" style="margin-bottom: 0;">
+8241:                             <label for="cscServiceGovtFeeInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Govt Fee (Sarkari Shulk ₹)</label>
+8242:                             <input type="number" id="cscServiceGovtFeeInput" class="form-control font-mono" placeholder="0" min="0" step="any" value="0" oninput="updateCSCServiceTotalPreview()" style="font-weight: 700;">
+8243:                             <small style="color: var(--text-muted); font-size: 11px; margin-top: 2px; display: block;">Portal se katne wala shulk</small>
+8244:                         </div>
+8245:                         <div class="form-group" style="margin-bottom: 0;">
+8246:                             <label for="cscServiceOpFeeInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Shop Fee (Dukaan Shulk ₹) *</label>
+8247:                             <input type="number" id="cscServiceOpFeeInput" class="form-control font-mono" placeholder="50" min="0" step="any" value="50" required oninput="updateCSCServiceTotalPreview()" style="font-weight: 700;">
+8248:                             <small style="color: var(--text-muted); font-size: 11px; margin-top: 2px; display: block;">Aapka commission / service charge</small>
+8249:                         </div>
+8250:                     </div>
+8251: 
+8252:                     <!-- Total Preview Banner -->
+8253:                     <div style="background: rgba(16, 185, 129, 0.1); border: 1.5px solid rgba(16, 185, 129, 0.35); border-radius: 10px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+8254:                         <span style="font-size: 13.5px; font-weight: 700; color: var(--text-secondary);">Grahak Se Kul Shulk (Total Customer Fee):</span>
+8255:                         <b id="cscServiceTotalPreview" style="font-size: 18px; color: #10b981; font-weight: 800;">₹50</b>
+8256:                     </div>
+8257: 
+8258:                     <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px;">
+8259:                         <div class="form-group" style="margin-bottom: 0;">
+8260:                             <label for="cscServiceDaysInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Target Delivery (Din / Days)</label>
+8261:                             <input type="number" id="cscServiceDaysInput" class="form-control font-mono" placeholder="10" min="1" max="180" value="10" style="font-weight: 600;">
+8262:                         </div>
+8263:                         <div class="form-group" style="margin-bottom: 0;">
+8264:                             <label for="cscServiceStatusInput" style="font-weight: 700; color: var(--text-primary); margin-bottom: 5px;">Status</label>
+8265:                             <select id="cscServiceStatusInput" class="form-control" style="font-weight: 600;">
+8266:                                 <option value="1">✅ Chalu (Active)</option>
+8267:                                 <option value="0">⏸️ Band (Inactive)</option>
+8268:                             </select>
+8269:                         </div>
+8270:                     </div>
+8271:                 </div>
+8272: 
+8273:                 <div class="modal-footer" style="padding: 14px 22px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin-top: auto; border-top: 1px solid var(--border);">
+8274:                     <button type="button" class="btn-ghost" onclick="closeModal('cscServiceModal')">Radd Karein</button>
+8275:                     <button type="submit" class="btn-primary" id="cscServiceSaveBtn" style="background: linear-gradient(135deg, #10b981, #059669); color: white; font-weight: 700; padding: 8px 20px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px;">
+8276:                         <i data-lucide="check"></i> <span>Sewa Save Karein</span>
+8277:                     </button>
+8278:                 </div>
+8279:             </form>
+8280:         </div>
