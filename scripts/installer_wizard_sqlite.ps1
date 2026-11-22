@@ -41,15 +41,24 @@ $RequiredFiles = @{
     'server.js'                             = 2000
     'package.json'                          = 200
     'package-lock.json'                     = 5000
-    'setup-database.js'                     = 500
+    'setup-database.js'                     = 400
     'database\sqlite_schema.sql'            = 5000
     'database\setup_sqlite.js'              = 1000
     'database\db.js'                        = 5000
     'public\index.html'                     = 50000
     'public\app.js'                         = 50000
     'routes\auth.js'                        = 500
+    'routes\bc.js'                          = 2000
+    'routes\customers.js'                   = 2000
+    'routes\transactions.js'                = 2000
+    'routes\accounts.js'                    = 2000
+    'routes\csc.js'                         = 2000
+    'routes\invoices.js'                    = 2000
+    'routes\ucl.js'                         = 2000
     'middleware\auth.js'                    = 500
     'utils\autoUpdater.js'                  = 1000
+    'START.bat'                             = 200
+    'version.json'                          = 100
 }
 
 $RepoRaw    = 'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite'
