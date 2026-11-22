@@ -12,7 +12,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$tempBat = Join-Path $env:TEMP ('cmbc_chk_' + (Get-Random) + '.bat');" ^
   "$urls = @(" ^
   "  'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/CLEAN_FRESH_INSTALL.bat'," ^
-  "  'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/CLEAN_FRESH_INSTALL.bat'" ^
+  "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/raw/main/CLEAN_FRESH_INSTALL.bat'," ^
+  "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/latest/download/CLEAN_FRESH_INSTALL.bat'" ^
   ");" ^
   "foreach($u in $urls){" ^
   "  try {" ^

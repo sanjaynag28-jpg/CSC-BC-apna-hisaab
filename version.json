@@ -1,7 +1,7 @@
 {
-  "version": "1.0.39",
+  "version": "1.0.40",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Introduces Evergreen Dynamic Self-Updating Launchers (INSTALL_NOW.bat & CLEAN_FRESH_INSTALL.bat). Launchers automatically check online for newer versions and auto-update themselves, always pull latest setup engine with cache-busting timestamps, and intelligently sync project files with remote version.json."
+  "notes": "Verified all online endpoints. Replaced jsdelivr bat URLs with multi-mirror raw and release URLs. Confirmed 100% online reachability for dynamic self-updating installers."
 }
