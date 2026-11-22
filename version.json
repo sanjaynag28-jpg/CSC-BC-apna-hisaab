@@ -1,7 +1,7 @@
 {
-  "version": "1.0.36",
-  "releasedAt": "2026-11-21",
+  "version": "1.0.37",
+  "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Removes invalid XAML LetterSpacing attribute, wraps GUI in safe fallback, adds pause on error, and provides CLEAN_FRESH_INSTALL for broken/incomplete installs."
+  "notes": "Fixes XML entity parsing (&amp;) in XAML, adds UTF-8 BOM to prevent corrupt encoding, auto-keeps CMD window open via /k, connects via ultra-fast CDN, and includes live self-healing for adhoora installations."
 }

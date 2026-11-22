@@ -5,7 +5,7 @@ color 0B
 
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
     exit /b
 )
 
@@ -41,4 +41,9 @@ if exist "%SCRIPT_DIR%INSTALL_NOW.bat" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $p=Join-Path $env:TEMP 'INSTALL_NOW.bat'; Invoke-WebRequest -Uri 'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/INSTALL_NOW.bat' -OutFile $p -UseBasicParsing; & $p"
 )
 
+echo.
+echo ======================================================================
+echo   Re-installation process samapt.
+echo ======================================================================
+pause
 exit /b 0

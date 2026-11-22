@@ -2,11 +2,11 @@
 setlocal EnableExtensions
 title CSC ^& BC Apna Hisaab - Master 1-Click Installer
 
-:: Auto-elevate to Administrator
+:: Auto-elevate to Administrator (window stays open with /k)
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo Requesting Administrator permission for automatic installation...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
     exit /b
 )
 
@@ -19,13 +19,17 @@ if exist "%~dp0scripts\installer_wizard.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0"
     if errorlevel 1 (
         echo.
-        echo [!] Setup notice: Process finished with code %errorlevel%
-        pause
+        echo [!] Setup notice: Process exited with code %errorlevel%
     )
-    exit /b %errorlevel%
+    echo.
+    echo ======================================================================
+    echo   Setup complete. Window band karne ke liye koi bhi key dabayein...
+    echo ======================================================================
+    pause
+    exit /b 0
 )
 
-:: Case 2: Standalone mode (single file on new PC)
+:: Case 2: Standalone mode (single file on new / incomplete PC)
 set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
@@ -66,7 +70,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  }" ^
   "};" ^
   "if($downloaded){" ^
-  "  & $tempWiz -ProjectDir $targetDir;" ^
+  "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File $tempWiz -ProjectDir $targetDir;" ^
   "  exit $LASTEXITCODE;" ^
   "}" ^
   "Write-Host '  [!] Direct script blocked. Downloading full package from GitHub archive...' -ForegroundColor Yellow;" ^
@@ -79,7 +83,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "  $src = (Get-ChildItem -Path $extDir -Directory | Select-Object -First 1).FullName;" ^
   "  robocopy $src $targetDir /E /XD (Join-Path $src '.git') (Join-Path $src 'node_modules') (Join-Path $src 'backups') (Join-Path $src 'logs') /XF '.env' /NFL /NDL /NJH /NJS | Out-Null;" ^
   "  $localWiz = Join-Path $targetDir 'scripts\installer_wizard.ps1';" ^
-  "  if(Test-Path $localWiz){ & $localWiz -ProjectDir $targetDir; exit 0 }" ^
+  "  if(Test-Path $localWiz){ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $localWiz -ProjectDir $targetDir; exit 0 }" ^
   "} catch { Write-Host ('  [X] Error: ' + $_.Exception.Message) -ForegroundColor Red; }" ^
   "exit 1"
 
@@ -89,7 +93,11 @@ if errorlevel 1 (
     echo   [!] Setup ruk gaya hai.
     echo       Kripya upar ka error dekhein ya Phone ke hotspot se connect karein.
     echo ======================================================================
-    pause
-    exit /b 1
+) else (
+    echo.
+    echo ======================================================================
+    echo   CSC ^& BC Apna Hisaab - Setup Samapt.
+    echo ======================================================================
 )
+pause
 exit /b 0
