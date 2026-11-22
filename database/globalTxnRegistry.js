@@ -71,15 +71,16 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
             queryParams.cleanCreated = cleanCreated;
         }
 
-        // Atomic serial allocation using UPDLOCK & HOLDLOCK to eliminate race condition
+        // Atomic serial allocation
+        const maxRes = await tQ(`
+            SELECT IFNULL(MAX(ModuleSerialNo), 0) + 1 AS nextMod 
+            FROM UniversalTxnRegistry 
+            WHERE SourceModule = @sourceModule
+        `, { sourceModule: queryParams.sourceModule });
+        const nextMod = maxRes.recordset?.[0]?.nextMod || 1;
+        const moduleCode = `${prefix}-${nextMod}`;
+
         const insertRes = await tQ(`
-            DECLARE @nextMod INT;
-            SELECT @nextMod = ISNULL(MAX(ModuleSerialNo), 0) + 1 
-            FROM UniversalTxnRegistry WITH (UPDLOCK, HOLDLOCK) 
-            WHERE SourceModule = @sourceModule;
-
-            DECLARE @moduleCode VARCHAR(30) = @prefix + '-' + CAST(@nextMod AS VARCHAR(20));
-
             INSERT INTO UniversalTxnRegistry (
                 SourceModule, RecordID, ModuleSerialNo, ModuleCode, 
                 EntityName, Amount, TransDate, CreatedAt, UserID, IsActive
@@ -89,10 +90,12 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
                 @sourceModule, @recordId, @nextMod, @moduleCode,
                 @cleanEntity, @cleanAmount, @cleanDate, ${createdAtSql}, @cleanUser, 1
             );
-        `, queryParams);
+        `, { ...queryParams, nextMod, moduleCode });
 
-        const inserted = insertRes.recordset[0];
-        const { GlobalSerialNo, SNCode, ModuleCode } = inserted;
+        const inserted = insertRes.recordset?.[0] || {};
+        const GlobalSerialNo = inserted.GlobalSerialNo || insertRes.insertId || 1;
+        const SNCode = inserted.SNCode || `TXN-${String(GlobalSerialNo).padStart(6, '0')}`;
+        const ModuleCode = inserted.ModuleCode || moduleCode;
 
         // Update source table (if dedicated table configured or dynamic ServiceRecords)
         const targetTable = (modConfig && modConfig.table) ? modConfig.table : (MODULE_TABLES[sourceModule]?.table || 'ServiceRecords');

@@ -889,118 +889,21 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Background SQL Server connection manager with auto-retry
+// Background SQLite database connection manager
 async function connectDbInBackground() {
-    const maxRetries = DB_STARTUP_MAX_ATTEMPTS;
-    let attempts = 0;
-    let connected = false;
-
-    console.log('🔄 SQL Server se connection ka intezaar...');
-    while (attempts < maxRetries && !connected) {
-        attempts++;
-        dbStartupAttempt = attempts;
+    try {
         dbStartupStage = 'connecting';
-        try {
-            connected = await isDbAlive();
-            if (connected) {
-                console.log(`✅ SQL Server se successfully connect ho gaya (Attempt: ${attempts})!`);
-                dbStartupStage = 'schema';
-
-                // Self-Healing Core Tables Check: Agar brand-new ya adhoora DB ho to poora schema create karein
-                try {
-                    const p = await getPool();
-                    const tblCheck = await p.request().query("SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN ('Users', 'Accounts', 'Transactions')");
-                    if (!tblCheck.recordset[0] || tblCheck.recordset[0].cnt < 3) {
-                        console.log('🔄 Core tables (Users, Accounts, Transactions) missing hain — automated setup-database run ho raha hai...');
-                        const { setup } = require('./setup-database');
-                        await setup({ exitOnDone: false });
-                    }
-                } catch (sInitErr) {
-                    console.warn('⚠️ Automated setup check notice:', sInitErr.message);
-                }
-
-                // Self-Healing Dynamic Schema Bootstrapper: Ensures all tables, columns, dynamic fields exist automatically
-                try {
-                    const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
-                    await ensureAutoSchemaBootstrapped();
-                } catch (sErr) {
-                    console.error('⚠️ Schema bootstrap warning:', sErr.message);
-                }
-                // Auto-run pending schema migrations (UCL/PAC tables etc.) after DB connect
-                dbStartupStage = 'migrations';
-                try {
-                    await runPendingMigrations({ backup: false });
-                } catch (mErr) {
-                    console.error('⚠️ Migration run warning:', mErr.message);
-                }
-                dbStartupReady = true;
-                dbStartupStage = 'ready';
-                dbAliveCache = { value: true, checkedAt: Date.now() };
-                // Recurring Transactions: startup par process karo (missed entries catch-up)
-                runRecurring();
-                // Har 1 ghante baad dobara check (server lambe time chalne par bhi due entries generate hoti rahein)
-                setInterval(runRecurring, 60 * 60 * 1000);
-                break;
-            }
-        } catch (e) {
-            console.log(`⏳ SQL Server abhi ready nahi hai (${e.message}). Attempt: ${attempts}/${maxRetries}`);
+        const connected = await isDbAlive();
+        if (connected) {
+            console.log('✅ SQLite Database 100% Ready (Zero-Install Edition)!');
+            dbStartupReady = true;
+            dbStartupStage = 'ready';
+            dbAliveCache = { value: true, checkedAt: Date.now() };
+            runRecurring();
+            setInterval(runRecurring, 60 * 60 * 1000);
         }
-
-        if (!connected && attempts < maxRetries) {
-            console.log('⏳ SQL Server start hone ka wait kar rahe hain (3 seconds mein dobara check hoga)...');
-            await new Promise(res => setTimeout(res, 3000));
-        }
-    }
-
-    if (!connected) {
-        dbStartupStage = 'waiting';
-        console.error('⚠️ SQL Server se connect nahi ho paya. Periodic checks background mein jari rahenge.');
-        const retryTimer = setInterval(async () => {
-            try {
-                if (process.platform === 'win32' && Math.random() < 0.25) {
-                    try {
-                        const { exec } = require('child_process');
-                        exec('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Service -Name \'MSSQL*\' | Where-Object { $_.Status -ne \'Running\' } | Start-Service"', () => {});
-                    } catch (_) {}
-                }
-                if (await isDbAlive()) {
-                    console.log('✅ SQL Server ab ready ho gaya hai!');
-                    clearInterval(retryTimer);
-                    dbStartupStage = 'schema';
-
-                    // Self-Healing Core Tables Check
-                    try {
-                        const p = await getPool();
-                        const tblCheck = await p.request().query("SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN ('Users', 'Accounts', 'Transactions')");
-                        if (!tblCheck.recordset[0] || tblCheck.recordset[0].cnt < 3) {
-                            console.log('🔄 Core tables missing hain — automated setup-database run ho raha hai...');
-                            const { setup } = require('./setup-database');
-                            await setup({ exitOnDone: false });
-                        }
-                    } catch (sInitErr) {
-                        console.warn('⚠️ Automated setup check notice:', sInitErr.message);
-                    }
-
-                    try {
-                        const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
-                        await ensureAutoSchemaBootstrapped();
-                    } catch (sErr) {
-                        console.error('⚠️ Schema bootstrap warning:', sErr.message);
-                    }
-                    dbStartupStage = 'migrations';
-                    try {
-                        await runPendingMigrations({ backup: false });
-                    } catch (mErr) {
-                        console.error('⚠️ Migration run warning:', mErr.message);
-                    }
-                    dbStartupReady = true;
-                    dbStartupStage = 'ready';
-                    dbAliveCache = { value: true, checkedAt: Date.now() };
-                    runRecurring();
-                    setInterval(runRecurring, 60 * 60 * 1000);
-                }
-            } catch (err) { }
-        }, 4000);
+    } catch (e) {
+        console.error('⚠️ SQLite DB startup notice:', e.message);
     }
 }
 
