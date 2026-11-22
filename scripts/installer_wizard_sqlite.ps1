@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - SQLite Edition Master Setup & Health Wizard
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # Super-Fast Zero SQL Server Install | 100% Free AI Live Self-Healing & Diagnostics
@@ -630,6 +630,18 @@ $workerBlock = {
             if (Test-Path $wal) { Remove-Item $wal -Force -ErrorAction SilentlyContinue }
             if (Test-Path $shm) { Remove-Item $shm -Force -ErrorAction SilentlyContinue }
         } catch { }
+
+        # Ensure default .env exists with Port 4000
+        $envFile = Join-Path $ProjectDir '.env'
+        if (-not (Test-Path $envFile)) {
+            $envEx = Join-Path $ProjectDir '.env.example'
+            if (Test-Path $envEx) {
+                Copy-Item $envEx $envFile -Force
+            } else {
+                Set-Content -Path $envFile -Value "PORT=4000`nHOST=0.0.0.0`nDB_TYPE=sqlite`nDB_FILE=database/data/cash_management.db`nJWT_SECRET=cash_management_sqlite_edition_secret_key_4000`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
+            }
+            Log-Msg "Configuration file .env (Port 4000, SQLite) configure ho gaya." 'OK'
+        }
 
         $setupScript = Join-Path $ProjectDir 'setup-database.js'
         if (-not (Test-Path $setupScript)) {

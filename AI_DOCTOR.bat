@@ -1,2 +1,2 @@
 @echo off
-call "%~dp0tools\AI_DOCTOR.bat"
+call "%~dp0AI_DOCTOR_SQLITE.bat" %*

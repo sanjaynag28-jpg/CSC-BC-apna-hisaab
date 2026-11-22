@@ -1,2 +1,2 @@
 @echo off
-call "%~dp0INSTALL_NOW.bat"
+call "%~dp0INSTALL_SQLITE.bat" %*

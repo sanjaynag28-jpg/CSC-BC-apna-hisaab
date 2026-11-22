@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title CSC ^& BC Apna Hisaab - Free AI Auto-Fix ^& Doctor
+title CSC ^& BC Apna Hisaab - SQLite AI Live Doctor
 cd /d "%~dp0.."
 
 :: Auto-elevate to Administrator
@@ -12,25 +12,24 @@ if %errorlevel% neq 0 (
 )
 
 echo ======================================================================
-echo   CSC ^& BC APNA HISAAB - FREE AI LIVE AUTO-FIX ^& DOCTOR (SELF-HEAL)
+echo   CSC ^& BC APNA HISAAB - SQLITE EDITION AI LIVE DOCTOR (SELF-HEAL)
 echo ======================================================================
 echo.
 echo   Yeh tool system ki sabhi problems:
-echo   - SQL Server Express service ^& TCP/IP protocols
 echo   - Visual C++ runtime, TLS 1.2 registry keys
-echo   - Port 3000 collision, .env credentials
+echo   - Port 4000 collision, .env credentials
 echo   - Corrupt/missing files auto-repair
-echo   - Database reconciliation ^& live server launch
-echo   ko 100%% live AI diagnostic se theek karta hai.
+echo   - Embedded SQLite Database auto-repair ^& live server launch
+echo   ko 100%% live AI diagnostic se theek karta hai (Zero SQL Server needed).
 echo.
 echo ======================================================================
 echo.
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\scripts\ai_doctor.ps1" -ProjectDir "%~dp0" -AutoFix
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\scripts\ai_doctor_sqlite.ps1" -ProjectDir "%~dp0.."
 
 echo.
 echo ======================================================================
-echo   Diagnostic complete ho gaya. Log Desktop par CSC_AI_DOCTOR_LOG.txt hai.
+echo   Diagnostic complete ho gaya. Log Desktop par CSC_SQLITE_AI_DOCTOR_LOG.txt hai.
 echo ======================================================================
 pause
 exit /b %errorlevel%
