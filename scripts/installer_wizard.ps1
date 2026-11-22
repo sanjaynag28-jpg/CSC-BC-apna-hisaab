@@ -19,10 +19,16 @@ $ProgressPreference = 'SilentlyContinue'
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
 
-if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
-    $ProjectDir = (Get-Item -Path $PSScriptRoot).Parent.FullName
+if ([string]::IsNullOrWhiteSpace($ProjectDir) -or -not (Test-Path $ProjectDir)) {
+    try { if ($PSScriptRoot) { $ProjectDir = (Get-Item -Path $PSScriptRoot).Parent.FullName } } catch { }
 }
-try { $ProjectDir = (Resolve-Path $ProjectDir).Path } catch { $ProjectDir = $PSScriptRoot }
+if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
+    $ProjectDir = Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab'
+}
+try { $ProjectDir = (Resolve-Path $ProjectDir).Path } catch { }
+if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
+    $ProjectDir = Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab'
+}
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 

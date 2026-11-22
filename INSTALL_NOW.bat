@@ -1,46 +1,16 @@
 @echo off
 setlocal EnableExtensions
-title CSC ^& BC Apna Hisaab - Dynamic 1-Click Installer
+chcp 65001 >nul 2>&1
+title CSC ^& BC Apna Hisaab - 100%% Dynamic 1-Click Installer
 color 0B
 
 :: ====================================================================
-:: [Auto-Updater] Check if a newer version of this launcher exists online
-:: ====================================================================
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^
-  "$curr = '%~f0';" ^
-  "$tempBat = Join-Path $env:TEMP ('cmbc_chk_' + (Get-Random) + '.bat');" ^
-  "$urls = @(" ^
-  "  'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/INSTALL_NOW.bat'," ^
-  "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/raw/main/INSTALL_NOW.bat'," ^
-  "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/latest/download/INSTALL_NOW.bat'" ^
-  ");" ^
-  "foreach($u in $urls){" ^
-  "  try {" ^
-  "    Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $tempBat -UseBasicParsing -TimeoutSec 6;" ^
-  "    if ((Test-Path $tempBat) -and (Get-Item $tempBat).Length -gt 500) {" ^
-  "      $cHash = (Get-FileHash -Path $curr -Algorithm MD5).Hash;" ^
-  "      $nHash = (Get-FileHash -Path $tempBat -Algorithm MD5).Hash;" ^
-  "      if ($cHash -ne $nHash) {" ^
-  "        Write-Host '  [OK] Naya launcher version online mila! Updating launcher...' -ForegroundColor Green;" ^
-  "        Copy-Item $tempBat $curr -Force;" ^
-  "        Remove-Item $tempBat -Force -ErrorAction SilentlyContinue;" ^
-  "        Start-Process -FilePath $curr; exit 99;" ^
-  "      }" ^
-  "      Remove-Item $tempBat -Force -ErrorAction SilentlyContinue;" ^
-  "      break;" ^
-  "    }" ^
-  "  } catch { }" ^
-  "};"
-if %errorlevel% equ 99 exit /b 0
-
-:: ====================================================================
-:: Auto-elevate to Administrator (safe for paths with spaces)
+:: 1. Auto-elevate to Administrator (keeps window open with /k on error)
 :: ====================================================================
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [..] Requesting Administrator permission for automatic installation...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    echo [..] Administrator permission mang rahe hain...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
     exit /b
 )
 
@@ -52,11 +22,11 @@ if exist "%~dp0scripts\installer_wizard.ps1" (
     echo   CSC ^& BC APNA HISAAB - SETUP ^& HEALTH ENGINE
     echo ======================================================================
     echo.
-    echo   [..] Checking for latest Setup Engine updates from CDN...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks) -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
+    echo   [..] Checking for latest Setup Engine updates...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks) -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
     
     echo   [..] Launching Graphical Setup Wizard...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0"
     set "EXIT_CODE=%errorlevel%"
     
     echo.
@@ -73,7 +43,7 @@ if exist "%~dp0scripts\installer_wizard.ps1" (
 :: Case 2: Standalone mode (single file on new / incomplete PC)
 set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
-set "TEMP_WIZ=%TEMP%\cmbc_installer_wizard.ps1"
+set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard.ps1"
 
 cls
 echo ======================================================================
@@ -81,16 +51,33 @@ echo   CSC ^& BC APNA HISAAB - 100%% AUTOMATIC 1-CLICK INSTALLER
 echo ======================================================================
 echo.
 echo   Target Folder : %TARGET_DIR%
-echo   Status        : Connecting to High-Speed CDN...
+echo   Status        : Connecting to CDN / GitHub...
 echo.
 
 echo [1/3] Downloading Latest Setup Engine...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $p='%TEMP_WIZ%'; $urls=@(('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks),('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks)); $ok=$false; foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri $u -OutFile $p -UseBasicParsing -TimeoutSec 15; if((Test-Path $p) -and (Get-Item $p).Length -gt 5000){ $ok=$true; Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; break } } catch { Write-Host ('  [!] Notice: ' + $_.Exception.Message) -ForegroundColor Gray } }; if(-not $ok){ exit 1 }"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $dst='%WIZ_SCRIPT%'; $urls=@('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1','https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/raw/main/scripts/installer_wizard.ps1','https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1'); $ok=$false; foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $dst -UseBasicParsing -TimeoutSec 15; if((Test-Path $dst) -and (Get-Item $dst).Length -gt 5000){ $ok=$true; Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; break } } catch { Write-Host ('  [!] Notice: ' + $_.Exception.Message) -ForegroundColor Gray } }; if(-not $ok){ exit 1 }"
 
 if errorlevel 1 (
     echo.
     echo [!] Direct script blocked. Downloading full package archive from GitHub...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $z=Join-Path $env:TEMP 'cmbc_repo.zip'; Invoke-WebRequest -Uri 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip' -OutFile $z -UseBasicParsing -TimeoutSec 90; $e=Join-Path $env:TEMP ('cmbc_e_' + (Get-Random)); Expand-Archive -LiteralPath $z -DestinationPath $e -Force; $s=(Get-ChildItem -Path $e -Directory | Select-Object -First 1).FullName; robocopy $s '%TARGET_DIR%' /E /XD (Join-Path $s '.git') (Join-Path $s 'node_modules') (Join-Path $s 'backups') (Join-Path $s 'logs') /XF '.env' /NFL /NDL /NJH /NJS | Out-Null; Copy-Item (Join-Path '%TARGET_DIR%' 'scripts\installer_wizard.ps1') '%TEMP_WIZ%' -Force"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $z=Join-Path $env:TEMP 'cmbc_repo.zip'; Invoke-WebRequest -Uri 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip' -OutFile $z -UseBasicParsing -TimeoutSec 90; $e=Join-Path $env:TEMP ('cmbc_e_' + (Get-Random)); Expand-Archive -LiteralPath $z -DestinationPath $e -Force; $s=(Get-ChildItem -Path $e -Directory | Select-Object -First 1).FullName; robocopy $s '%TARGET_DIR%' /E /XD (Join-Path $s '.git') (Join-Path $s 'node_modules') (Join-Path $s 'backups') (Join-Path $s 'logs') /XF '.env' /NFL /NDL /NJH /NJS | Out-Null; Copy-Item (Join-Path '%TARGET_DIR%' 'scripts\installer_wizard.ps1') '%WIZ_SCRIPT%' -Force"
+)
+
+if not exist "%WIZ_SCRIPT%" (
+    if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
+        copy /y "%TARGET_DIR%\scripts\installer_wizard.ps1" "%WIZ_SCRIPT%" >nul
+    )
+)
+
+if not exist "%WIZ_SCRIPT%" (
+    echo.
+    echo ======================================================================
+    echo [X] Error: Setup Wizard download nahi ho paya.
+    echo     Kripya Internet / Mobile Hotspot check karein.
+    echo ======================================================================
+    echo.
+    pause
+    exit /b 1
 )
 
 echo.
@@ -99,22 +86,7 @@ echo   [2/3] Launching Graphical Setup ^& Health Wizard...
 echo ======================================================================
 echo.
 
-set "FINAL_WIZ=%TEMP_WIZ%"
-if not exist "%FINAL_WIZ%" (
-    if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
-        set "FINAL_WIZ=%TARGET_DIR%\scripts\installer_wizard.ps1"
-    )
-)
-
-if not exist "%FINAL_WIZ%" (
-    echo [X] Error: Setup Wizard download nahi ho paya.
-    echo     Kripya Internet / Mobile Hotspot check karein.
-    echo.
-    pause
-    exit /b 1
-)
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%FINAL_WIZ%" -ProjectDir "%TARGET_DIR%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%"
 set "EXIT_CODE=%errorlevel%"
 
 echo.

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cash Management - Automated Fresh & Existing Database Setup, Migration & Starter Seeding
  * Safe & Idempotent:
  * - On a brand-new SQL Server: creates the database from master, builds all 24 tables,

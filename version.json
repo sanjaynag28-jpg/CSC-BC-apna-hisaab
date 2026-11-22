@@ -1,7 +1,7 @@
 {
-  "version": "1.0.42",
+  "version": "1.0.43",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fixes Step 8 database setup and startup wait screen: restores canonical scripts/migration_rule1_sourceline.js with multi-path fallbacks, adds --clean fresh database drop-and-recreate support for CLEAN_FRESH_INSTALL, adds master auto-creation self-healing to db.js and automated schema bootstrapping to server.js."
+  "notes": "Fixes batch launcher immediate exit: removes multiline caret syntax errors, uses /k flag to keep window open on errors, and supports direct 1-line PowerShell zero-download execution."
 }
