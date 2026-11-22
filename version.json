@@ -1,7 +1,7 @@
 {
-  "version": "1.0.37",
+  "version": "1.0.38",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fixes XML entity parsing (&amp;) in XAML, adds UTF-8 BOM to prevent corrupt encoding, auto-keeps CMD window open via /k, connects via ultra-fast CDN, and includes live self-healing for adhoora installations."
+  "notes": "Fixes space-in-path elevation issue, eliminates cmd /k quote crash, provides direct 3-step robust bootstrap for INSTALL_NOW.bat and CLEAN_FRESH_INSTALL.bat, enables dual persistent logging (target logs + temp), and keeps console window open."
 }

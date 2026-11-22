@@ -91,6 +91,7 @@ $workerBlock = {
         $ts = Get-Date -Format 'HH:mm:ss'
         $line = "[$ts] [$Cat] $Msg"
         try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch { }
+        try { Add-Content -Path (Join-Path $env:TEMP 'cmbc_install.log') -Value $line -Encoding UTF8 } catch { }
         [void]$sync.Logs.Add($line)
         Write-Host $line
     }
