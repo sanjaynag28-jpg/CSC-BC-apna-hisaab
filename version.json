@@ -1,8 +1,8 @@
 {
-  "version": "1.0.56",
+  "version": "1.0.57",
   "critical": true,
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "v1.0.56 Universal Self-Healing Launcher: Fail-safe supervisor boot, early .env loader, instant Port 4000 live check."
+  "notes": "v1.0.57 Self-Healing CSC Services: Auto-repair CSCServices schema, fail-safe 200 OK fallback, zero dashboard red error toasts."
 }
