@@ -441,10 +441,11 @@ $workerBlock = {
             Update-Step 2 'RUNNING' 20 "Downloading ZIP..." "GitHub se SQLite Edition archive download ho raha hai..."
             $zip = Join-Path $env:TEMP "cmbc_sqlite_$(Get-Random).zip"
             $extr = Join-Path $env:TEMP "cmbc_sqlite_extr_$(Get-Random)"
+            $ticks = [DateTime]::UtcNow.Ticks
             $zipUrls = @(
-                $RepoZip,
-                $RepoZipAlt,
-                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip"
+                "$RepoZip?t=$ticks",
+                "$RepoZipAlt?t=$ticks",
+                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip?t=$ticks"
             )
             $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000
             if ($ok) {
@@ -459,13 +460,13 @@ $workerBlock = {
                 Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
             } else {
                 Log-Msg "Direct ZIP download fail hua. Individual files sync ki ja rahi hain..." 'WARN'
-                # Fallback: Sync individual critical files via CDN
+                # Fallback: Sync individual critical files via CDN with cache-buster
                 foreach ($f in $RequiredFiles.Keys) {
                     $dst = Join-Path $ProjectDir $f
                     $parent = Split-Path -Parent $dst
                     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-                    $fUrl = "$RepoRaw/$($f -replace '\\', '/')"
-                    $cdnUrl = "$RepoCdn/$($f -replace '\\', '/')"
+                    $fUrl = "$RepoRaw/$($f -replace '\\', '/')?t=$ticks"
+                    $cdnUrl = "$RepoCdn/$($f -replace '\\', '/')?t=$ticks"
                     try {
                         Invoke-WebRequest -Uri $cdnUrl -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
                     } catch {

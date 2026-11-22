@@ -1,7 +1,7 @@
 {
-  "version": "1.0.50",
+  "version": "1.0.50-sqlite",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
-  "branch": "main",
-  "notes": "Bulletproof 1-click automated installer with AI DNS self-healing, direct standalone SQL Server Express unattended setup (248 MB), LocalSystem logon self-healing, and zero red error waterfalls."
+  "branch": "sqlite",
+  "notes": "100% Zero-Install SQLite Edition with Embedded AI Live Self-Healing & Diagnostics Engine. Instant 15-second setup with zero SQL Server requirement."
 }

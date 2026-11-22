@@ -30,7 +30,7 @@ const TMP_DIR = path.join(ROOT_DIR, '.auto-update-tmp');
 
 const REPO_OWNER = 'sanjaynag28-jpg';
 const REPO_NAME = 'CSC-BC-apna-hisaab';
-const BRANCH = 'main';
+const BRANCH = 'sqlite';
 const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`;
 const REMOTE_ZIP_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.zip`;
 
