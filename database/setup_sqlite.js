@@ -66,7 +66,7 @@ function setupSQLite(existingDb) {
             const adminPassword = crypto.randomBytes(12).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 14);
             const passwordHash = bcrypt.hashSync(adminPassword, 10);
             const apiToken = crypto.randomBytes(24).toString('hex');
-            
+
             db.prepare(`
                 INSERT INTO Users (Username, PasswordHash, ShopName, OwnerName, Role, IsActive, ApiToken, CreatedAt, UpdatedAt)
                 VALUES (@u, @p, @s, @o, 'SuperAdmin', 1, @t, datetime('now', 'localtime'), datetime('now', 'localtime'))

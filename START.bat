@@ -40,6 +40,6 @@ if exist "%~dp0open-app.vbs" (
 ) else (
     start "" node "%~dp0server.js"
     timeout /t 2 >nul
-    start http://localhost:3000
+    start http://localhost:4000
 )
 exit /b 0

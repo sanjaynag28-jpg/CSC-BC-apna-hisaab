@@ -24,7 +24,7 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_STARTUP_MAX_ATTEMPTS = 30;
 let dbStartupReady = false;
@@ -68,7 +68,7 @@ app.use((req, res, next) => {
     if (!isAllowedOrigin(origin)) {
         return res.status(403).json({ success: false, error: 'Origin not allowed' });
     }
-    res.header('Access-Control-Allow-Origin', origin || 'http://localhost:3000');
+    res.header('Access-Control-Allow-Origin', origin || `http://localhost:${PORT}`);
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Idempotency-Key, Access-Control-Request-Private-Network');

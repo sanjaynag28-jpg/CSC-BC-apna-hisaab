@@ -1,7 +1,7 @@
 {
-  "version": "1.0.51-sqlite",
+  "version": "1.0.52-sqlite",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "100% Zero-Install SQLite Edition: 30-table complete schema parity, live auto-column migrator, T-SQL syntax translations, zero red UI errors across all screens."
+  "notes": "SQLite Edition standard port set to 4000 for seamless dual-server operation alongside SQL Server (3000)."
 }

@@ -6,7 +6,7 @@ async function run() {
     setupSQLite();
 
     console.log('🚀 Loading server...');
-    process.env.PORT = '3002';
+    process.env.PORT = '4000';
     const app = require('../server');
 
     // Wait a moment for server to initialize DB pool
@@ -52,7 +52,7 @@ async function run() {
 
     for (const ep of endpoints) {
         try {
-            const res = await fetch(`http://localhost:3002${ep}`);
+            const res = await fetch(`http://localhost:4000${ep}`);
             const text = await res.text();
             let json;
             try {

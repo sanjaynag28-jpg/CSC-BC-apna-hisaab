@@ -201,41 +201,41 @@ function Repair-VisualCppRuntime {
 }
 
 # ----------------------------------------------------------------------------
-# 4. PORT 3000 CONFLICT RESOLUTION
+# 4. PORT 4000 CONFLICT RESOLUTION
 # ----------------------------------------------------------------------------
-function Repair-Port3000Conflict {
-    Write-AiLog "Checking TCP Port 3000 availability..."
-    $portUsers = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+function Repair-Port4000Conflict {
+    Write-AiLog "Checking TCP Port 4000 availability..."
+    $portUsers = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
     if (-not $portUsers) {
-        Write-AiLog "Port 3000 is free and available." 'OK'
+        Write-AiLog "Port 4000 is free and available." 'OK'
         return
     }
 
     $pidOnPort = $portUsers[0].OwningProcess
     $proc = Get-Process -Id $pidOnPort -ErrorAction SilentlyContinue
-    Write-AiLog "Port 3000 is occupied by Process: $($proc.ProcessName) (PID: $pidOnPort)" 'WARN'
+    Write-AiLog "Port 4000 is occupied by Process: $($proc.ProcessName) (PID: $pidOnPort)" 'WARN'
 
     if ($proc.ProcessName -ieq 'node') {
         try {
-            $r = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -UseBasicParsing -TimeoutSec 3
+            $r = Invoke-WebRequest -Uri "http://localhost:4000/api/health" -UseBasicParsing -TimeoutSec 3
             if ($r.StatusCode -eq 200) {
-                Write-AiLog "Port 3000 is occupied by our own active server. (Healthy)" 'OK'
+                Write-AiLog "Port 4000 is occupied by our own active server. (Healthy)" 'OK'
                 return
             }
         } catch { }
         
-        Write-AiLog "Dead or hanging Node.js process detected on Port 3000. Terminating..." 'FIX'
+        Write-AiLog "Dead or hanging Node.js process detected on Port 4000. Terminating..." 'FIX'
         try {
             Stop-Process -Id $pidOnPort -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
-            Write-AiLog "Port 3000 cleared successfully." 'OK'
+            Write-AiLog "Port 4000 cleared successfully." 'OK'
             $script:RepairsApplied++
             return
         } catch { }
     }
 
     # Foreign application
-    Write-AiLog "Terminating foreign process holding Port 3000..." 'FIX'
+    Write-AiLog "Terminating foreign process holding Port 4000..." 'FIX'
     try {
         Stop-Process -Id $pidOnPort -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
@@ -369,16 +369,16 @@ function Repair-DatabaseSchema {
 }
 
 # ----------------------------------------------------------------------------
-# 8. FIREWALL PORT 3000 REPAIR
+# 8. FIREWALL PORT 4000 REPAIR
 # ----------------------------------------------------------------------------
 function Repair-Firewall {
-    Write-AiLog "Checking Windows Firewall rule for Port 3000..."
+    Write-AiLog "Checking Windows Firewall rule for Port 4000..."
     try {
-        $ruleName = "CSC BC Apna Hisaab (Port 3000)"
+        $ruleName = "CSC BC Apna Hisaab SQLite (Port 4000)"
         $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
         if (-not $existing) {
-            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
-            Write-AiLog "Added Firewall rule for Port 3000." 'FIX'
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+            Write-AiLog "Added Firewall rule for Port 4000." 'FIX'
             $script:RepairsApplied++
         } else {
             Write-AiLog "Firewall rule is already active." 'OK'
@@ -410,10 +410,10 @@ function Repair-DesktopShortcut {
 # 10. SERVER LIVE HEALTH CHECK & LAUNCH
 # ----------------------------------------------------------------------------
 function Repair-ServerLiveHealth {
-    Write-AiLog "Checking server live response at http://localhost:3000..."
+    Write-AiLog "Checking server live response at http://localhost:4000..."
     $live = $false
     try {
-        $res = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+        $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
         if ($res -and ($res.dbReady -eq $true -or $res.status -eq 'CONNECTED')) {
             $live = $true
         }
@@ -421,23 +421,23 @@ function Repair-ServerLiveHealth {
 
     if ($live) {
         Write-AiLog "Server is LIVE and healthy! Opening browser..." 'OK'
-        try { Start-Process "http://localhost:3000" } catch { }
+        try { Start-Process "http://localhost:4000" } catch { }
         return
     }
 
     Write-AiLog "Server not responding. Starting background server..." 'FIX'
     # Kill any hung node process first
-    Repair-Port3000Conflict
+    Repair-Port4000Conflict
     Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
     Start-Sleep -Seconds 3
 
     for ($i = 1; $i -le 10; $i++) {
         try {
-            $res = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
             if ($res) {
-                Write-AiLog "Server is now LIVE! Opening http://localhost:3000..." 'OK'
+                Write-AiLog "Server is now LIVE! Opening http://localhost:4000..." 'OK'
                 $script:RepairsApplied++
-                try { Start-Process "http://localhost:3000" } catch { }
+                try { Start-Process "http://localhost:4000" } catch { }
                 return
             }
         } catch { }
@@ -445,7 +445,7 @@ function Repair-ServerLiveHealth {
     }
 
     Write-AiLog "Server started. Opening browser..." 'OK'
-    try { Start-Process "http://localhost:3000" } catch { }
+    try { Start-Process "http://localhost:4000" } catch { }
 }
 
 # ============================================================================
@@ -456,7 +456,7 @@ Repair-TlsAndCrypto
 Repair-VisualCppRuntime
 Repair-NodeJsRuntime
 Repair-NpmAndDependencies
-Repair-Port3000Conflict
+Repair-Port4000Conflict
 Repair-DatabaseSchema
 Repair-Firewall
 Repair-DesktopShortcut

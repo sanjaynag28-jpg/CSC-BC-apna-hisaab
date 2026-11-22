@@ -9,7 +9,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = baseDir
-url = "http://localhost:3000"
+url = "http://localhost:4000"
 
 If Not ServerReady(url) Then
     sh.Run "cmd /c """ & baseDir & "\server-supervisor.bat""", 0, False

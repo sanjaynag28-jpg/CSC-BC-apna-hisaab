@@ -249,7 +249,7 @@ $workerBlock = {
     }
 
     function Repair-PortConflict {
-        param([int]$Port = 3000)
+        param([int]$Port = 4000)
         Log-Msg "Port $Port verification & auto-healing..." 'AI'
         try {
             $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
@@ -410,7 +410,7 @@ $workerBlock = {
         # Pre-flight AI Self-Healing
         Repair-TlsAndCrypto
         Repair-DnsAndNetwork
-        Repair-PortConflict 3000
+        Repair-PortConflict 4000
 
         Update-Step 1 'RUNNING' 60 "Admin access OK" "Windows OS version verify ho raha hai..."
         Start-Sleep -Milliseconds 200
@@ -665,24 +665,24 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 6: Windows Firewall (Port 3000)
+    # STEP 6: Windows Firewall (Port 4000)
     # ========================================================================
     function Exec-Step6 {
-        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall Port 3000..." "Local Wi-Fi / LAN connection rules configure ho rahe hain..."
-        Log-Msg "Windows Firewall me Port 3000 rule verify ho raha hai..." 'NETWORK'
+        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall Port 4000..." "Local Wi-Fi / LAN connection rules configure ho rahe hain..."
+        Log-Msg "Windows Firewall me Port 4000 rule verify ho raha hai..." 'NETWORK'
         try {
-            $ruleName = "CSC BC Apna Hisaab (Port 3000)"
+            $ruleName = "CSC BC Apna Hisaab SQLite (Port 4000)"
             $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
             if (-not $existing) {
-                New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
-                Log-Msg "Firewall rule 'CSC BC Apna Hisaab (Port 3000)' add ho gaya." 'OK'
+                New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                Log-Msg "Firewall rule 'CSC BC Apna Hisaab SQLite (Port 4000)' add ho gaya." 'OK'
             } else {
                 Log-Msg "Firewall rule pehle se mojood hai." 'OK'
             }
         } catch {
             Log-Msg "Firewall rule notice: $($_.Exception.Message)" 'WARN'
         }
-        Update-Step 6 'SUCCESS' 100 "Port 3000 Allowed" "Step 6 : Firewall Configured"
+        Update-Step 6 'SUCCESS' 100 "Port 4000 Allowed" "Step 6 : Firewall Configured"
         return $true
     }
 
@@ -715,11 +715,11 @@ $workerBlock = {
     # STEP 8: Live Health Check & Instant Browser Launch
     # ========================================================================
     function Exec-Step8 {
-        Update-Step 8 'RUNNING' 15 "Step 8 / 8 : Server live launch..." "http://localhost:3000 live server start ho raha hai..."
+        Update-Step 8 'RUNNING' 15 "Step 8 / 8 : Server live launch..." "http://localhost:4000 live server start ho raha hai..."
         Log-Msg "Server background me start ho raha hai..." 'START'
 
-        # Ensure port 3000 is clean
-        Repair-PortConflict 3000
+        # Ensure port 4000 is clean
+        Repair-PortConflict 4000
 
         $node = Find-Node
         if (-not $node) { $node = 'node' }
@@ -732,10 +732,10 @@ $workerBlock = {
             $t = $i * 1
             $sync.Activity = "Server ka response aa raha hai$(New-Dots $i) ($t s)"
             $sync.Elapsed = "{0:mm\:ss}" -f ([TimeSpan]::FromSeconds($t))
-            Update-Step 8 'RUNNING' (20 + $i * 5) "Server check ($t s)..." "http://localhost:3000 ka response aa raha hai ($t s)..."
+            Update-Step 8 'RUNNING' (20 + $i * 5) "Server check ($t s)..." "http://localhost:4000 ka response aa raha hai ($t s)..."
             Start-Sleep -Seconds 1
             try {
-                $res = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
+                $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
                 if ($res -and ($res.dbReady -eq $true -or $res.status -eq 'CONNECTED')) {
                     $alive = $true
                     break
@@ -744,32 +744,32 @@ $workerBlock = {
         }
 
         if ($alive) {
-            Log-Msg "Application 100% LIVE hai: http://localhost:3000" 'OK'
+            Log-Msg "Application 100% LIVE hai: http://localhost:4000" 'OK'
             Update-Step 8 'SUCCESS' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-            try { Start-Process "http://localhost:3000" } catch { }
+            try { Start-Process "http://localhost:4000" } catch { }
             return $true
         }
 
         # AI Self-Healing Server Restart
         Log-Msg "Server restart & diagnostics retry chal raha hai..." 'FIX'
         Update-Step 8 'HEALING' 85 "AI Diagnostics..." "Server reload aur port verification..."
-        Repair-PortConflict 3000
+        Repair-PortConflict 4000
         Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
         Start-Sleep -Seconds 3
 
         try {
-            $res = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 3 -ErrorAction SilentlyContinue
+            $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 3 -ErrorAction SilentlyContinue
             if ($res) {
-                Log-Msg "Server live ho gaya: http://localhost:3000" 'OK'
+                Log-Msg "Server live ho gaya: http://localhost:4000" 'OK'
                 Update-Step 8 'REPAIRED' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-                try { Start-Process "http://localhost:3000" } catch { }
+                try { Start-Process "http://localhost:4000" } catch { }
                 return $true
             }
         } catch { }
 
         Log-Msg "Server background me start ho chuka hai. Browser open ho raha hai..." 'OK'
         Update-Step 8 'SUCCESS' 100 "Server Ready" "Step 8 : Server Ready"
-        try { Start-Process "http://localhost:3000" } catch { }
+        try { Start-Process "http://localhost:4000" } catch { }
         return $true
     }
 
@@ -999,7 +999,7 @@ if ($guiAvailable) {
                 </Border>
                 <Border Name="StepCard6" Background="#0f172a" BorderBrush="#1e293b" BorderThickness="1" CornerRadius="8" Margin="3,2" Padding="8,5">
                     <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                        <Grid Grid.Row="0"><TextBlock Text="[06] Firewall Port 3000" FontSize="11" FontWeight="Bold" Foreground="#f8fafc"/><TextBlock Name="StepStatus6" Text="[ WAITING ]" FontSize="10" FontWeight="Bold" Foreground="#64748b" HorizontalAlignment="Right"/></Grid>
+                        <Grid Grid.Row="0"><TextBlock Text="[06] Firewall Port 4000" FontSize="11" FontWeight="Bold" Foreground="#f8fafc"/><TextBlock Name="StepStatus6" Text="[ WAITING ]" FontSize="10" FontWeight="Bold" Foreground="#64748b" HorizontalAlignment="Right"/></Grid>
                         <TextBlock Name="StepSub6" Grid.Row="1" Text="Pratiksha karein..." FontSize="9.5" Foreground="#64748b" Margin="0,1,0,3"/>
                         <ProgressBar Name="StepMiniBar6" Grid.Row="2" Height="3" Minimum="0" Maximum="100" Value="0"/>
                     </Grid>
@@ -1057,7 +1057,7 @@ if ($guiAvailable) {
         $global:LaunchBtnText     = $global:Window.FindName("LaunchBtnText")
 
         $global:LaunchBtn.Add_Click({
-            try { Start-Process "http://localhost:3000" } catch { }
+            try { Start-Process "http://localhost:4000" } catch { }
             $global:Window.Close()
         })
 
@@ -1190,7 +1190,7 @@ if ($guiAvailable) {
                 $global:LaunchBtn.IsEnabled = $true
                 $global:LaunchBtn.Background = $converter.ConvertFromString("#10b981")
                 $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
-                $global:LaunchBtnText.Text = "CSC & BC Apna Hisaab kholein (http://localhost:3000)"
+                $global:LaunchBtnText.Text = "CSC & BC Apna Hisaab kholein (http://localhost:4000)"
                 $global:CurrentActionText.Text = "SAARE 8 STEPS 100% VERIFIED & CONFIGURED!"
                 $global:CurrentActionText.Foreground = $converter.ConvertFromString("#34d399")
                 $global:ActivityText.Text = "Sab kuch ready hai - 15 second me setup poora ho gaya."
