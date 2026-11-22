@@ -61,7 +61,7 @@ function prepareStoredProcedureBatch(batch, exists) {
     );
 }
 
-async function ensureDatabaseExists(baseCfg) {
+async function ensureDatabaseExists(baseCfg, isClean = false) {
     const dbName = baseCfg.database;
     const masterCfg = { ...baseCfg, database: 'master' };
     const masterPool = await new sql.ConnectionPool(masterCfg).connect();
@@ -69,7 +69,21 @@ async function ensureDatabaseExists(baseCfg) {
         const res = await masterPool.request()
             .input('dbName', sql.NVarChar(128), dbName)
             .query('SELECT name FROM sys.databases WHERE name = @dbName');
-        if (res.recordset.length === 0) {
+        
+        if (isClean && res.recordset.length > 0) {
+            console.log(`🧹 Clean Install Mode: Database "${dbName}" ko fresh re-create kar rahe hain...`);
+            try {
+                await masterPool.request().query(`
+                    ALTER DATABASE ${safeBracketIdent(dbName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    DROP DATABASE ${safeBracketIdent(dbName)};
+                `);
+                console.log(`🗑️ Purana "${dbName}" database successfully drop ho gaya.`);
+            } catch (dropErr) {
+                console.warn(`⚠️ Database drop warning: ${dropErr.message}`);
+            }
+            await masterPool.request().query(`CREATE DATABASE ${safeBracketIdent(dbName)}`);
+            console.log(`✅ Fresh "${dbName}" database create ho gaya!`);
+        } else if (res.recordset.length === 0) {
             console.log(`🆕 Database "${dbName}" nahi mila — naya database create kar rahe hain...`);
             await masterPool.request().query(`CREATE DATABASE ${safeBracketIdent(dbName)}`);
             console.log(`✅ Database "${dbName}" successfully create ho gaya!`);
@@ -207,13 +221,19 @@ async function seedStarterDataIfEmpty(pool) {
     }
 }
 
-async function setup() {
+async function setup(options = {}) {
     console.log('🔄 Checking CashManagement database setup...');
     try {
+        const isClean = Boolean(options.clean) ||
+            process.argv.includes('--clean') ||
+            process.argv.includes('--fresh') ||
+            process.env.CLEAN_DB === '1' ||
+            process.env.CLEAN_INSTALL === '1';
+
         const cfg = loadEnvConfig();
 
-        // Step 1: Ensure target database exists via master connection
-        await ensureDatabaseExists(cfg);
+        // Step 1: Ensure target database exists via master connection (drop & recreate if isClean)
+        await ensureDatabaseExists(cfg, isClean);
 
         // Step 2: Connect to target database
         const pool = await getPool();
@@ -251,8 +271,17 @@ async function setup() {
         }
 
         // Step 3: Ensure Rule 1 & Rule 3 Relational Source Identity & Unique Index exist
-        const { runRule1Migration } = require('./scripts/migration_rule1_sourceline');
-        await runRule1Migration();
+        let runRule1Migration = null;
+        try {
+            runRule1Migration = require('./scripts/migration_rule1_sourceline').runRule1Migration;
+        } catch (_) {
+            try {
+                runRule1Migration = require('./archive/legacy_scripts/migration_rule1_sourceline').runRule1Migration;
+            } catch (_) { }
+        }
+        if (runRule1Migration) {
+            await runRule1Migration();
+        }
 
         // Step 4: Seed clean starter data ONLY if brand-new empty DB
         await seedStarterDataIfEmpty(pool);
@@ -261,17 +290,37 @@ async function setup() {
         // Seeding ke BAAD chalte hain taaki Users/Accounts exist hon aur FK constraints ban sakein.
         // Existing DB par backup ke saath, brand-new empty DB par backup skip.
         const { runPendingMigrations } = require('./database/migrationRunner');
-        const hasExistingData = (await pool.request().query('SELECT COUNT(*) AS c FROM Customers')).recordset[0].c > 0;
+        let hasExistingData = false;
+        try {
+            const custRes = await pool.request().query('SELECT COUNT(*) AS c FROM Customers');
+            hasExistingData = Boolean(custRes.recordset[0]?.c > 0);
+        } catch (_) {
+            hasExistingData = false;
+        }
         const migResult = await runPendingMigrations({ dryRun: false, backup: hasExistingData });
         if (migResult.applied.length) {
             console.log(`✅ ${migResult.applied.length} migration(s) applied: ${migResult.applied.join(', ')}`);
         }
 
+        // Step 6: Ensure Layer 2 Dynamic Schema & Indexes are bootstrapped
+        try {
+            const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
+            await ensureAutoSchemaBootstrapped();
+        } catch (sErr) {
+            console.warn('⚠️ AutoSchemaBootstrap warning:', sErr.message);
+        }
+
         console.log('✅ Database setup completed & verified successfully!');
-        process.exit(0);
+        if (options.exitOnDone !== false && require.main === module) {
+            process.exit(0);
+        }
+        return true;
     } catch (err) {
         console.error('❌ Database setup failed:', err.message);
-        process.exit(1);
+        if (options.exitOnDone !== false && require.main === module) {
+            process.exit(1);
+        }
+        throw err;
     }
 }
 
@@ -280,6 +329,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    setup,
     getStoredProcedureName,
     prepareStoredProcedureBatch
 };

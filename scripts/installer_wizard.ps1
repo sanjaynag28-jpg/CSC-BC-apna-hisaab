@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - Master Enterprise Setup & Health Engine (POWER EDITION)
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # 100% Free AI Live Self-Healing (Port, SQL Service, TLS 1.2, VC++, Registry)
@@ -10,7 +10,8 @@
 [CmdletBinding()]
 param(
     [string]$ProjectDir = $PSScriptRoot,
-    [switch]$Unattended = $false
+    [switch]$Unattended = $false,
+    [switch]$Clean = $false
 )
 
 $ErrorActionPreference = 'Continue'
@@ -35,16 +36,17 @@ if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDi
 $LogFile = Join-Path $LogDir 'install_wizard.log'
 
 $RequiredFiles = @{
-    'server.js'                      = 2000
-    'package.json'                   = 200
-    'package-lock.json'              = 5000
-    'setup-database.js'              = 1000
-    'database\setup.sql'             = 10000
-    'public\index.html'              = 50000
-    'public\app.js'                  = 50000
-    'routes\auth.js'                 = 500
-    'middleware\auth.js'             = 500
-    'utils\autoUpdater.js'           = 1000
+    'server.js'                             = 2000
+    'package.json'                          = 200
+    'package-lock.json'                     = 5000
+    'setup-database.js'                     = 1000
+    'database\setup.sql'                    = 10000
+    'scripts\migration_rule1_sourceline.js' = 500
+    'public\index.html'                     = 50000
+    'public\app.js'                         = 50000
+    'routes\auth.js'                        = 500
+    'middleware\auth.js'                    = 500
+    'utils\autoUpdater.js'                  = 1000
 }
 
 $RepoRaw    = 'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main'
@@ -81,7 +83,7 @@ for ($i = 1; $i -le 11; $i++) {
 # WORKER (background runspace) - saara asli kaam yahan hota hai
 # ============================================================================
 $workerBlock = {
-    param($sync, $ProjectDir, $isAdmin, $RequiredFiles, $LogFile, $RepoRaw, $RepoCdn, $RepoZip, $RepoZipAlt)
+    param($sync, $ProjectDir, $isAdmin, $RequiredFiles, $LogFile, $RepoRaw, $RepoCdn, $RepoZip, $RepoZipAlt, $CleanMode = $false)
     try { Set-Location -LiteralPath $ProjectDir } catch { }
 
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
@@ -746,32 +748,60 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
             return $true
         }
 
+        try { Set-Location -LiteralPath $ProjectDir } catch { }
+
+        $isCleanActive = ($CleanMode -or ($env:CLEAN_INSTALL -eq '1') -or ($Clean.IsPresent))
+        $nodeArgs = @("`"$setupJs`"")
+        if ($isCleanActive) {
+            Log-Msg "Clean Fresh Install Mode detect hua: CashManagement database clean reset kiya jayega." 'DATABASE'
+            $nodeArgs += "--clean"
+        }
+
         $rc = $false
         for ($i = 1; $i -le 3; $i++) {
-            & node setup-database.js
-            if ($LASTEXITCODE -eq 0) {
-                $rc = $true
-                break
+            Update-Step 8 'RUNNING' (20 + $i * 22) "setup-database.js chal raha hai (koshish $i)..." "Schema aur starter data build ho raha hai..."
+            
+            $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+            $pinfo.FileName = $node
+            $pinfo.Arguments = ($nodeArgs -join ' ')
+            $pinfo.WorkingDirectory = $ProjectDir
+            $pinfo.RedirectStandardOutput = $true
+            $pinfo.RedirectStandardError = $true
+            $pinfo.UseShellExecute = $false
+            $pinfo.CreateNoWindow = $true
+
+            try {
+                $proc = [System.Diagnostics.Process]::Start($pinfo)
+                $stdout = $proc.StandardOutput.ReadToEnd()
+                $stderr = $proc.StandardError.ReadToEnd()
+                $proc.WaitForExit()
+
+                if ($stdout) {
+                    $stdout -split "`r?`n" | ForEach-Object { if ($_.Trim()) { Log-Msg $_ 'DB' } }
+                }
+                if ($stderr) {
+                    $stderr -split "`r?`n" | ForEach-Object { if ($_.Trim()) { Log-Msg $_ 'DB_ERR' } }
+                }
+
+                if ($proc.ExitCode -eq 0) {
+                    $rc = $true
+                    break
+                }
+            } catch {
+                Log-Msg "Node process error: $($_.Exception.Message)" 'DB_ERR'
             }
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 3
         }
+
         if (-not $rc) {
+            Log-Msg "Database setup fail hua. Upar diye logs check karein." 'WARN'
             Update-Step 8 'FAILED' 60 "Database setup fail" "Step 8 : Database Setup Failed"
             return $false
         }
 
-        Update-Step 8 'RUNNING' 45 "Tables ban rahi hain..." "24+ financial tables + procedures create ho rahe hain..."
-        Update-Step 8 'RUNNING' 97 "Schema verify ho raha hai..." "Stored procedures aur ledger verify ho rahe hain..."
-        Start-Sleep -Milliseconds 400
-
-        if ($rc) {
-            Log-Msg "Database ready: 24+ tables, 5 procedures aur starter data seed ho gaya." 'OK'
-            Update-Step 8 'SUCCESS' 100 "24+ tables ready" "Step 8 : Database & Schema Ready"
-            return $true
-        }
-        Log-Msg "Database setup fail hua (code $rc). SQL service check karke dobara chalayein." 'WARN'
-        Update-Step 8 'FAILED' 60 "DB setup fail" "Step 8 : Database Setup Failed"
-        return $false
+        Log-Msg "Database ready: 24+ tables, 5 procedures aur starter data seed ho gaya." 'OK'
+        Update-Step 8 'SUCCESS' 100 "24+ tables ready" "Step 8 : Database & Schema Ready"
+        return $true
     }
 
     function Exec-Step9 {
@@ -1208,6 +1238,7 @@ if ($guiAvailable) {
         [void]$ps.AddArgument($RepoCdn)
         [void]$ps.AddArgument($RepoZip)
         [void]$ps.AddArgument($RepoZipAlt)
+        [void]$ps.AddArgument([bool]($Clean.IsPresent -or ($env:CLEAN_INSTALL -eq '1')))
 
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
         $script:logIndex = 0
@@ -1335,11 +1366,11 @@ if ($guiAvailable) {
     } catch {
         Write-Host "GUI launch notice: $($_.Exception.Message)" -ForegroundColor Yellow
         Write-Host "High-speed console mode me chal raha hai..." -ForegroundColor Cyan
-        & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoZip $RepoZipAlt
+        & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoZip $RepoZipAlt ([bool]($Clean.IsPresent -or ($env:CLEAN_INSTALL -eq '1')))
         exit 0
     }
 } else {
     # Headless console runner
-    & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoZip $RepoZipAlt
+    & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoZip $RepoZipAlt ([bool]($Clean.IsPresent -or ($env:CLEAN_INSTALL -eq '1')))
     exit 0
 }

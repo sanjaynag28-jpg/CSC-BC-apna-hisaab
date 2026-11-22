@@ -69,6 +69,24 @@ async function getPool() {
             poolPromise = null;
             pool = null;
         }
+
+        // Self-Healing: Agar target database abhi SQL Server par bana nahi hai (Error 4060)
+        if (err.message && (err.message.includes('Cannot open database') || err.number === 4060)) {
+            console.warn(`⚠️ Database "${config.database}" nahi mila. Master connection se auto-create kar rahe hain...`);
+            try {
+                const masterCfg = { ...config, database: 'master' };
+                const mPool = await new sql.ConnectionPool(masterCfg).connect();
+                await mPool.request().query(`IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${String(config.database).replace(/'/g, "''")}') CREATE DATABASE [${String(config.database).replace(/\]/g, ']]')}]`);
+                await mPool.close();
+                console.log(`✅ Database "${config.database}" successfully create ho gaya! Reconnecting...`);
+                pool = await new sql.ConnectionPool(config).connect();
+                console.log('✅ SQL Server se connected!');
+                return pool;
+            } catch (createErr) {
+                console.error('❌ Master se database create nahi ho paya:', createErr.message);
+            }
+        }
+
         console.error('❌ SQL Server connection error:', err.message);
         throw err;
     }

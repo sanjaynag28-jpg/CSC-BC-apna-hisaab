@@ -44,6 +44,34 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
+cd /d "%~dp0"
+
+:: Case 1: Running inside existing project folder
+if exist "%~dp0scripts\installer_wizard.ps1" (
+    echo ======================================================================
+    echo   CSC ^& BC APNA HISAAB - CLEAN FRESH RE-INSTALLER
+    echo ======================================================================
+    echo.
+    echo   [..] Updating Setup Engine from CDN...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks) -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
+    
+    echo   [..] Launching Graphical Setup Wizard in Clean Reset mode...
+    set "CLEAN_INSTALL=1"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0" -Clean
+    set "EXIT_CODE=%errorlevel%"
+    
+    echo.
+    echo ======================================================================
+    echo   Clean Setup complete (Code: %EXIT_CODE%).
+    echo   Log File: %~dp0logs\install_wizard.log
+    echo.
+    echo   Window band karne ke liye koi bhi key dabayein...
+    echo ======================================================================
+    pause
+    exit /b %EXIT_CODE%
+)
+
+:: Case 2: Standalone mode (single file on new / incomplete PC)
 set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
 set "TEMP_WIZ=%TEMP%\cmbc_installer_wizard.ps1"
 
@@ -53,7 +81,7 @@ echo   CSC ^& BC APNA HISAAB - 100%% CLEAN FRESH RE-INSTALLER
 echo ======================================================================
 echo.
 echo   Yeh tool purane / adhoore installation folder ko saaf karke
-echo   100%% naye sire se fresh installation shuru karega.
+echo   aur Database ko 100%% fresh re-initialize karke naye sire se setup karega.
 echo.
 echo   Target Folder : %TARGET_DIR%
 echo   Logs Location : %TARGET_DIR%\logs\install_wizard.log
@@ -69,11 +97,15 @@ echo   [1/3] Purane adhoore files aur temp cache saaf kiye ja rahe hain...
 echo ======================================================================
 echo.
 
-if exist "%TARGET_DIR%" (
-    echo   [..] Deleting old project folder: %TARGET_DIR%...
-    rd /s /q "%TARGET_DIR%" >nul 2>&1
+if exist "%TARGET_DIR%\.git" (
+    echo   [INFO] Source git repository detected; files preserved.
+) else (
+    if exist "%TARGET_DIR%" (
+        echo   [..] Deleting old project folder: %TARGET_DIR%...
+        rd /s /q "%TARGET_DIR%" >nul 2>&1
+    )
+    mkdir "%TARGET_DIR%" >nul 2>&1
 )
-mkdir "%TARGET_DIR%" >nul 2>&1
 del /f /q "%TEMP%\cmbc_*" >nul 2>&1
 echo   [OK] Purana adhoora folder saaf ho gaya.
 
@@ -93,7 +125,7 @@ if errorlevel 1 (
 
 echo.
 echo ======================================================================
-echo   [3/3] Launching Graphical Setup ^& Health Wizard...
+echo   [3/3] Launching Graphical Setup ^& Health Wizard (Clean Reset)...
 echo ======================================================================
 echo.
 
@@ -112,7 +144,8 @@ if not exist "%FINAL_WIZ%" (
     exit /b 1
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%FINAL_WIZ%" -ProjectDir "%TARGET_DIR%"
+set "CLEAN_INSTALL=1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%FINAL_WIZ%" -ProjectDir "%TARGET_DIR%" -Clean
 set "EXIT_CODE=%errorlevel%"
 
 echo.

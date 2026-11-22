@@ -1,7 +1,7 @@
 {
-  "version": "1.0.41",
+  "version": "1.0.42",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Organizes project architecture: cleans root folder with dedicated START.bat, STOP.bat, BACKUP.bat, moves 18 maintenance tools to tools/, archives 323 legacy scripts to archive/legacy_scripts/, verifies 100% server health and 14 core invariants."
+  "notes": "Fixes Step 8 database setup and startup wait screen: restores canonical scripts/migration_rule1_sourceline.js with multi-path fallbacks, adds --clean fresh database drop-and-recreate support for CLEAN_FRESH_INSTALL, adds master auto-creation self-healing to db.js and automated schema bootstrapping to server.js."
 }

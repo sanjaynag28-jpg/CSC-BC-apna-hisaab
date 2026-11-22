@@ -905,6 +905,20 @@ async function connectDbInBackground() {
             if (connected) {
                 console.log(`✅ SQL Server se successfully connect ho gaya (Attempt: ${attempts})!`);
                 dbStartupStage = 'schema';
+
+                // Self-Healing Core Tables Check: Agar brand-new ya adhoora DB ho to poora schema create karein
+                try {
+                    const p = await getPool();
+                    const tblCheck = await p.request().query("SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN ('Users', 'Accounts', 'Transactions')");
+                    if (!tblCheck.recordset[0] || tblCheck.recordset[0].cnt < 3) {
+                        console.log('🔄 Core tables (Users, Accounts, Transactions) missing hain — automated setup-database run ho raha hai...');
+                        const { setup } = require('./setup-database');
+                        await setup({ exitOnDone: false });
+                    }
+                } catch (sInitErr) {
+                    console.warn('⚠️ Automated setup check notice:', sInitErr.message);
+                }
+
                 // Self-Healing Dynamic Schema Bootstrapper: Ensures all tables, columns, dynamic fields exist automatically
                 try {
                     const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
@@ -947,6 +961,20 @@ async function connectDbInBackground() {
                     console.log('✅ SQL Server ab ready ho gaya hai!');
                     clearInterval(retryTimer);
                     dbStartupStage = 'schema';
+
+                    // Self-Healing Core Tables Check
+                    try {
+                        const p = await getPool();
+                        const tblCheck = await p.request().query("SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN ('Users', 'Accounts', 'Transactions')");
+                        if (!tblCheck.recordset[0] || tblCheck.recordset[0].cnt < 3) {
+                            console.log('🔄 Core tables missing hain — automated setup-database run ho raha hai...');
+                            const { setup } = require('./setup-database');
+                            await setup({ exitOnDone: false });
+                        }
+                    } catch (sInitErr) {
+                        console.warn('⚠️ Automated setup check notice:', sInitErr.message);
+                    }
+
                     try {
                         const { ensureAutoSchemaBootstrapped } = require('./database/autoSchemaBootstrapper');
                         await ensureAutoSchemaBootstrapped();
