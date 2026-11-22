@@ -25,13 +25,8 @@ if not exist "%~dp0node_modules" (
     exit /b
 )
 
-:: Check if SQLite database exists
-if not exist "%~dp0database\data\cash_management.db" (
-    echo ========================================================
-    echo   [..] Database initialize ho raha hai...
-    echo ========================================================
-    node "%~dp0setup-database.js"
-)
+:: Database self-healing & schema integrity check (< 50ms)
+node "%~dp0setup-database.js"
 
 :: Start hidden server and open browser
 echo Starting CSC ^& BC Apna Hisaab (SQLite Edition)...

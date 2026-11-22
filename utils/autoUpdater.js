@@ -32,6 +32,10 @@ const REPO_OWNER = 'sanjaynag28-jpg';
 const REPO_NAME = 'CSC-BC-apna-hisaab';
 let BRANCH = 'main';
 try {
+    const vJson = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
+    if (vJson.branch) BRANCH = vJson.branch;
+} catch (_) { }
+try {
     const gitBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 3000 }).trim();
     if (gitBranch && gitBranch !== 'HEAD' && (gitBranch === 'sqlite' || gitBranch === 'main')) {
         BRANCH = gitBranch;
