@@ -194,24 +194,72 @@ function setupSQLite(existingDb) {
         }
 
         // 5. Starter CSC Services
-        const cscCount = db.prepare('SELECT COUNT(*) AS cnt FROM CSCServices').get().cnt;
-        if (cscCount === 0) {
-            const insCsc = db.prepare(`
-                INSERT INTO CSCServices (ServiceName, GovtFee, OperatorFee, DefaultDays, Icon, IsActive, SortOrder, UserID)
-                VALUES (@name, @gFee, @oFee, @days, @icon, 1, @sort, 1)
+        try {
+            db.exec(`
+                CREATE TABLE IF NOT EXISTS "CSCServices" (
+                    "ServiceID" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    "ServiceName" TEXT NOT NULL,
+                    "GovtFee" NUMERIC DEFAULT 0.00,
+                    "OperatorFee" NUMERIC DEFAULT 50.00,
+                    "DefaultDays" INTEGER DEFAULT 10,
+                    "Icon" TEXT DEFAULT 'file-text',
+                    "IsActive" INTEGER DEFAULT 1,
+                    "SortOrder" INTEGER DEFAULT 0,
+                    "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
+                    "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
+                    "UserID" INTEGER DEFAULT 1,
+                    "Category" TEXT DEFAULT 'General',
+                    "ModuleCode" TEXT DEFAULT 'CSC',
+                    "CustomFieldsSchema" TEXT
+                )
             `);
-            const svcs = [
-                { name: 'Aay Praman Patra (Income Cert)', gFee: 15, oFee: 35, days: 7, icon: 'file-check', sort: 1 },
-                { name: 'Jati Praman Patra (Caste Cert)', gFee: 15, oFee: 35, days: 7, icon: 'file-check', sort: 2 },
-                { name: 'Niwas Praman Patra (Domicile)', gFee: 15, oFee: 35, days: 7, icon: 'home', sort: 3 },
-                { name: 'PAN Card (New / Correction)', gFee: 107, oFee: 93, days: 15, icon: 'credit-card', sort: 4 },
-                { name: 'Aadhaar Print / PVC Card', gFee: 50, oFee: 50, days: 1, icon: 'id-card', sort: 5 },
-                { name: 'Ayushman Bharat Card', gFee: 0, oFee: 50, days: 2, icon: 'heart-pulse', sort: 6 },
-                { name: 'PM Kisan e-KYC / Registration', gFee: 0, oFee: 50, days: 1, icon: 'sprout', sort: 7 },
-                { name: 'Ration Card Apply / Unit Add', gFee: 0, oFee: 50, days: 15, icon: 'clipboard-list', sort: 8 },
-                { name: 'Passport Online Apply', gFee: 1500, oFee: 200, days: 15, icon: 'globe', sort: 9 }
+            const cscCols = db.prepare('PRAGMA table_info("CSCServices")').all().map(c => c.name.toLowerCase());
+            const requiredCscCols = [
+                { name: 'GovtFee', def: 'NUMERIC DEFAULT 0.00' },
+                { name: 'OperatorFee', def: 'NUMERIC DEFAULT 50.00' },
+                { name: 'DefaultDays', def: 'INTEGER DEFAULT 10' },
+                { name: 'Icon', def: 'TEXT DEFAULT "file-text"' },
+                { name: 'IsActive', def: 'INTEGER DEFAULT 1' },
+                { name: 'SortOrder', def: 'INTEGER DEFAULT 0' },
+                { name: 'UserID', def: 'INTEGER DEFAULT 1' },
+                { name: 'CreatedAt', def: 'TEXT DEFAULT (datetime("now", "localtime"))' },
+                { name: 'UpdatedAt', def: 'TEXT DEFAULT (datetime("now", "localtime"))' },
+                { name: 'Category', def: 'TEXT DEFAULT "General"' },
+                { name: 'ModuleCode', def: 'TEXT DEFAULT "CSC"' }
             ];
-            for (const s of svcs) insCsc.run(s);
+            for (const col of requiredCscCols) {
+                if (!cscCols.includes(col.name.toLowerCase())) {
+                    try { db.exec(`ALTER TABLE "CSCServices" ADD COLUMN "${col.name}" ${col.def}`); } catch (_) { }
+                }
+            }
+
+            const cscCount = db.prepare('SELECT COUNT(*) AS cnt FROM CSCServices').get().cnt;
+            if (cscCount === 0) {
+                const insCsc = db.prepare(`
+                    INSERT INTO CSCServices (ServiceName, GovtFee, OperatorFee, DefaultDays, Icon, IsActive, SortOrder, UserID)
+                    VALUES (@name, @gFee, @oFee, @days, @icon, 1, @sort, 1)
+                `);
+                const svcs = [
+                    { name: 'PAN Card (NSDL / UTI)', gFee: 107, oFee: 50, days: 12, icon: 'credit-card', sort: 1 },
+                    { name: 'Aay Praman Patra (Income Certificate)', gFee: 15, oFee: 35, days: 7, icon: 'file-text', sort: 2 },
+                    { name: 'Niwas Praman Patra (Domicile / Residence)', gFee: 15, oFee: 35, days: 7, icon: 'home', sort: 3 },
+                    { name: 'Jati Praman Patra (Caste Certificate)', gFee: 15, oFee: 35, days: 7, icon: 'landmark', sort: 4 },
+                    { name: 'Ration Card (नया / संशोधन / यूनिट)', gFee: 0, oFee: 50, days: 15, icon: 'wheat', sort: 5 },
+                    { name: 'Voter ID (Pehchan Patra / Form 6, 8)', gFee: 0, oFee: 50, days: 15, icon: 'vote', sort: 6 },
+                    { name: 'Ayushman Card (PMJAY Golden Card)', gFee: 0, oFee: 50, days: 2, icon: 'heart-pulse', sort: 7 },
+                    { name: 'PM Kisan (Registration / eKYC / Land)', gFee: 0, oFee: 50, days: 1, icon: 'sprout', sort: 8 },
+                    { name: 'E-Shram / Labour (Shramik Card)', gFee: 0, oFee: 30, days: 3, icon: 'hard-hat', sort: 9 },
+                    { name: 'Janma / Mrityu Praman Patra (Birth / Death)', gFee: 10, oFee: 50, days: 15, icon: 'baby', sort: 10 },
+                    { name: 'Driving License (Learner / Permanent)', gFee: 350, oFee: 100, days: 25, icon: 'car', sort: 11 },
+                    { name: 'Passport Seva', gFee: 1500, oFee: 200, days: 15, icon: 'globe', sort: 12 },
+                    { name: 'Bijli Bill / Electricity Service', gFee: 0, oFee: 20, days: 1, icon: 'zap', sort: 13 },
+                    { name: 'Aadhaar Seva (Update / Correction / eKYC)', gFee: 50, oFee: 50, days: 1, icon: 'id-card', sort: 14 },
+                    { name: 'Anya Government / CSC Seva', gFee: 0, oFee: 50, days: 10, icon: 'package', sort: 15 }
+                ];
+                for (const s of svcs) insCsc.run(s);
+            }
+        } catch (e) {
+            console.warn('⚠️ CSC Services setup notice:', e.message);
         }
 
         // 6. Starter SystemSettings

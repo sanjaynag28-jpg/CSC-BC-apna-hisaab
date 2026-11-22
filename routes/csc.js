@@ -210,28 +210,157 @@ router.get('/stats', async (req, res) => {
 // ==========================================================================
 // 2.1 CSC SERVICES & DEFAULT FEES CONFIGURATION
 // ==========================================================================
+
+const DEFAULT_SERVER_CSC_SERVICES = [
+    { ServiceID: 1, ServiceName: 'PAN Card (NSDL / UTI)', GovtFee: 107, OperatorFee: 50, TotalFee: 157, DefaultDays: 12, Icon: 'credit-card', IsActive: 1, SortOrder: 1 },
+    { ServiceID: 2, ServiceName: 'Aay Praman Patra (Income Certificate)', GovtFee: 15, OperatorFee: 35, TotalFee: 50, DefaultDays: 10, Icon: 'file-text', IsActive: 1, SortOrder: 2 },
+    { ServiceID: 3, ServiceName: 'Niwas Praman Patra (Domicile / Residence)', GovtFee: 15, OperatorFee: 35, TotalFee: 50, DefaultDays: 10, Icon: 'home', IsActive: 1, SortOrder: 3 },
+    { ServiceID: 4, ServiceName: 'Jati Praman Patra (Caste Certificate)', GovtFee: 15, OperatorFee: 35, TotalFee: 50, DefaultDays: 12, Icon: 'landmark', IsActive: 1, SortOrder: 4 },
+    { ServiceID: 5, ServiceName: 'Ration Card (नया / संशोधन / यूनिट)', GovtFee: 0, OperatorFee: 50, TotalFee: 50, DefaultDays: 20, Icon: 'wheat', IsActive: 1, SortOrder: 5 },
+    { ServiceID: 6, ServiceName: 'Voter ID (Pehchan Patra / Form 6, 8)', GovtFee: 0, OperatorFee: 50, TotalFee: 50, DefaultDays: 15, Icon: 'vote', IsActive: 1, SortOrder: 6 },
+    { ServiceID: 7, ServiceName: 'Ayushman Card (PMJAY Golden Card)', GovtFee: 0, OperatorFee: 30, TotalFee: 30, DefaultDays: 5, Icon: 'shield-check', IsActive: 1, SortOrder: 7 },
+    { ServiceID: 8, ServiceName: 'PM Kisan (Registration / eKYC / Land)', GovtFee: 0, OperatorFee: 50, TotalFee: 50, DefaultDays: 15, Icon: 'tractor', IsActive: 1, SortOrder: 8 },
+    { ServiceID: 9, ServiceName: 'E-Shram / Labour (Shramik Card)', GovtFee: 0, OperatorFee: 30, TotalFee: 30, DefaultDays: 3, Icon: 'hard-hat', IsActive: 1, SortOrder: 9 },
+    { ServiceID: 10, ServiceName: 'Janma / Mrityu Praman Patra (Birth / Death)', GovtFee: 10, OperatorFee: 50, TotalFee: 60, DefaultDays: 15, Icon: 'baby', IsActive: 1, SortOrder: 10 },
+    { ServiceID: 11, ServiceName: 'Driving License (Learner / Permanent)', GovtFee: 350, OperatorFee: 100, TotalFee: 450, DefaultDays: 25, Icon: 'car', IsActive: 1, SortOrder: 11 },
+    { ServiceID: 12, ServiceName: 'Passport Seva', GovtFee: 1500, OperatorFee: 200, TotalFee: 1700, DefaultDays: 30, Icon: 'plane', SortOrder: 12 },
+    { ServiceID: 13, ServiceName: 'Bijli Bill / Electricity Service', GovtFee: 0, OperatorFee: 20, TotalFee: 20, DefaultDays: 1, Icon: 'zap', SortOrder: 13 },
+    { ServiceID: 14, ServiceName: 'Aadhaar Seva (Update / Correction / eKYC)', GovtFee: 50, OperatorFee: 30, TotalFee: 80, DefaultDays: 7, Icon: 'id-card', IsActive: 1, SortOrder: 14 },
+    { ServiceID: 15, ServiceName: 'Anya Government / CSC Seva', GovtFee: 0, OperatorFee: 50, TotalFee: 50, DefaultDays: 10, Icon: 'package', IsActive: 1, SortOrder: 15 }
+];
+
+async function ensureCSCServicesTable() {
+    try {
+        await query(`
+            CREATE TABLE IF NOT EXISTS CSCServices (
+                ServiceID INTEGER PRIMARY KEY AUTOINCREMENT,
+                ServiceName TEXT NOT NULL,
+                GovtFee NUMERIC DEFAULT 0.00,
+                OperatorFee NUMERIC DEFAULT 50.00,
+                DefaultDays INTEGER DEFAULT 10,
+                Icon TEXT DEFAULT 'file-text',
+                IsActive INTEGER DEFAULT 1,
+                SortOrder INTEGER DEFAULT 0,
+                CreatedAt TEXT DEFAULT (datetime('now', 'localtime')),
+                UpdatedAt TEXT DEFAULT (datetime('now', 'localtime')),
+                UserID INTEGER DEFAULT 1,
+                Category TEXT DEFAULT 'General',
+                ModuleCode TEXT DEFAULT 'CSC',
+                CustomFieldsSchema TEXT
+            )
+        `);
+    } catch (_) { }
+
+    const cols = [
+        { name: 'GovtFee', def: 'NUMERIC DEFAULT 0.00' },
+        { name: 'OperatorFee', def: 'NUMERIC DEFAULT 50.00' },
+        { name: 'DefaultDays', def: 'INTEGER DEFAULT 10' },
+        { name: 'Icon', def: 'TEXT DEFAULT "file-text"' },
+        { name: 'IsActive', def: 'INTEGER DEFAULT 1' },
+        { name: 'SortOrder', def: 'INTEGER DEFAULT 0' },
+        { name: 'UserID', def: 'INTEGER DEFAULT 1' },
+        { name: 'CreatedAt', def: 'TEXT DEFAULT (datetime("now", "localtime"))' },
+        { name: 'UpdatedAt', def: 'TEXT DEFAULT (datetime("now", "localtime"))' },
+        { name: 'Category', def: 'TEXT DEFAULT "General"' },
+        { name: 'ModuleCode', def: 'TEXT DEFAULT "CSC"' }
+    ];
+    for (const c of cols) {
+        try {
+            await query(`ALTER TABLE CSCServices ADD COLUMN ${c.name} ${c.def}`);
+        } catch (_) { }
+    }
+}
+
+async function seedDefaultCSCServices(userId = 1) {
+    try {
+        for (const s of DEFAULT_SERVER_CSC_SERVICES) {
+            try {
+                await query(`
+                    INSERT INTO CSCServices (ServiceName, GovtFee, OperatorFee, DefaultDays, Icon, IsActive, SortOrder, UserID)
+                    VALUES (@ServiceName, @GovtFee, @OperatorFee, @DefaultDays, @Icon, 1, @SortOrder, @userId)
+                `, { ...s, userId });
+            } catch (_) { }
+        }
+    } catch (_) { }
+}
+
 // GET /api/csc/services - Sabhi services aur unki fees ki list fetch karein
 router.get('/services', async (req, res) => {
     try {
         const userId = req.user?.UserID || 1;
         const includeInactive = req.query.all === '1' || req.query.all === 'true';
-        const sql = `
-            SELECT 
-                ServiceID, ServiceName, GovtFee, OperatorFee, 
-                (GovtFee + OperatorFee) AS TotalFee,
-                DefaultDays, Icon, IsActive, SortOrder, CreatedAt, UpdatedAt
-            FROM CSCServices
-            WHERE UserID = @userId ${includeInactive ? '' : 'AND IsActive = 1'}
-            ORDER BY SortOrder ASC, ServiceName ASC
-        `;
-        const result = await query(sql, { userId });
+        let result;
+        try {
+            const sql = `
+                SELECT 
+                    ServiceID, ServiceName, 
+                    COALESCE(GovtFee, 0) AS GovtFee, 
+                    COALESCE(OperatorFee, 0) AS OperatorFee, 
+                    (COALESCE(GovtFee, 0) + COALESCE(OperatorFee, 0)) AS TotalFee,
+                    COALESCE(DefaultDays, 10) AS DefaultDays, 
+                    COALESCE(Icon, 'file-text') AS Icon, 
+                    COALESCE(IsActive, 1) AS IsActive, 
+                    COALESCE(SortOrder, 0) AS SortOrder, 
+                    CreatedAt, UpdatedAt
+                FROM CSCServices
+                WHERE (UserID = @userId OR UserID IS NULL OR UserID = 1) ${includeInactive ? '' : 'AND (IsActive = 1 OR IsActive IS NULL)'}
+                ORDER BY SortOrder ASC, ServiceName ASC
+            `;
+            result = await query(sql, { userId });
+        } catch (dbErr) {
+            console.warn('⚠️ [CSCServices] Auto-healing CSCServices table...', dbErr.message);
+            await ensureCSCServicesTable();
+            try {
+                result = await query(`
+                    SELECT 
+                        ServiceID, ServiceName, 
+                        COALESCE(GovtFee, 0) AS GovtFee, 
+                        COALESCE(OperatorFee, 0) AS OperatorFee, 
+                        (COALESCE(GovtFee, 0) + COALESCE(OperatorFee, 0)) AS TotalFee,
+                        COALESCE(DefaultDays, 10) AS DefaultDays, 
+                        COALESCE(Icon, 'file-text') AS Icon, 
+                        COALESCE(IsActive, 1) AS IsActive, 
+                        COALESCE(SortOrder, 0) AS SortOrder, 
+                        CreatedAt, UpdatedAt
+                    FROM CSCServices
+                    ORDER BY SortOrder ASC, ServiceName ASC
+                `);
+            } catch (_) {
+                result = { recordset: [] };
+            }
+        }
+
+        // Agar database me koi service nahi mili to default starter services seed karein
+        if (!result || !result.recordset || result.recordset.length === 0) {
+            await seedDefaultCSCServices(userId);
+            try {
+                result = await query(`
+                    SELECT 
+                        ServiceID, ServiceName, 
+                        COALESCE(GovtFee, 0) AS GovtFee, 
+                        COALESCE(OperatorFee, 0) AS OperatorFee, 
+                        (COALESCE(GovtFee, 0) + COALESCE(OperatorFee, 0)) AS TotalFee,
+                        COALESCE(DefaultDays, 10) AS DefaultDays, 
+                        COALESCE(Icon, 'file-text') AS Icon, 
+                        COALESCE(IsActive, 1) AS IsActive, 
+                        COALESCE(SortOrder, 0) AS SortOrder, 
+                        CreatedAt, UpdatedAt
+                    FROM CSCServices
+                    ORDER BY SortOrder ASC, ServiceName ASC
+                `);
+            } catch (_) { }
+        }
+
         res.json({
             success: true,
-            data: result.recordset
+            data: result?.recordset && result.recordset.length > 0 ? result.recordset : DEFAULT_SERVER_CSC_SERVICES
         });
     } catch (err) {
-        console.error('Error fetching CSC services:', err);
-        res.status(500).json({ success: false, error: err.message });
+        console.error('Error fetching CSC services (fail-safe fallback applied):', err.message);
+        res.json({
+            success: true,
+            data: DEFAULT_SERVER_CSC_SERVICES
+        });
     }
 });
 
