@@ -1,7 +1,7 @@
 {
-  "version": "1.0.38",
+  "version": "1.0.39",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fixes space-in-path elevation issue, eliminates cmd /k quote crash, provides direct 3-step robust bootstrap for INSTALL_NOW.bat and CLEAN_FRESH_INSTALL.bat, enables dual persistent logging (target logs + temp), and keeps console window open."
+  "notes": "Introduces Evergreen Dynamic Self-Updating Launchers (INSTALL_NOW.bat & CLEAN_FRESH_INSTALL.bat). Launchers automatically check online for newer versions and auto-update themselves, always pull latest setup engine with cache-busting timestamps, and intelligently sync project files with remote version.json."
 }

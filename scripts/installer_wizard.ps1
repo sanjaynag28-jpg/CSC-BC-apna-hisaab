@@ -284,9 +284,41 @@ $workerBlock = {
         Log-Msg "Project folder: $ProjectDir" 'VERIFY'
 
         $serverJs = Join-Path $ProjectDir 'server.js'
-        if (-not (Test-Path $serverJs)) {
-            Log-Msg "Naya standalone PC detect hua. GitHub se poora project download ho raha hai..." 'INFO'
-            Update-Step 2 'RUNNING' 8 "GitHub se project download ho raha hai..." "Repo se connect ho rahe hain..."
+        $localVerFile = Join-Path $ProjectDir 'version.json'
+        $localVer = '0.0.0'
+        if (Test-Path $localVerFile) {
+            try { $localVer = (Get-Content $localVerFile -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { }
+        }
+
+        # Check latest online version dynamically
+        $remoteVer = $null
+        try {
+            $vUrls = @(
+                "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/version.json?t=$([DateTime]::UtcNow.Ticks)",
+                "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/version.json?t=$([DateTime]::UtcNow.Ticks)"
+            )
+            foreach ($vu in $vUrls) {
+                try {
+                    $vResp = Invoke-WebRequest -Uri $vu -UseBasicParsing -TimeoutSec 6
+                    $remoteObj = $vResp.Content | ConvertFrom-Json
+                    if ($remoteObj.version) { $remoteVer = $remoteObj.version; break }
+                } catch { }
+            }
+        } catch { }
+
+        $needsDownload = (-not (Test-Path $serverJs))
+        if (-not $needsDownload -and $remoteVer -and ($remoteVer -ne $localVer)) {
+            Log-Msg "Naya project version detect hua: v$remoteVer (Aapka local: v$localVer). Latest project se sync ho raha hai..." 'UPDATE'
+            $needsDownload = $true
+        }
+
+        if ($needsDownload) {
+            if (-not (Test-Path $serverJs)) {
+                Log-Msg "Naya standalone PC detect hua. GitHub se poora project download ho raha hai..." 'INFO'
+            } else {
+                Log-Msg "Project ko latest version ($remoteVer) par update kiya ja raha hai..." 'UPDATE'
+            }
+            Update-Step 2 'RUNNING' 8 "GitHub se latest project download ho raha hai..." "Repo se connect ho rahe hain..."
             $tmpDir = Join-Path $env:TEMP ("cmbc_dl_" + (Get-Random))
             New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
             $zipFile = Join-Path $tmpDir "repo.zip"
@@ -306,12 +338,12 @@ $workerBlock = {
                     if ($inner) {
                         Update-Step 2 'RUNNING' 90 "Files copy ho rahi hain..." "Project structure copy ho raha hai..."
                         robocopy $inner.FullName $ProjectDir /E /XD (Join-Path $inner.FullName '.git') (Join-Path $inner.FullName 'node_modules') (Join-Path $inner.FullName 'backups') (Join-Path $inner.FullName 'logs') (Join-Path $inner.FullName 'public\uploads') (Join-Path $inner.FullName 'database\data') /XF '.env' /R:2 /W:2 /NFL /NDL /NJH /NJS /MT:8 | Out-Null
-                        Log-Msg "Project files copy ho gayi." 'OK'
+                        Log-Msg "Project files latest version se 100% sync ho gayi." 'OK'
                     }
                 }
                 Remove-Item $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
             } else {
-                Log-Msg "Project download fail hua. Direct file repair try karenge." 'WARN'
+                Log-Msg "Project archive download fail. Direct file repair se sync karenge." 'WARN'
             }
         }
 

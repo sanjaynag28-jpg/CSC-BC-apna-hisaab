@@ -1,9 +1,41 @@
 @echo off
 setlocal EnableExtensions
-title CSC ^& BC Apna Hisaab - Master 1-Click Installer
+title CSC ^& BC Apna Hisaab - Dynamic 1-Click Installer
 color 0B
 
+:: ====================================================================
+:: [Auto-Updater] Check if a newer version of this launcher exists online
+:: ====================================================================
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^
+  "$curr = '%~f0';" ^
+  "$tempBat = Join-Path $env:TEMP ('cmbc_chk_' + (Get-Random) + '.bat');" ^
+  "$urls = @(" ^
+  "  'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/INSTALL_NOW.bat'," ^
+  "  'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/INSTALL_NOW.bat'" ^
+  ");" ^
+  "foreach($u in $urls){" ^
+  "  try {" ^
+  "    Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $tempBat -UseBasicParsing -TimeoutSec 6;" ^
+  "    if ((Test-Path $tempBat) -and (Get-Item $tempBat).Length -gt 500) {" ^
+  "      $cHash = (Get-FileHash -Path $curr -Algorithm MD5).Hash;" ^
+  "      $nHash = (Get-FileHash -Path $tempBat -Algorithm MD5).Hash;" ^
+  "      if ($cHash -ne $nHash) {" ^
+  "        Write-Host '  [OK] Naya launcher version online mila! Updating launcher...' -ForegroundColor Green;" ^
+  "        Copy-Item $tempBat $curr -Force;" ^
+  "        Remove-Item $tempBat -Force -ErrorAction SilentlyContinue;" ^
+  "        Start-Process -FilePath $curr; exit 99;" ^
+  "      }" ^
+  "      Remove-Item $tempBat -Force -ErrorAction SilentlyContinue;" ^
+  "      break;" ^
+  "    }" ^
+  "  } catch { }" ^
+  "};"
+if %errorlevel% equ 99 exit /b 0
+
+:: ====================================================================
 :: Auto-elevate to Administrator (safe for paths with spaces)
+:: ====================================================================
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [..] Requesting Administrator permission for automatic installation...
@@ -20,7 +52,7 @@ if exist "%~dp0scripts\installer_wizard.ps1" (
     echo ======================================================================
     echo.
     echo   [..] Checking for latest Setup Engine updates from CDN...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri 'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1' -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks) -OutFile '%~dp0scripts\installer_wizard.ps1' -UseBasicParsing -TimeoutSec 10 } catch { }"
     
     echo   [..] Launching Graphical Setup Wizard...
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\installer_wizard.ps1" -ProjectDir "%~dp0"
@@ -51,8 +83,8 @@ echo   Target Folder : %TARGET_DIR%
 echo   Status        : Connecting to High-Speed CDN...
 echo.
 
-echo [1/3] Downloading High-Speed Setup Engine...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $p='%TEMP_WIZ%'; $urls=@('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1','https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1'); $ok=$false; foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri $u -OutFile $p -UseBasicParsing -TimeoutSec 15; if((Test-Path $p) -and (Get-Item $p).Length -gt 5000){ $ok=$true; Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; break } } catch { Write-Host ('  [!] Notice: ' + $_.Exception.Message) -ForegroundColor Gray } }; if(-not $ok){ exit 1 }"
+echo [1/3] Downloading Latest Setup Engine...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $p='%TEMP_WIZ%'; $urls=@(('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks),('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1?t=' + [DateTime]::UtcNow.Ticks)); $ok=$false; foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri $u -OutFile $p -UseBasicParsing -TimeoutSec 15; if((Test-Path $p) -and (Get-Item $p).Length -gt 5000){ $ok=$true; Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; break } } catch { Write-Host ('  [!] Notice: ' + $_.Exception.Message) -ForegroundColor Gray } }; if(-not $ok){ exit 1 }"
 
 if errorlevel 1 (
     echo.
