@@ -16,8 +16,7 @@ try {
     $tag = "v$version"
     Write-Host "  [..] GitHub Release $tag prepare ho raha hai..."
 
-    $credRaw = "protocol=https`nhost=github.com`n`n" | & git credential fill 2>$null
-    $token = ($credRaw | Where-Object { $_ -match '^password=' }) -replace '^password=', ''
+    $token = (& node (Join-Path $PSScriptRoot 'get_token.js'))
     if (-not $token) {
         Write-Host "  [!] GitHub token nahi mila - release assets skip (push phir bhi successful hai)."
         exit 0
