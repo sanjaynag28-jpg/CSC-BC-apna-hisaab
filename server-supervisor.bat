@@ -21,10 +21,17 @@ if errorlevel 1 (
     exit /b 1
 )
 
+set "CHECK_PORT=4000"
+if exist ".env" (
+    for /f "usebackq tokens=1,2 delims==" %%A in (".env") do (
+        if /i "%%A"=="PORT" set "CHECK_PORT=%%B"
+    )
+)
+
 set "IDLE=0"
 
 :loop
-netstat -ano | findstr /R /C:":4000 .*LISTENING" >nul 2>&1
+netstat -ano | findstr /R /C:":!CHECK_PORT! .*LISTENING" >nul 2>&1
 if not errorlevel 1 (
     rem Port already busy: ya to server chal raha hai, ya doosra supervisor.
     rem 30 second tak busy rahe to duplicate supervisor band ho jata hai.
