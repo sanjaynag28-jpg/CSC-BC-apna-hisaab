@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - SQLite Edition Master Setup & Health Wizard
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # Super-Fast Zero SQL Server Install | 100% Free AI Live Self-Healing & Diagnostics
@@ -436,6 +436,45 @@ $workerBlock = {
             New-Item -ItemType Directory -Force -Path $ProjectDir | Out-Null
         }
 
+        # 1. Pull latest code via git if git repository exists
+        if (Test-Path (Join-Path $ProjectDir ".git")) {
+            try {
+                Log-Msg "Git repository detect hua. GitHub se latest code sync kiya ja raha hai..." 'PULL'
+                $branch = if (Test-Path (Join-Path $ProjectDir "database\data\cash_management.db")) { 'sqlite' } else { 'main' }
+                & git -C "$ProjectDir" pull origin $branch --no-edit 2>&1 | Out-Null
+            } catch { }
+        }
+
+        # 2. Check local version vs remote GitHub version
+        $needsCodeUpdate = $false
+        $localVer = "0.0.0"
+        $verFile = Join-Path $ProjectDir "version.json"
+        if (Test-Path $verFile) {
+            try { $localVer = (Get-Content $verFile -Raw | ConvertFrom-Json).version } catch { }
+        }
+
+        try {
+            $ticks = [DateTime]::UtcNow.Ticks
+            $vUrls = @(
+                "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/version.json?t=$ticks",
+                "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/version.json?t=$ticks",
+                "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/version.json?t=$ticks"
+            )
+            foreach ($u in $vUrls) {
+                try {
+                    $vResp = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+                    $remoteObj = $vResp.Content | ConvertFrom-Json
+                    if ($remoteObj -and $remoteObj.version) {
+                        if ($remoteObj.version -ne $localVer) {
+                            Log-Msg "Naya version detect hua: Local v$localVer -> Remote v$($remoteObj.version). Auto-syncing files..." 'UPDATE'
+                            $needsCodeUpdate = $true
+                        }
+                        break
+                    }
+                } catch { }
+            }
+        } catch { }
+
         # Check existing files
         $missing = 0
         foreach ($f in $RequiredFiles.Keys) {
@@ -445,7 +484,7 @@ $workerBlock = {
             }
         }
 
-        if ($missing -gt 0 -or $CleanMode) {
+        if ($missing -gt 0 -or $CleanMode -or $needsCodeUpdate) {
             Log-Msg "Missing/updated project files detect hui ($missing). GitHub se latest SQLite build download ho raha hai..." 'INFO'
             Update-Step 2 'RUNNING' 20 "Downloading ZIP..." "GitHub se SQLite Edition archive download ho raha hai..."
             $zip = Join-Path $env:TEMP "cmbc_sqlite_$(Get-Random).zip"

@@ -27266,3 +27266,163 @@ async function refreshAppVersionBadge(showGlow) {
         start();
     }
 })();
+
+// ============================================================================
+// LIVE GITHUB UPDATE NOTIFICATION & 1-CLICK WEB UPDATER
+// "aur bhi koi naya updte aaye to screen par uske me show kare aur wahi se update kar le"
+// ============================================================================
+(function initLiveUpdateSystem() {
+    let updateCheckInProgress = false;
+    let updateBannerDismissed = false;
+
+    async function checkLiveUpdate(isUserClick = false) {
+        if (updateCheckInProgress) return;
+        updateCheckInProgress = true;
+        try {
+            const res = await fetch('/api/system/check-update?t=' + Date.now(), { cache: 'no-store' });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.hasUpdate) {
+                renderUpdateBanner(data);
+                updateSettingsSystemTab(data);
+            } else if (isUserClick) {
+                if (typeof showToast === 'function') {
+                    showToast(`Aapka app sabse latest version (v${data.currentVersion || '1.0.54'}) par hai! Koi naya update nahi hai.`, 'success', 'App Up to Date');
+                }
+            }
+        } catch (e) {
+            if (isUserClick && typeof showToast === 'function') {
+                showToast('Update check nahi ho saka: ' + e.message, 'warning', 'Update Check');
+            }
+        } finally {
+            updateCheckInProgress = false;
+        }
+    }
+
+    function renderUpdateBanner(info) {
+        if (updateBannerDismissed) return;
+        let banner = document.getElementById('cmbcLiveUpdateBanner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'cmbcLiveUpdateBanner';
+            banner.style.cssText = 'position: fixed; top: 14px; right: 20px; z-index: 999999; display: flex; align-items: center; gap: 12px; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 10px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), 0 0 0 1.5px rgba(59, 130, 246, 0.6); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
+            document.body.appendChild(banner);
+        }
+
+        banner.innerHTML = `
+            <div style="font-size: 22px; line-height: 1;">🚀</div>
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+                <div style="font-weight: 700; font-size: 13px; color: #60a5fa;">
+                    Naya Update Aaya Hai! (v${info.latestVersion})
+                </div>
+                <div style="font-size: 11px; color: #cbd5e1; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${info.notes || 'Zaroori bug fixes aur self-repair updates'}
+                </div>
+            </div>
+            <button id="cmbcBtnApplyUpdate" onclick="window.applyLiveUpdateFromWeb()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); transition: transform 0.15s, opacity 0.15s;">
+                ⚡ Abhi Update Karein
+            </button>
+            <button onclick="window.dismissLiveUpdateBanner()" title="Band karein" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 4px;">&times;</button>
+        `;
+    }
+
+    function updateSettingsSystemTab(info) {
+        const host = document.getElementById('settingsAppVersionNotice') || document.getElementById('settingsSystemInfoCard');
+        if (!host) return;
+        let notice = document.getElementById('settingsUpdateNoticeBlock');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'settingsUpdateNoticeBlock';
+            notice.style.cssText = 'margin-top: 12px; padding: 12px 16px; background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px;';
+            host.appendChild(notice);
+        }
+        notice.innerHTML = `
+            <div>
+                <div style="font-weight: 700; color: #1e40af; font-size: 13px;">🚀 Naya Version Available: v${info.latestVersion}</div>
+                <div style="font-size: 11.5px; color: #475569;">${info.notes || 'Latest update ready to install.'}</div>
+            </div>
+            <button onclick="window.applyLiveUpdateFromWeb()" class="btn-primary" style="padding: 6px 14px; font-size: 12px; font-weight: 700;">
+                ⚡ Abhi Update Karein
+            </button>
+        `;
+    }
+
+    window.dismissLiveUpdateBanner = function () {
+        updateBannerDismissed = true;
+        const b = document.getElementById('cmbcLiveUpdateBanner');
+        if (b) b.remove();
+    };
+
+    window.checkAppUpdateManual = function () {
+        checkLiveUpdate(true);
+    };
+
+    window.applyLiveUpdateFromWeb = async function () {
+        const btn = document.getElementById('cmbcBtnApplyUpdate');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Updating...';
+            btn.style.opacity = '0.7';
+        }
+
+        let overlay = document.getElementById('cmbcUpdateOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'cmbcUpdateOverlay';
+            overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(8px); z-index: 1000000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #ffffff; font-family: inherit;';
+            document.body.appendChild(overlay);
+        }
+
+        overlay.innerHTML = `
+            <div style="background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 32px 40px; text-align: center; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);">
+                <div style="font-size: 48px; margin-bottom: 16px;">⚡</div>
+                <h3 style="margin: 0 0 8px; font-size: 18px; font-weight: 800; color: #60a5fa;">App Update Ho Raha Hai...</h3>
+                <p style="margin: 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.5;">
+                    GitHub se latest version download ho raha hai aur database auto-repair ho raha hai.<br>
+                    <strong>Kripya window band na karein.</strong>
+                </p>
+                <div style="width: 100%; height: 6px; background: #334155; border-radius: 999px; overflow: hidden; position: relative;">
+                    <div style="width: 100%; height: 100%; background: linear-gradient(90deg, #3b82f6, #60a5fa);"></div>
+                </div>
+            </div>
+        `;
+
+        try {
+            await fetch('/api/system/apply-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true })
+            });
+        } catch (_) { }
+
+        let pollCount = 0;
+        const maxPolls = 60;
+        const pollTimer = setInterval(async () => {
+            pollCount++;
+            try {
+                const hRes = await fetch('/api/health?t=' + Date.now(), { cache: 'no-store' });
+                if (hRes.ok && pollCount > 2) {
+                    clearInterval(pollTimer);
+                    overlay.innerHTML = `
+                        <div style="background: #1e293b; border-radius: 16px; padding: 32px 40px; text-align: center; max-width: 440px;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">🎉</div>
+                            <h3 style="margin: 0 0 8px; font-size: 18px; font-weight: 800; color: #22c55e;">Update Successful!</h3>
+                            <p style="margin: 0; font-size: 13px; color: #94a3b8;">App naye version ke sath reload ho rahi hai...</p>
+                        </div>
+                    `;
+                    setTimeout(() => {
+                        window.location.reload(true);
+                    }, 1200);
+                }
+            } catch (_) { }
+
+            if (pollCount >= maxPolls) {
+                clearInterval(pollTimer);
+                window.location.reload(true);
+            }
+        }, 1500);
+    };
+
+    setTimeout(() => checkLiveUpdate(false), 5000);
+    setInterval(() => checkLiveUpdate(false), 30 * 60 * 1000);
+})();
