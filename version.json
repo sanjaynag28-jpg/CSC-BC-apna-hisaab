@@ -1,7 +1,7 @@
 {
-  "version": "1.0.47",
+  "version": "1.0.48",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Safe offline network guard with interactive retry, zero premature wipe, multi-CDN engine loader, TCP/IP 1433 auto-healing, and fresh clean DB recreation."
+  "notes": "Fix wizard script path persistence in clean installer, safe copy to target scripts directory before execution."
 }

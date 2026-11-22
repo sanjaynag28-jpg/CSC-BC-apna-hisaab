@@ -99,7 +99,7 @@ if not exist "%WIZ_SCRIPT%" (
 )
 
 :: ====================================================================
-:: 5. Step [2/3] - Purane adhoore folder saaf karna (Safe Clean Wipe)
+:: 5. Step [2/3] - Purana adhoora folder saaf karna (Safe Clean Wipe)
 :: ====================================================================
 echo.
 echo [2/3] Purane adhoore cache saaf kiye ja rahe hain...
@@ -113,7 +113,13 @@ if /i "%~dp0"=="%TARGET_DIR%\" (
     )
     mkdir "%TARGET_DIR%" >nul 2>&1
 )
-del /f /q "%TEMP%\cmbc_*" >nul 2>&1
+mkdir "%TARGET_DIR%\scripts" >nul 2>&1
+if exist "%WIZ_SCRIPT%" (
+    copy /y "%WIZ_SCRIPT%" "%TARGET_DIR%\scripts\installer_wizard.ps1" >nul 2>&1
+    set "WIZ_SCRIPT=%TARGET_DIR%\scripts\installer_wizard.ps1"
+)
+del /f /q "%TEMP%\cmbc_chk_*.bat" >nul 2>&1
+del /f /q "%TEMP%\cmbc_repo.zip" >nul 2>&1
 echo   [OK] Purana adhoora folder saaf ho gaya.
 echo.
 
@@ -124,6 +130,14 @@ echo ======================================================================
 echo   [3/3] Launching Graphical Setup ^& Health Wizard (Clean Reset)...
 echo ======================================================================
 echo.
+
+if not exist "%WIZ_SCRIPT%" (
+    if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
+        set "WIZ_SCRIPT=%TARGET_DIR%\scripts\installer_wizard.ps1"
+    ) else if exist "%TEMP%\cmbc_installer_wizard.ps1" (
+        set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard.ps1"
+    )
+)
 
 set "CLEAN_INSTALL=1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
