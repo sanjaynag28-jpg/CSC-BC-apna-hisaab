@@ -50,27 +50,32 @@ function parseServerCandidates(rawServer, port) {
     const cleanHost = (host === 'localhost' || host === '.') ? '127.0.0.1' : host;
     const candidates = [];
 
-    // Candidate 1: Direct configured instance with sanitized host
-    if (instance) {
-        candidates.push({ server: cleanHost, options: { instanceName: instance }, port: explicitPort });
-        candidates.push({ server: '127.0.0.1', options: { instanceName: instance }, port: explicitPort });
-        candidates.push({ server: 'localhost', options: { instanceName: instance }, port: explicitPort });
-    } else {
+    // Candidate 1: Direct TCP port if configured (fastest direct connect, no SQL Browser UDP dependency)
+    if (explicitPort) {
         candidates.push({ server: cleanHost, port: explicitPort });
+        candidates.push({ server: '127.0.0.1', port: explicitPort });
     }
 
-    // Candidate 2: Direct static port 1433 (bypasses SQL Browser UDP 1434 completely)
+    // Candidate 2: Named instance without port (Tedious resolves dynamic port via SQL Browser UDP 1434)
+    if (instance) {
+        candidates.push({ server: cleanHost, options: { instanceName: instance } });
+        candidates.push({ server: '127.0.0.1', options: { instanceName: instance } });
+        candidates.push({ server: 'localhost', options: { instanceName: instance } });
+        // Also try with explicit port if both are specified
+        candidates.push({ server: cleanHost, options: { instanceName: instance }, port: explicitPort || 1433 });
+        candidates.push({ server: '127.0.0.1', options: { instanceName: instance }, port: explicitPort || 1433 });
+    }
+
+    // Candidate 3: Standard default port 1433 direct
     candidates.push({ server: '127.0.0.1', port: 1433 });
     candidates.push({ server: 'localhost', port: 1433 });
 
-    // Candidate 3: Named instance on 1433
-    if (instance) {
-        candidates.push({ server: '127.0.0.1', port: 1433, options: { instanceName: instance } });
-    }
-
-    // Candidate 4: Common instance fallbacks
-    candidates.push({ server: '127.0.0.1', options: { instanceName: 'SQLEXPRESS' } });
+    // Candidate 4: Common instance fallbacks without port (via SQL Browser)
     candidates.push({ server: '127.0.0.1', options: { instanceName: 'CMBCSQL' } });
+    candidates.push({ server: '127.0.0.1', options: { instanceName: 'SQLEXPRESS' } });
+    candidates.push({ server: '127.0.0.1', options: { instanceName: 'MSSQLSERVER' } });
+    candidates.push({ server: '127.0.0.1' });
+    candidates.push({ server: 'localhost' });
 
     // Deduplicate
     const seen = new Set();
@@ -112,7 +117,7 @@ async function getPool(overrides = {}) {
             min: 2,
             idleTimeoutMillis: 30000
         },
-        connectionTimeout: 10000,
+        connectionTimeout: workingCandidate ? 15000 : 5000,
         requestTimeout: 30000
     };
 

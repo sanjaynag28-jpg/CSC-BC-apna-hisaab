@@ -957,6 +957,12 @@ async function connectDbInBackground() {
         console.error('⚠️ SQL Server se connect nahi ho paya. Periodic checks background mein jari rahenge.');
         const retryTimer = setInterval(async () => {
             try {
+                if (process.platform === 'win32' && Math.random() < 0.25) {
+                    try {
+                        const { exec } = require('child_process');
+                        exec('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Service -Name \'MSSQL*\' | Where-Object { $_.Status -ne \'Running\' } | Start-Service"', () => {});
+                    } catch (_) {}
+                }
                 if (await isDbAlive()) {
                     console.log('✅ SQL Server ab ready ho gaya hai!');
                     clearInterval(retryTimer);

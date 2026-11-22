@@ -1,7 +1,7 @@
 {
-  "version": "1.0.46",
+  "version": "1.0.47",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Always downloads latest code and creates fresh database even if old version or old database already exists on target PC."
+  "notes": "Safe offline network guard with interactive retry, zero premature wipe, multi-CDN engine loader, TCP/IP 1433 auto-healing, and fresh clean DB recreation."
 }
