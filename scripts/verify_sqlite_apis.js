@@ -44,7 +44,7 @@ async function run() {
         console.log('New Customer:', newCust);
 
         console.log('\n--- 6. Testing BC Transaction Create ---');
-        const newBc = await fetch('http://localhost:3099/api/bc/save', {
+        const newBc = await fetch('http://localhost:3099/api/bc/transactions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

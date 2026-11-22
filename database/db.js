@@ -62,6 +62,11 @@ function getDb() {
             return String(val);
         });
 
+        db.function('VARCHAR', (len) => 'VARCHAR');
+        db.function('NVARCHAR', (len) => 'NVARCHAR');
+        db.function('INT', () => 'INT');
+        db.function('GETDATE', () => new Date().toISOString());
+
         db.function('FORMAT', (val, fmt) => {
             if (val === null || val === undefined) return '';
             return String(val);
@@ -88,15 +93,33 @@ const sql = {
     UniqueIdentifier: 'UniqueIdentifier'
 };
 
+function normalizeValue(v) {
+    if (v === undefined || v === null) return null;
+    if (typeof v === 'boolean') return v ? 1 : 0;
+    if (v instanceof Date) {
+        if (isNaN(v.getTime())) return null;
+        return v.toISOString().replace('T', ' ').slice(0, 19);
+    }
+    if (typeof v === 'object') {
+        if ('value' in v) {
+            return normalizeValue(v.value);
+        }
+        if (Buffer.isBuffer(v)) return v;
+        try {
+            return JSON.stringify(v);
+        } catch (_) {
+            return String(v);
+        }
+    }
+    if (typeof v === 'symbol' || typeof v === 'function') return null;
+    return v;
+}
+
 function normalizeParams(params) {
     if (!params || typeof params !== 'object') return {};
     const norm = {};
     for (const [k, v] of Object.entries(params)) {
-        if (v && typeof v === 'object' && 'value' in v) {
-            norm[k] = v.value;
-        } else {
-            norm[k] = v;
-        }
+        norm[k] = normalizeValue(v);
     }
     return norm;
 }
@@ -113,10 +136,35 @@ function translateSql(queryStr) {
     // 3. ISNULL(a, b) -> IFNULL(a, b)
     s = s.replace(/\bISNULL\(/gi, 'IFNULL(');
 
-    // 4. OUTPUT INSERTED.col -> RETURNING col
-    s = s.replace(/OUTPUT\s+INSERTED\.(\w+|\*)/gi, 'RETURNING $1');
+    // 4. OUTPUT INSERTED.col -> RETURNING col at end of statement
+    const outputRegex = /\bOUTPUT\s+((?:INSERTED\.\*)|(?:\*)|(?:INSERTED\.\w+(?:\s*,\s*INSERTED\.\w+)*))/i;
+    const outMatch = s.match(outputRegex);
+    if (outMatch) {
+        const rawCols = outMatch[1];
+        s = s.replace(outputRegex, '');
+        const retCols = rawCols.replace(/INSERTED\./gi, '');
+        s = s.trim();
+        if (s.endsWith(';')) {
+            s = s.slice(0, -1).trim() + ` RETURNING ${retCols};`;
+        } else {
+            s = s + ` RETURNING ${retCols}`;
+        }
+    }
 
-    // 5. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
+    // 5. SCOPE_IDENTITY() & @@IDENTITY -> last_insert_rowid()
+    s = s.replace(/\bSCOPE_IDENTITY\(\)/gi, 'last_insert_rowid()');
+    s = s.replace(/\b@@IDENTITY\b/gi, 'last_insert_rowid()');
+
+    // 6. SQL Server Date/Time translations
+    s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*5\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*108\s*\)/gi, "strftime('%H:%M', 'now', 'localtime')");
+    s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*8\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*108\s*\)/gi, "strftime('%H:%M:%S', 'now', 'localtime')");
+    s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*10\s*\)\s*,\s*GETDATE\s*\(\s*\)\s*,\s*120\s*\)/gi, "date('now', 'localtime')");
+    s = s.replace(/CONVERT\s*\(\s*DATE\s*,\s*GETDATE\s*\(\s*\)\s*\)/gi, "date('now', 'localtime')");
+    s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*DATE\s*\)/gi, "date('now', 'localtime')");
+    s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*TIME\s*\)/gi, "time('now', 'localtime')");
+    s = s.replace(/GETDATE\s*\(\s*\)/gi, "datetime('now', 'localtime')");
+
+    // 7. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
     const topMatch = s.match(/^(\s*SELECT(?:\s+DISTINCT)?)\s+TOP\s+(\d+|\(\d+\))\s+([\s\S]+)$/i);
     if (topMatch && !s.includes('UNION') && !s.includes('EXCEPT')) {
         const sel = topMatch[1];
@@ -269,6 +317,44 @@ async function query(queryStr, rawParams = {}) {
     }
 
     try {
+        // Strip SQL comments to check for multi-statement execution
+        const stripped = cleanSql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        const stmts = stripped.split(';').map(x => x.trim()).filter(x => x.length > 0);
+
+        if (stmts.length > 1) {
+            let lastResult = { recordset: [], recordsets: [[]], rowsAffected: [0] };
+            for (let i = 0; i < stmts.length; i++) {
+                const singleSql = stmts[i];
+                const pMatches = singleSql.match(/@([a-zA-Z0-9_]+)/g);
+                const stmtParams = {};
+                if (pMatches) {
+                    for (const m of pMatches) {
+                        const k = m.slice(1);
+                        stmtParams[k] = (k in params) ? params[k] : null;
+                    }
+                }
+                const isSel = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(singleSql) || /\bRETURNING\b/i.test(singleSql);
+                const stmt = d.prepare(singleSql);
+                if (isSel) {
+                    const rows = stmt.all(stmtParams);
+                    lastResult = {
+                        recordset: rows,
+                        recordsets: [rows],
+                        rowsAffected: [rows.length]
+                    };
+                } else {
+                    const info = stmt.run(stmtParams);
+                    lastResult = {
+                        recordset: [],
+                        recordsets: [[]],
+                        rowsAffected: [info.changes],
+                        insertId: info.lastInsertRowid
+                    };
+                }
+            }
+            return lastResult;
+        }
+
         const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(cleanSql) || /\bRETURNING\b/i.test(cleanSql);
         const stmt = d.prepare(cleanSql);
 
