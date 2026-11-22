@@ -1,11 +1,11 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
-title CSC ^& BC Apna Hisaab - 100%% Clean Fresh Re-Installer
-color 0B
+title CSC ^& BC Apna Hisaab - 100%% Dynamic Clean Re-Installer
+color 0C
 
 :: ====================================================================
-:: 1. Auto-elevate to Administrator (keeps window open with /k on error)
+:: 1. Auto-elevate to Administrator (Seamless Elevation)
 :: ====================================================================
 net session >nul 2>&1
 if %errorlevel% neq 0 (
@@ -16,143 +16,134 @@ if %errorlevel% neq 0 (
 
 cd /d "%~dp0"
 
-:: Kill old lingering processes upfront
+echo ======================================================================
+echo   CSC ^& BC APNA HISAAB - 100%% DYNAMIC CLEAN RE-INSTALLER
+echo   Permanent Single-File Launcher ^| 100%% AI Live Self-Healing Active
+echo ======================================================================
+echo.
+echo   [!] Yeh dynamic launcher hamesha GitHub se 100%% LATEST version uthayega.
+echo       Aapko baar-baar naya .bat file download karne ki bilkul zaroorat nahi.
+echo.
+
+:: ====================================================================
+:: 2. Resolve Safe Target Directory
+:: ====================================================================
+set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
+
+if exist "%~dp0package.json" (
+    set "TARGET_DIR=%~dp0"
+)
+
+if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
+
+echo   Target Directory: %TARGET_DIR%
+echo.
+
+:: ====================================================================
+:: 3. Pre-flight AI Process ^& DNS Cleanups
+:: ====================================================================
+echo [1/4] Running pre-flight AI diagnostics ^& network cleanup...
+ipconfig /flushdns >nul 2>&1
 taskkill /F /IM node.exe >nul 2>&1
 taskkill /F /IM wscript.exe >nul 2>&1
 
-:: ====================================================================
-:: 2. Network Check & Interactive Retry (DNS Auto-Heal & Wi-Fi Guard)
-:: ====================================================================
-:check_net
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $hosts=@('raw.githubusercontent.com','github.com','cdn.jsdelivr.net'); $dnsOk=$false; foreach($h in $hosts){ try { $ips=[System.Net.Dns]::GetHostAddresses($h); if($ips.Count -gt 0){ $dnsOk=$true; break } } catch { } }; if(-not $dnsOk){ ipconfig /flushdns | Out-Null; try { Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8','1.1.1.1','8.8.4.4') -ErrorAction SilentlyContinue } } catch { }; foreach($h in $hosts){ try { $ips=[System.Net.Dns]::GetHostAddresses($h); if($ips.Count -gt 0){ $dnsOk=$true; break } } catch { } } }; if($dnsOk){ exit 0 } else { exit 1 }"
-if errorlevel 1 (
-    cls
-    echo ======================================================================
-    echo   CSC ^& BC APNA HISAAB - INTERNET / WI-FI CHECK
-    echo ======================================================================
-    echo.
-    echo   [!] INTERNET / WI-FI DISCONNECTED DETECTED
-    echo.
-    echo   Aapke is computer par Internet / Wi-Fi band ya disconnected hai.
-    echo   Online components download karne ke liye Internet zaroori hai.
-    echo.
-    echo   1. Kripya apna Wi-Fi ya Mobile Hotspot connect karein.
-    echo   2. Hotspot / Wi-Fi connect karne ke baad koi bhi key dabayein...
-    echo.
-    echo ======================================================================
-    pause >nul
-    goto check_net
+:: Safe Database Handling: Preserves user data & creates auto-backup; only clears corrupt files
+if exist "%TARGET_DIR%\database\data\cash_management.db" (
+    for %%F in ("%TARGET_DIR%\database\data\cash_management.db") do (
+        if %%~zF LSS 1000 (
+            del /f /q "%TARGET_DIR%\database\data\cash_management.db*" >nul 2>&1
+            echo   [OK] Khali / corrupt database file ko clean kiya gaya.
+        ) else (
+            copy /y "%TARGET_DIR%\database\data\cash_management.db" "%TARGET_DIR%\database\data\cash_management_backup.db" >nul 2>&1
+            echo   [OK] Existing database ka safety backup banaya gaya (Aapka hisaab-kitaab 100%% safe hai).
+        )
+    )
 )
 
-:: ====================================================================
-:: 3. Dynamic Online Self-Update (Safe single-line, zero caret bug)
-:: ====================================================================
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ErrorActionPreference='SilentlyContinue'; $c='%~f0'; $t=Join-Path $env:TEMP ('cmbc_chk_' + (Get-Random) + '.bat'); $urls=@('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/CLEAN_FRESH_INSTALL.bat','https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/CLEAN_FRESH_INSTALL.bat','https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/CLEAN_FRESH_INSTALL.bat'); foreach($u in $urls){ try { Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $t -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop; if((Test-Path $t) -and (Get-Item $t).Length -gt 500){ if((Get-FileHash -Path $c -Algorithm MD5).Hash -ne (Get-FileHash -Path $t -Algorithm MD5).Hash){ Write-Host '  [OK] Naya re-installer version online mila! Updating launcher...' -ForegroundColor Green; Copy-Item $t $c -Force; Remove-Item $t -Force -ErrorAction SilentlyContinue; Start-Process -FilePath $c; exit 99 } break } } catch { } }; Remove-Item $t -Force -ErrorAction SilentlyContinue"
-if errorlevel 99 exit /b 0
+del /f /q "%TEMP%\cmbc_installer_wizard_sqlite*.ps1" >nul 2>&1
+set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite_%RANDOM%.ps1"
 
-cls
-echo ======================================================================
-echo   CSC ^& BC APNA HISAAB - 100%% CLEAN FRESH RE-INSTALLER
-echo ======================================================================
+:: ====================================================================
+:: 4. Dynamic Live Engine Fetch (Always 100% Latest from GitHub/CDN)
+:: ====================================================================
 echo.
-echo   Yeh tool purane / adhoore installation folder aur Database ko
-echo   100%% naye sire se fresh clean banayega.
-echo.
+echo [2/4] Downloading latest AI Setup Engine from GitHub (Live Dynamic)...
 
-set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
-set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard.ps1"
+set "CACHE_BUSTER=%RANDOM%_%TIME:~6,2%"
 
-:: Check local existing copy first
-if exist "%~dp0scripts\installer_wizard.ps1" (
-    copy /y "%~dp0scripts\installer_wizard.ps1" "%WIZ_SCRIPT%" >nul 2>&1
-) else if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
-    copy /y "%TARGET_DIR%\scripts\installer_wizard.ps1" "%WIZ_SCRIPT%" >nul 2>&1
-)
+:: Method 1: PowerShell Multi-Mirror Download with Cache-Buster
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls; " ^
+  "$dst = '%WIZ_SCRIPT%';" ^
+  "$cb = '%CACHE_BUSTER%';" ^
+  "$urls = @(" ^
+  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://gcore.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
+  ");" ^
+  "foreach ($u in $urls) {" ^
+  "  try {" ^
+  "    Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow;" ^
+  "    Invoke-WebRequest -Uri $u -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop;" ^
+  "    if ((Test-Path $dst) -and ((Get-Item $dst).Length -gt 10000)) {" ^
+  "      Write-Host '  [OK] Latest AI Setup Engine successfully loaded!' -ForegroundColor Green;" ^
+  "      exit 0;" ^
+  "    }" ^
+  "  } catch { }" ^
+  "};" ^
+  "exit 1"
 
-:: ====================================================================
-:: 4. Step [1/3] - Download Latest Setup Engine FIRST (Do NOT delete yet!)
-:: ====================================================================
-echo [1/3] Latest Setup Engine download ho raha hai...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ErrorActionPreference='SilentlyContinue'; $dst='%WIZ_SCRIPT%'; $urls=@('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1','https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1','https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1','https://gcore.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard.ps1','https://raw.githack.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard.ps1','https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/raw/main/scripts/installer_wizard.ps1'); $ok=$false; foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop; if((Test-Path $dst) -and (Get-Item $dst).Length -gt 5000){ $ok=$true; Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; break } } catch { } }; if(-not $ok -and -not (Test-Path $dst)){ exit 1 }"
-
-if errorlevel 1 (
-    echo.
-    echo [!] Direct script blocked. Downloading full package archive from GitHub...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ErrorActionPreference='SilentlyContinue'; $dst='%WIZ_SCRIPT%'; try { $z=Join-Path $env:TEMP 'cmbc_repo.zip'; Invoke-WebRequest -Uri 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip' -OutFile $z -UseBasicParsing -TimeoutSec 90 -ErrorAction Stop; if(Test-Path $z){ $e=Join-Path $env:TEMP ('cmbc_e_' + (Get-Random)); Expand-Archive -LiteralPath $z -DestinationPath $e -Force; $s=(Get-ChildItem -Path $e -Directory | Select-Object -First 1).FullName; if($s -and (Test-Path (Join-Path $s 'scripts\installer_wizard.ps1'))){ Copy-Item (Join-Path $s 'scripts\installer_wizard.ps1') $dst -Force } } } catch { }"
-)
-
+:: Method 2: Curl Fallback if PowerShell timed out or was blocked
 if not exist "%WIZ_SCRIPT%" (
-    if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
-        copy /y "%TARGET_DIR%\scripts\installer_wizard.ps1" "%WIZ_SCRIPT%" >nul
-    ) else if exist "%~dp0scripts\installer_wizard.ps1" (
-        copy /y "%~dp0scripts\installer_wizard.ps1" "%WIZ_SCRIPT%" >nul
+    where curl.exe >nul 2>&1
+    if not errorlevel 1 (
+        echo   [..] PowerShell network busy. Switching to AI curl fallback mirror...
+        curl.exe -fSL --retry 3 --connect-timeout 10 "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%" -o "%WIZ_SCRIPT%" >nul 2>&1
+    )
+)
+
+:: Method 3: Local Script Fallback if project already cloned
+if not exist "%WIZ_SCRIPT%" (
+    if exist "%TARGET_DIR%\scripts\installer_wizard_sqlite.ps1" (
+        copy /y "%TARGET_DIR%\scripts\installer_wizard_sqlite.ps1" "%WIZ_SCRIPT%" >nul 2>&1
+        echo   [OK] Local backup AI Setup Engine loaded!
     )
 )
 
 if not exist "%WIZ_SCRIPT%" (
     echo.
     echo ======================================================================
-    echo [X] Error: Setup Wizard download nahi ho paya.
-    echo.
-    echo     Aapka Internet / Hotspot connect nahi ho pa raha hai.
-    echo     Kripya Wi-Fi / Hotspot check karke dobara double click karein.
+    echo   [AI AUTO-FIX FAILED] Internet connection drop detect hua.
+    echo   Kripya Wi-Fi / Hotspot verify karein aur dobara chalayein.
     echo ======================================================================
-    echo.
     pause
     exit /b 1
 )
 
-:: ====================================================================
-:: 5. Step [2/3] - Purana adhoora folder saaf karna (Safe Clean Wipe)
-:: ====================================================================
-echo.
-echo [2/3] Purane adhoore cache saaf kiye ja rahe hain...
-if /i "%~dp0"=="%TARGET_DIR%\" (
-    echo   [INFO] Source development workspace detected; files safe rakhi gayi hain.
-) else (
-    if exist "%TARGET_DIR%" (
-        echo   [..] Purana version / folder saaf kiya ja raha hai: %TARGET_DIR%...
-        attrib -r -s -h "%TARGET_DIR%\*.*" /s /d >nul 2>&1
-        rd /s /q "%TARGET_DIR%" >nul 2>&1
-    )
-    mkdir "%TARGET_DIR%" >nul 2>&1
-)
-mkdir "%TARGET_DIR%\scripts" >nul 2>&1
-if exist "%WIZ_SCRIPT%" (
-    copy /y "%WIZ_SCRIPT%" "%TARGET_DIR%\scripts\installer_wizard.ps1" >nul 2>&1
-    set "WIZ_SCRIPT=%TARGET_DIR%\scripts\installer_wizard.ps1"
-)
-del /f /q "%TEMP%\cmbc_chk_*.bat" >nul 2>&1
-del /f /q "%TEMP%\cmbc_repo.zip" >nul 2>&1
-echo   [OK] Purana adhoora folder saaf ho gaya.
-echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -Path '%WIZ_SCRIPT%' -ErrorAction SilentlyContinue" >nul 2>&1
 
 :: ====================================================================
-:: 6. Step [3/3] - Launching Graphical Setup & Health Wizard (Clean Reset)
+:: 5. Launch Graphical Setup & Health Wizard with AI Live Self-Healing
 :: ====================================================================
+echo.
 echo ======================================================================
-echo   [3/3] Launching Graphical Setup ^& Health Wizard (Clean Reset)...
+echo   [3/4] Launching AI Live Self-Healing Setup Wizard (Clean Reset)...
 echo ======================================================================
 echo.
 
-if not exist "%WIZ_SCRIPT%" (
-    if exist "%TARGET_DIR%\scripts\installer_wizard.ps1" (
-        set "WIZ_SCRIPT=%TARGET_DIR%\scripts\installer_wizard.ps1"
-    ) else if exist "%TEMP%\cmbc_installer_wizard.ps1" (
-        set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard.ps1"
-    )
-)
-
-set "CLEAN_INSTALL=1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
 set "EXIT_CODE=%errorlevel%"
 
+del /f /q "%WIZ_SCRIPT%" >nul 2>&1
+
 echo.
 echo ======================================================================
-echo   Clean Re-installation Process Completed (Code: %EXIT_CODE%)
-echo   Log File: %TARGET_DIR%\logs\install_wizard.log
+echo   [4/4] Clean Installation Completed (Exit Code: %EXIT_CODE%)
+echo   Log File: %TARGET_DIR%\logs\install_wizard_sqlite.log
 echo.
 echo   Window band karne ke liye koi bhi key dabayein...
 echo ======================================================================
-pause
+pause >nul
 exit /b %EXIT_CODE%

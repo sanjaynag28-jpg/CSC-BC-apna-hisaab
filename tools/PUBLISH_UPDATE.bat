@@ -53,14 +53,14 @@ if not defined REL_NOTES if exist release-note.tmp for /f "delims=" %%N in (rele
 if exist release-note.tmp del release-note.tmp >nul 2>&1
 if not defined REL_NOTES set "REL_NOTES=Automatic update release"
 
-node -e "const fs=require('fs');const v=JSON.parse(fs.readFileSync('version.json','utf8'));const p=v.version.split('.').map(Number);p[2]=(p[2]||0)+1;v.version=p.join('.');v.releasedAt=new Date().toISOString().slice(0,10);v.notes=process.argv[1];fs.writeFileSync('version.json',JSON.stringify(v,null,2)+'\n');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));pkg.version=v.version;fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');try{const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));lock.version=v.version;if(lock.packages&&lock.packages['']){lock.packages[''].version=v.version;}fs.writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n');}catch(e){}console.log('  New version: '+v.version);" "%REL_NOTES%"
+node -e "const fs=require('fs');const v=JSON.parse(fs.readFileSync('version.json','utf8'));const suffix=v.version.includes('-')?'-'+v.version.split('-').slice(1).join('-'):'';const baseVer=v.version.split('-')[0];const p=baseVer.split('.').map(Number);p[2]=(p[2]||0)+1;v.version=p.join('.')+suffix;v.releasedAt=new Date().toISOString().slice(0,10);v.notes=process.argv[1];fs.writeFileSync('version.json',JSON.stringify(v,null,2)+'\n');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));pkg.version=v.version;fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');try{const lock=JSON.parse(fs.readFileSync('package-lock.json','utf8'));lock.version=v.version;if(lock.packages&&lock.packages['']){lock.packages[''].version=v.version;}fs.writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n');}catch(e){}console.log('  New version: '+v.version);" "%REL_NOTES%"
 
 for /f "delims=" %%V in ('node -e "console.log(require('./version.json').version)"') do set "NEW_VER=%%V"
 
 :: Step 3: Stage + zero data leak audit
 echo [3/5] Staged files check (Zero Data Leak Audit)...
 "%GIT_EXE%" add -A
-"%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
+"%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.db$ \.sqlite$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
 if %errorlevel% equ 0 (
     echo.
     echo [ERR] DANGER: Sensitive data file staged - publish aborted.
@@ -75,11 +75,15 @@ echo [4/5] Pushing v%NEW_VER% to GitHub...
 "%GIT_EXE%" commit -m "Release v%NEW_VER%: %REL_NOTES%" >nul 2>&1
 if %errorlevel% neq 0 "%GIT_EXE%" commit -m "Release v%NEW_VER%"
 
+set "CUR_BRANCH="
+for /f "delims=" %%B in ('"%GIT_EXE%" rev-parse --abbrev-ref HEAD') do set "CUR_BRANCH=%%B"
+if not defined CUR_BRANCH set "CUR_BRANCH=sqlite"
+
 set "PUSH_OK="
 for /l %%i in (1,1,3) do (
     if not defined PUSH_OK (
-        echo   push attempt %%i/3...
-        "%GIT_EXE%" push origin main
+        echo   push attempt %%i/3 to !CUR_BRANCH!...
+        "%GIT_EXE%" push origin !CUR_BRANCH!
         if !errorlevel! equ 0 (
             set "PUSH_OK=1"
         ) else (

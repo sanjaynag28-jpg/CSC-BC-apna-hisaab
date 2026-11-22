@@ -3,7 +3,7 @@ rem ============================================================================
 rem CSC & BC Apna Hisaab - Hidden Server Supervisor
 rem - Server ko silent background me chalata hai (koi window nahi)
 rem - Crash / update restart ke baad khud dobara start karta hai
-rem - Agar port 3000 par pehle se server chal raha hai to duplicate nahi banata
+rem - Agar port 4000 par pehle se server chal raha hai to duplicate nahi banata
 rem ============================================================================
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
@@ -24,7 +24,7 @@ if errorlevel 1 (
 set "IDLE=0"
 
 :loop
-netstat -ano | findstr /R /C:":3000 .*LISTENING" >nul 2>&1
+netstat -ano | findstr /R /C:":4000 .*LISTENING" >nul 2>&1
 if not errorlevel 1 (
     rem Port already busy: ya to server chal raha hai, ya doosra supervisor.
     rem 30 second tak busy rahe to duplicate supervisor band ho jata hai.

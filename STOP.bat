@@ -3,8 +3,8 @@ title CSC ^& BC Apna Hisaab - Stop Server
 color 0C
 cd /d "%~dp0"
 
-echo Stopping CSC ^& BC Apna Hisaab server (Port 3000)...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do (
+echo Stopping CSC ^& BC Apna Hisaab server (Port 4000)...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :4000 ^| findstr LISTENING') do (
     taskkill /f /pid %%a >nul 2>&1
 )
 

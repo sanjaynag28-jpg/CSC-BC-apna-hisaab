@@ -86,37 +86,26 @@ const upload = multer({
 async function ensureDocumentsTable() {
     try {
         await query(`
-            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Documents' AND xtype='U')
-            BEGIN
-                CREATE TABLE Documents (
-                    DocumentID      INT IDENTITY(1,1) PRIMARY KEY,
-                    UserID          INT NOT NULL DEFAULT 1 REFERENCES Users(UserID),
-                    CustomerID      INT NULL REFERENCES Customers(CustomerID),
-                    FileName        NVARCHAR(255) NOT NULL,
-                    OriginalName    NVARCHAR(255) NOT NULL,
-                    FileType        NVARCHAR(100),
-                    FileSize        BIGINT DEFAULT 0,
-                    FilePath        NVARCHAR(500) NOT NULL,
-                    UploadedBy      NVARCHAR(50) DEFAULT 'shop',
-                    Description     NVARCHAR(500) NULL,
-                    IsArchived      BIT DEFAULT 0,
-                    CreatedAt       DATETIME DEFAULT GETDATE(),
-                    UpdatedAt       DATETIME DEFAULT GETDATE()
-                );
-            END
-
-            IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Documents' AND COLUMN_NAME='EntityType')
-            BEGIN
-                ALTER TABLE Documents ADD EntityType NVARCHAR(50) NULL;
-            END
-
-            IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Documents' AND COLUMN_NAME='EntityID')
-            BEGIN
-                ALTER TABLE Documents ADD EntityID INT NULL;
-            END
+            CREATE TABLE IF NOT EXISTS Documents (
+                DocumentID INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserID INTEGER NOT NULL DEFAULT 1,
+                CustomerID INTEGER NULL,
+                FileName TEXT NOT NULL,
+                OriginalName TEXT NOT NULL,
+                FileType TEXT,
+                FileSize INTEGER DEFAULT 0,
+                FilePath TEXT NOT NULL,
+                UploadedBy TEXT DEFAULT 'shop',
+                Description TEXT NULL,
+                IsArchived INTEGER DEFAULT 0,
+                CreatedAt TEXT DEFAULT (datetime('now', 'localtime')),
+                UpdatedAt TEXT DEFAULT (datetime('now', 'localtime')),
+                EntityType TEXT NULL,
+                EntityID INTEGER NULL
+            )
         `);
     } catch (err) {
-        console.error('⚠️ Documents table setup error:', err.message);
+        console.error('⚠️ Documents table setup notice:', err.message);
     }
 }
 ensureDocumentsTable();

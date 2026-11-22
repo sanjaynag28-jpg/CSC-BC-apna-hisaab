@@ -1,4 +1,4 @@
-﻿/**
+/**
  * utils/autoUpdater.js
  * ============================================================================
  * Automatic Silent Update Engine for CSC-BC-apna-hisaab
@@ -30,7 +30,13 @@ const TMP_DIR = path.join(ROOT_DIR, '.auto-update-tmp');
 
 const REPO_OWNER = 'sanjaynag28-jpg';
 const REPO_NAME = 'CSC-BC-apna-hisaab';
-const BRANCH = 'main';
+let BRANCH = 'main';
+try {
+    const gitBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 3000 }).trim();
+    if (gitBranch && gitBranch !== 'HEAD' && (gitBranch === 'sqlite' || gitBranch === 'main')) {
+        BRANCH = gitBranch;
+    }
+} catch (_) { }
 const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`;
 const REMOTE_ZIP_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.zip`;
 
@@ -231,7 +237,8 @@ const CRITICAL_FILES = {
     'server.js': 2000,
     'package.json': 200,
     'package-lock.json': 5000,
-    'setup-database.js': 1000,
+    'setup-database.js': 200,
+    'database/setup_sqlite.js': 5000,
     'database/setup.sql': 10000,
     'public/index.html': 50000,
     'public/app.js': 50000,
@@ -261,7 +268,8 @@ function isProtectedPath(relPath) {
         if (normalized === p || normalized.startsWith(p + '/')) return true;
     }
     if (/^\.env(\.|$)/i.test(normalized) && normalized !== '.env.example') return true;
-    if (/\.(mdf|ldf|ndf|bak)$/i.test(normalized)) return true;
+    if (/\.(mdf|ldf|ndf|bak|db|sqlite|sqlite3)$/i.test(normalized)) return true;
+    if (normalized === '.admin-login.txt') return true;
     return false;
 }
 

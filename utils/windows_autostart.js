@@ -20,7 +20,7 @@ const { execFileSync } = require('child_process');
 const ROOT_DIR = path.join(__dirname, '..');
 const LOG_DIR = path.join(ROOT_DIR, 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'auto-update.log');
-const STARTUP_ENTRY_NAME = 'CSC BC Apna Hisaab (Auto).vbs';
+const STARTUP_ENTRY_NAME = 'CSC BC Apna Hisaab SQLite (Auto).vbs';
 
 function log(msg) {
     try {
@@ -79,9 +79,9 @@ function ensureShortcuts() {
     const ps1 = path.join(__dirname, 'create_shortcuts.ps1');
     if (!fs.existsSync(ps1)) return 'missing-helper';
 
-    const desktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'CSC BC Apna Hisaab.lnk');
+    const desktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'CSC BC Apna Hisaab (SQLite).lnk');
     const programs = process.env.APPDATA
-        ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'CSC BC Apna Hisaab.lnk')
+        ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'CSC BC Apna Hisaab (SQLite).lnk')
         : null;
     if (fs.existsSync(desktop) && (!programs || fs.existsSync(programs))) return 'unchanged';
 
@@ -111,7 +111,7 @@ function ensureRunKey() {
     try {
         const q = execFileSync('reg.exe', [
             'query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
-            '/v', 'CSC BC Apna Hissab'
+            '/v', 'CSC BC Apna Hisaab SQLite'
         ], { windowsHide: true, timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
         if (q.toLowerCase().includes('start-hidden.vbs')) return 'unchanged';
     } catch (_) {
@@ -125,8 +125,8 @@ function ensureRunKey() {
         'if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }',
         "$w = Join-Path $env:WINDIR 'System32\\wscript.exe'",
         `$v = '"' + $w + '" "' + '${hiddenVbs.replace(/'/g, "''")}' + '"'`,
-        "Set-ItemProperty -Path $key -Name 'CSC BC Apna Hissab' -Value $v",
-        "$check = (Get-ItemProperty -Path $key -Name 'CSC BC Apna Hissab').'CSC BC Apna Hissab'",
+        "Set-ItemProperty -Path $key -Name 'CSC BC Apna Hisaab SQLite' -Value $v",
+        "$check = (Get-ItemProperty -Path $key -Name 'CSC BC Apna Hisaab SQLite').'CSC BC Apna Hisaab SQLite'",
         'if (-not $check) { exit 1 }'
     ].join('\r\n');
 

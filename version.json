@@ -1,7 +1,7 @@
 {
-  "version": "1.0.50",
+  "version": "1.0.53",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Bulletproof 1-click automated installer with AI DNS self-healing, direct standalone SQL Server Express unattended setup (248 MB), LocalSystem logon self-healing, and zero red error waterfalls."
+  "notes": "100% Zero-Install SQLite Edition on Port 4000: automatic live self-healing, fail-proof dynamic installers, and 30-table parity."
 }

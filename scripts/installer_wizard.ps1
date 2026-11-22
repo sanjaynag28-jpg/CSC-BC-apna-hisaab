@@ -14,6 +14,21 @@ param(
     [switch]$Clean = $false
 )
 
+# ============================================================================
+# Auto-Delegate to 100% Zero-Install SQLite Wizard (No SQL Server required)
+# ============================================================================
+$sqliteWiz = Join-Path $PSScriptRoot 'installer_wizard_sqlite.ps1'
+if (-not (Test-Path $sqliteWiz)) {
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1" -OutFile $sqliteWiz -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+    } catch { }
+}
+if (Test-Path $sqliteWiz) {
+    & $sqliteWiz @PSBoundParameters
+    exit $LASTEXITCODE
+}
+
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 
