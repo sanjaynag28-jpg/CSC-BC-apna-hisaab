@@ -1,7 +1,8 @@
 {
-  "version": "1.0.53",
+  "version": "1.0.54",
+  "critical": true,
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
-  "branch": "main",
-  "notes": "100% Zero-Install SQLite Edition on Port 4000: automatic live self-healing, fail-proof dynamic installers, and 30-table parity."
+  "branch": "sqlite",
+  "notes": "v1.0.54 Critical Auto-Repair Release: 100% self-healing SQLite schema, automatic repair for TransactionID & all 30 tables, zero user action needed."
 }

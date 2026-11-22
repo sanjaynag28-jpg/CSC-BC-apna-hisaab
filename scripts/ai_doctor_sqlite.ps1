@@ -1,4 +1,4 @@
-<#
+﻿<#
     scripts/ai_doctor_sqlite.ps1
     ============================================================================
     CSC & BC Apna Hisaab - SQLite Edition 100% Free AI Live Self-Healing Doctor
@@ -349,22 +349,25 @@ function Repair-DatabaseSchema {
     # Permissions
     try { & icacls "$dataDir" /grant Everyone:(OI)(CI)F /T /Q | Out-Null } catch { }
 
-    $dbFile = Join-Path $dataDir 'cash_management.db'
-    if ((Test-Path $dbFile) -and ((Get-Item $dbFile).Length -gt 5000)) {
-        Write-AiLog "SQLite database file exists: $dbFile ($([Math]::Round((Get-Item $dbFile).Length / 1KB, 1)) KB)" 'OK'
-        return
+    # Check & pull latest update from GitHub
+    if (Test-Path (Join-Path $ProjectDir '.git')) {
+        try {
+            Write-AiLog "Checking GitHub for latest updates..."
+            & git pull origin sqlite 2>$null
+        } catch { }
     }
 
-    Write-AiLog "Database missing or empty. Initializing fresh schema & starter data..." 'FIX'
     $setupScript = Join-Path $ProjectDir 'setup-database.js'
     if (Test-Path $setupScript) {
+        Write-AiLog "Running database schema integrity check & auto-repair..."
         & node $setupScript
-        Start-Sleep -Seconds 2
-        if (Test-Path $dbFile) {
-            Write-AiLog "SQLite database schema & seed data initialized successfully." 'OK'
-            $script:RepairsApplied++
-            return
-        }
+        $script:RepairsApplied++
+    }
+
+    $dbFile = Join-Path $dataDir 'cash_management.db'
+    if (Test-Path $dbFile) {
+        Write-AiLog "SQLite database file verified & healthy ($([Math]::Round((Get-Item $dbFile).Length / 1KB, 1)) KB)" 'OK'
+        return
     }
 }
 

@@ -9,7 +9,7 @@ router.get('/', async (req, res) => {
         const result = await query(`
             SELECT c.*, 
                    ISNULL(SUM(t.Amount), 0) as TotalAmount,
-                   COUNT(t.TransactionID) as TransactionCount
+                   COUNT(t.CategoryID) as TransactionCount
             FROM Categories c
             LEFT JOIN Transactions t ON c.CategoryID = t.CategoryID AND t.UserID = @userId AND t.IsDeleted = 0
             WHERE c.IsActive = 1 AND c.UserID = @userId
