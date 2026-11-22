@@ -60,6 +60,8 @@ scratch/*
 
 scripts/*
 !scripts/installer_wizard.ps1
+!scripts/installer_wizard_sqlite.ps1
+!scripts/verify_sqlite_apis.js
 !scripts/ai_doctor.ps1
 !scripts/auto_setup_windows.ps1
 !scripts/sql_fix.ps1

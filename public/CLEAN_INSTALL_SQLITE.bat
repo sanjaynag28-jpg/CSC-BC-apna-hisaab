@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
-title CSC ^& BC Apna Hisaab - 100%% Clean Reset ^& Re-Installer (SQLite)
+title CSC ^& BC Apna Hisaab - 100%% Clean Fresh Re-Installer (SQLite)
 color 0C
 
 :: Auto-elevate to Administrator
@@ -15,35 +15,43 @@ if %errorlevel% neq 0 (
 cd /d "%~dp0"
 
 echo ======================================================================
-echo   CSC ^& BC APNA HISAAB - 100%% CLEAN RESET ^& RE-INSTALLER (SQLITE)
+echo   CSC ^& BC APNA HISAAB - 100%% CLEAN FRESH RE-INSTALLER (SQLITE)
 echo ======================================================================
 echo.
-echo   Yeh tool purane cache, node_modules ya database ko 100%% naye sire se
-echo   saaf karke fresh clean install karega.
+echo   Yeh tool purane / adhoore installation folder aur SQLite Database ko
+echo   100%% naye sire se fresh clean banayega.
 echo.
-echo   Agar aap continue karna chahte hain, to koi bhi key dabayein...
-echo   (Rukne ke liye ye window band kar dein)
-echo.
-pause >nul
-
-echo [1/3] Purane active processes band kiye ja rahe hain...
-taskkill /F /IM node.exe >nul 2>&1
-taskkill /F /IM wscript.exe >nul 2>&1
-echo   [OK] Processes band ho gaye.
-
-echo.
-echo [2/3] SQLite data aur cache reset kiya ja raha hai...
-if exist "%~dp0database\data\cash_management.db" (
-    del /f /q "%~dp0database\data\cash_management.db*" >nul 2>&1
-    echo   [OK] Purana database clean ho gaya.
-)
 
 set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab-SQLite"
-if exist "%TARGET_DIR%\database\data" (
+set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite.ps1"
+
+echo [1/3] Latest Setup Engine download ho raha hai...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $dst='%WIZ_SCRIPT%'; $urls=@('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1','https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1'); foreach($u in $urls){ try { Write-Host ('  [..] Connecting to ' + ([Uri]$u).Host + '...') -ForegroundColor Yellow; Invoke-WebRequest -Uri ($u + '?t=' + [DateTime]::UtcNow.Ticks) -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop; if((Test-Path $dst) -and (Get-Item $dst).Length -gt 2000){ Write-Host '  [OK] Setup Engine loaded!' -ForegroundColor Green; exit 0 } } catch { } }; exit 1"
+
+echo.
+echo [2/3] Purane active processes aur adhoore cache saaf kiye ja rahe hain...
+taskkill /F /IM node.exe >nul 2>&1
+taskkill /F /IM wscript.exe >nul 2>&1
+
+if exist "%TARGET_DIR%\database\data\cash_management.db" (
     del /f /q "%TARGET_DIR%\database\data\cash_management.db*" >nul 2>&1
+    echo   [OK] Purana database saaf ho gaya.
 )
 
 echo.
-echo [3/3] Fresh Re-Installation shuru ho raha hai...
-call "%~dp0INSTALL_SQLITE.bat"
-exit /b %errorlevel%
+echo ======================================================================
+echo   [3/3] Launching Graphical Setup ^& Health Wizard (Clean Reset)...
+echo ======================================================================
+echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
+set "EXIT_CODE=%errorlevel%"
+
+echo.
+echo ======================================================================
+echo   Clean Re-installation Process Completed (Code: %EXIT_CODE%)
+echo   Log File: %TARGET_DIR%\logs\install_wizard_sqlite.log
+echo.
+echo   Window band karne ke liye koi bhi key dabayein...
+echo ======================================================================
+pause >nul
+exit /b %EXIT_CODE%

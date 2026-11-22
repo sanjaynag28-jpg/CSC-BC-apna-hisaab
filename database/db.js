@@ -55,37 +55,17 @@ function getDb() {
             return dt.toISOString().slice(0, 10);
         });
 
-        db.function('VARCHAR', (n) => 'VARCHAR');
-        db.function('NVARCHAR', (n) => 'NVARCHAR');
-        db.function('INT', (n) => 'INT');
-
         db.function('CONVERT', (type, val, style) => {
             if (val === null || val === undefined) return null;
             const sType = String(type).toLowerCase();
-            const sVal = String(val);
-            if (sType.startsWith('date')) return sVal.slice(0, 10);
-            if (String(style) === '108') {
-                const timePart = sVal.includes(' ') ? sVal.split(' ')[1] : (sVal.includes('T') ? sVal.split('T')[1] : sVal);
-                return sType.includes('5') ? timePart.slice(0, 5) : timePart.slice(0, 8);
-            }
-            return sVal;
+            if (sType === 'date') return String(val).slice(0, 10);
+            return String(val);
         });
 
         db.function('FORMAT', (val, fmt) => {
             if (val === null || val === undefined) return '';
             return String(val);
         });
-
-        db.function('SCOPE_IDENTITY', () => {
-            try {
-                const r = db.prepare('SELECT last_insert_rowid() AS id').get();
-                return r ? r.id : 0;
-            } catch (_) {
-                return 0;
-            }
-        });
-
-        db.function('ISNULL', (a, b) => (a === null || a === undefined ? b : a));
     }
     return db;
 }
@@ -112,20 +92,11 @@ function normalizeParams(params) {
     if (!params || typeof params !== 'object') return {};
     const norm = {};
     for (const [k, v] of Object.entries(params)) {
-        let val = v;
-        if (val && typeof val === 'object' && 'value' in val) {
-            val = val.value;
+        if (v && typeof v === 'object' && 'value' in v) {
+            norm[k] = v.value;
+        } else {
+            norm[k] = v;
         }
-        if (val instanceof Date) {
-            val = val.toISOString().replace('T', ' ').slice(0, 19);
-        } else if (typeof val === 'boolean') {
-            val = val ? 1 : 0;
-        } else if (val === undefined) {
-            val = null;
-        } else if (typeof val === 'object' && val !== null && !(val instanceof Buffer)) {
-            try { val = JSON.stringify(val); } catch (_) { val = null; }
-        }
-        norm[k] = val;
     }
     return norm;
 }
@@ -142,32 +113,10 @@ function translateSql(queryStr) {
     // 3. ISNULL(a, b) -> IFNULL(a, b)
     s = s.replace(/\bISNULL\(/gi, 'IFNULL(');
 
-    // 4. OUTPUT INSERTED.col -> move to end as RETURNING col
-    const outMatch = s.match(/OUTPUT\s+((?:INSERTED\.\*)|(?:\*)|(?:INSERTED\.\w+(?:\s*,\s*INSERTED\.\w+)*))/i);
-    if (outMatch) {
-        const rawCols = outMatch[1];
-        const cleanCols = rawCols.replace(/INSERTED\./gi, '').trim();
-        s = s.replace(outMatch[0], '').trim();
-        if (s.endsWith(';')) {
-            s = s.slice(0, -1).trim() + ` RETURNING ${cleanCols};`;
-        } else {
-            s = `${s} RETURNING ${cleanCols}`;
-        }
-    }
+    // 4. OUTPUT INSERTED.col -> RETURNING col
+    s = s.replace(/OUTPUT\s+INSERTED\.(\w+|\*)/gi, 'RETURNING $1');
 
-    // 5. SCOPE_IDENTITY() -> last_insert_rowid()
-    s = s.replace(/\bSCOPE_IDENTITY\(\)/gi, 'last_insert_rowid()');
-
-    // 6. OFFSET ... ROWS FETCH NEXT ... ROWS ONLY -> LIMIT ... OFFSET ...
-    s = s.replace(/OFFSET\s+(\S+)\s+ROWS\s+FETCH\s+NEXT\s+(\S+)\s+ROWS\s+ONLY/gi, 'LIMIT $2 OFFSET $1');
-    s = s.replace(/FETCH\s+NEXT\s+(\S+)\s+ROWS\s+ONLY/gi, 'LIMIT $1');
-
-    // 7. Time & Date conversions
-    s = s.replace(/CONVERT\s*\(\s*VARCHAR\s*\(\s*\d+\s*\)\s*,\s*GETDATE\(\)\s*,\s*108\s*\)/gi, "strftime('%H:%M', 'now', 'localtime')");
-    s = s.replace(/CAST\s*\(\s*GETDATE\(\)\s*AS\s*DATE\s*\)/gi, "date('now', 'localtime')");
-    s = s.replace(/CAST\s*\(\s*GETDATE\(\)\s*AS\s*TIME\s*\)/gi, "time('now', 'localtime')");
-
-    // 8. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
+    // 5. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
     const topMatch = s.match(/^(\s*SELECT(?:\s+DISTINCT)?)\s+TOP\s+(\d+|\(\d+\))\s+([\s\S]+)$/i);
     if (topMatch && !s.includes('UNION') && !s.includes('EXCEPT')) {
         const sel = topMatch[1];
@@ -300,64 +249,44 @@ async function handleStoredProcedure(execSql, rawParams) {
     return { recordset: [], rowsAffected: [0] };
 }
 
-function executeSingle(sqlText, params) {
-    const d = getDb();
-    const boundParams = { ...params };
-    const paramMatches = sqlText.match(/@([a-zA-Z0-9_]+)/g);
-    if (paramMatches) {
-        for (const m of paramMatches) {
-            const k = m.slice(1);
-            if (!(k in boundParams)) boundParams[k] = null;
-        }
-    }
-
-    const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(sqlText) || /\bRETURNING\b/i.test(sqlText);
-    const stmt = d.prepare(sqlText);
-
-    if (isSelect) {
-        const rows = stmt.all(boundParams);
-        return {
-            recordset: rows,
-            recordsets: [rows],
-            rowsAffected: [rows.length]
-        };
-    } else {
-        const info = stmt.run(boundParams);
-        return {
-            recordset: [],
-            recordsets: [[]],
-            rowsAffected: [info.changes],
-            insertId: info.lastInsertRowid
-        };
-    }
-}
-
 async function query(queryStr, rawParams = {}) {
     const s = String(queryStr || '').trim();
     if (/^\s*EXEC\s+sp_/i.test(s)) {
         return await handleStoredProcedure(s, rawParams);
     }
 
+    const d = getDb();
     const cleanSql = translateSql(s);
     const params = normalizeParams(rawParams);
 
-    // Multi-statement handling (splitting by semicolon outside quotes)
-    const statements = cleanSql
-        .split(/;\s*$/m)[0]
-        .split(/;(?=(?:[^']*'[^']*')*[^']*$)/)
-        .map(st => st.trim())
-        .filter(Boolean);
+    // Auto-fill missing named parameters with null so better-sqlite3 doesn't complain
+    const paramMatches = cleanSql.match(/@([a-zA-Z0-9_]+)/g);
+    if (paramMatches) {
+        for (const m of paramMatches) {
+            const k = m.slice(1);
+            if (!(k in params)) params[k] = null;
+        }
+    }
 
     try {
-        if (statements.length <= 1) {
-            const singleSql = statements[0] || cleanSql;
-            return executeSingle(singleSql, params);
+        const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(cleanSql) || /\bRETURNING\b/i.test(cleanSql);
+        const stmt = d.prepare(cleanSql);
+
+        if (isSelect) {
+            const rows = stmt.all(params);
+            return {
+                recordset: rows,
+                recordsets: [rows],
+                rowsAffected: [rows.length]
+            };
         } else {
-            let lastResult = { recordset: [], recordsets: [[]], rowsAffected: [0] };
-            for (let i = 0; i < statements.length; i++) {
-                lastResult = executeSingle(statements[i], params);
-            }
-            return lastResult;
+            const info = stmt.run(params);
+            return {
+                recordset: [],
+                recordsets: [[]],
+                rowsAffected: [info.changes],
+                insertId: info.lastInsertRowid
+            };
         }
     } catch (err) {
         console.error('❌ SQLite Query Error:', err.message);
@@ -370,11 +299,10 @@ async function withTransaction(callback) {
     const d = getDb();
     d.exec('BEGIN TRANSACTION');
     try {
-        const transQuery = async (str, p = {}) => {
-            return await query(str, p);
+        const transQuery = async (queryStr, rawParams = {}) => {
+            return await query(queryStr, rawParams);
         };
-        transQuery.query = transQuery;
-        const result = await callback(transQuery, { query: transQuery });
+        const result = await callback(transQuery);
         d.exec('COMMIT');
         return result;
     } catch (err) {
@@ -386,8 +314,8 @@ async function withTransaction(callback) {
 async function isDbAlive() {
     try {
         const res = await query('SELECT 1 AS alive');
-        return res?.recordset?.[0]?.alive === 1;
-    } catch (_) {
+        return Boolean(res && res.recordset && res.recordset.length > 0);
+    } catch (err) {
         return false;
     }
 }
@@ -403,16 +331,17 @@ async function getPool() {
     return {
         connected: true,
         request: () => {
+            let localParams = {};
             const req = {
-                params: {},
-                input: (name, type, val) => {
-                    req.params[name] = val !== undefined ? val : type;
+                input: (k, typeOrVal, val) => {
+                    localParams[k] = (val !== undefined) ? val : typeOrVal;
                     return req;
                 },
-                query: async (sqlText) => query(sqlText, req.params)
+                query: async (q) => query(q, localParams)
             };
             return req;
-        }
+        },
+        close: async () => closePool()
     };
 }
 
