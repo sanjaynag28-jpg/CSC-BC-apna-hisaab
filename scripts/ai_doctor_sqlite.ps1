@@ -1,4 +1,4 @@
-<#
+﻿<#
     scripts/ai_doctor_sqlite.ps1
     ============================================================================
     CSC & BC Apna Hisaab - SQLite Edition 100% Free AI Live Self-Healing Doctor
@@ -20,7 +20,8 @@ if (-not $ProjectDir -or -not (Test-Path $ProjectDir)) {
     $parentDir = Split-Path -Parent $PSScriptRoot
     if ($parentDir -and (Test-Path (Join-Path $parentDir 'server.js'))) {
         $ProjectDir = (Resolve-Path $parentDir).Path
-    } else {
+    }
+    else {
         $candidates = @(
             (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite'),
             'C:\CSC-BC-Apna-Hisaab-SQLite',
@@ -55,17 +56,17 @@ function Write-AiLog {
     param([string]$Msg, [string]$Level = 'INFO')
     $ts = Get-Date -Format 'HH:mm:ss'
     $tag = switch ($Level) {
-        'OK'    { '✅ [OK]' }
-        'WARN'  { '⚠️ [WARN]' }
+        'OK' { '✅ [OK]' }
+        'WARN' { '⚠️ [WARN]' }
         'ERROR' { '❌ [FAIL]' }
-        'FIX'   { '⚡ [AI-FIX]' }
+        'FIX' { '⚡ [AI-FIX]' }
         default { '🤖 [AI-INFO]' }
     }
     $color = switch ($Level) {
-        'OK'    { 'Green' }
-        'WARN'  { 'Yellow' }
+        'OK' { 'Green' }
+        'WARN' { 'Yellow' }
         'ERROR' { 'Red' }
-        'FIX'   { 'Cyan' }
+        'FIX' { 'Cyan' }
         default { 'White' }
     }
     $line = "[$ts] $tag $Msg"
@@ -98,7 +99,8 @@ function Repair-DnsAndNetwork {
         try {
             $ips = [System.Net.Dns]::GetHostAddresses($h)
             if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
-        } catch { }
+        }
+        catch { }
     }
     if ($dnsOk) {
         Write-AiLog "DNS resolution is active & healthy." 'OK'
@@ -116,14 +118,17 @@ function Repair-DnsAndNetwork {
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses($h)
                 if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
-            } catch { }
+            }
+            catch { }
         }
-    } catch { }
+    }
+    catch { }
 
     if ($dnsOk) {
         Write-AiLog "Auto-healed DNS settings to Google (8.8.8.8) & Cloudflare (1.1.1.1)." 'FIX'
         $script:RepairsApplied++
-    } else {
+    }
+    else {
         Write-AiLog "DNS resolution still inactive. Please verify Wi-Fi / Hotspot connection." 'WARN'
     }
 }
@@ -136,7 +141,8 @@ function Repair-TlsAndCrypto {
     $needsFix = $false
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
-    } catch { }
+    }
+    catch { }
 
     $keys = @(
         "HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319",
@@ -150,14 +156,16 @@ function Repair-TlsAndCrypto {
                     Set-ItemProperty -Path $k -Name 'SchUseStrongCrypto' -Value 1 -Type DWord -ErrorAction SilentlyContinue
                     Set-ItemProperty -Path $k -Name 'SystemDefaultTlsVersions' -Value 1 -Type DWord -ErrorAction SilentlyContinue
                     $needsFix = $true
-                } catch { }
+                }
+                catch { }
             }
         }
     }
     if ($needsFix) {
         Write-AiLog "Auto-healed Windows TLS 1.2 Strong Crypto registry keys." 'FIX'
         $script:RepairsApplied++
-    } else {
+    }
+    else {
         Write-AiLog "TLS 1.2 & Network crypto settings are healthy." 'OK'
     }
 }
@@ -171,7 +179,8 @@ function Repair-VisualCppRuntime {
     $sysDll = Join-Path $env:SystemRoot "System32\vcruntime140.dll"
     if (Test-Path $sysDll) {
         $hasVc = $true
-    } else {
+    }
+    else {
         $vcKey = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
         if (Test-Path $vcKey) {
             $inst = (Get-ItemProperty -Path $vcKey -Name 'Installed' -ErrorAction SilentlyContinue).Installed
@@ -195,7 +204,8 @@ function Repair-VisualCppRuntime {
         Remove-Item $vcExe -Force -ErrorAction SilentlyContinue
         Write-AiLog "Visual C++ Runtime installed successfully." 'OK'
         $script:RepairsApplied++
-    } catch {
+    }
+    catch {
         Write-AiLog "Visual C++ auto-install notice: $($_.Exception.Message)" 'WARN'
     }
 }
@@ -222,7 +232,8 @@ function Repair-Port4000Conflict {
                 Write-AiLog "Port 4000 is occupied by our own active server. (Healthy)" 'OK'
                 return
             }
-        } catch { }
+        }
+        catch { }
         
         Write-AiLog "Dead or hanging Node.js process detected on Port 4000. Terminating..." 'FIX'
         try {
@@ -231,7 +242,8 @@ function Repair-Port4000Conflict {
             Write-AiLog "Port 4000 cleared successfully." 'OK'
             $script:RepairsApplied++
             return
-        } catch { }
+        }
+        catch { }
     }
 
     # Foreign application
@@ -240,7 +252,8 @@ function Repair-Port4000Conflict {
         Stop-Process -Id $pidOnPort -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
         $script:RepairsApplied++
-    } catch {
+    }
+    catch {
         Write-AiLog "Could not kill PID $pidOnPort. Port may be locked by a Windows system service." 'WARN'
     }
 }
@@ -284,7 +297,8 @@ function Repair-NodeJsRuntime {
         $env:Path = "C:\Program Files\nodejs;$env:Path"
         Write-AiLog "Node.js LTS installed and ready." 'OK'
         $script:RepairsApplied++
-    } catch {
+    }
+    catch {
         Write-AiLog "Node.js install warning: $($_.Exception.Message)" 'WARN'
     }
 }
@@ -349,25 +363,22 @@ function Repair-DatabaseSchema {
     # Permissions
     try { & icacls "$dataDir" /grant Everyone:(OI)(CI)F /T /Q | Out-Null } catch { }
 
-    # Check & pull latest update from GitHub
-    if (Test-Path (Join-Path $ProjectDir '.git')) {
-        try {
-            Write-AiLog "Checking GitHub for latest updates..."
-            & git pull origin main 2>$null
-        } catch { }
+    $dbFile = Join-Path $dataDir 'cash_management.db'
+    if ((Test-Path $dbFile) -and ((Get-Item $dbFile).Length -gt 5000)) {
+        Write-AiLog "SQLite database file exists: $dbFile ($([Math]::Round((Get-Item $dbFile).Length / 1KB, 1)) KB)" 'OK'
+        return
     }
 
+    Write-AiLog "Database missing or empty. Initializing fresh schema & starter data..." 'FIX'
     $setupScript = Join-Path $ProjectDir 'setup-database.js'
     if (Test-Path $setupScript) {
-        Write-AiLog "Running database schema integrity check & auto-repair..."
         & node $setupScript
-        $script:RepairsApplied++
-    }
-
-    $dbFile = Join-Path $dataDir 'cash_management.db'
-    if (Test-Path $dbFile) {
-        Write-AiLog "SQLite database file verified & healthy ($([Math]::Round((Get-Item $dbFile).Length / 1KB, 1)) KB)" 'OK'
-        return
+        Start-Sleep -Seconds 2
+        if (Test-Path $dbFile) {
+            Write-AiLog "SQLite database schema & seed data initialized successfully." 'OK'
+            $script:RepairsApplied++
+            return
+        }
     }
 }
 
@@ -383,10 +394,12 @@ function Repair-Firewall {
             New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
             Write-AiLog "Added Firewall rule for Port 4000." 'FIX'
             $script:RepairsApplied++
-        } else {
+        }
+        else {
             Write-AiLog "Firewall rule is already active." 'OK'
         }
-    } catch { }
+    }
+    catch { }
 }
 
 # ----------------------------------------------------------------------------
@@ -406,7 +419,8 @@ function Repair-DesktopShortcut {
         $sc.Description = "CSC & BC Apna Hisaab - 100% Zero-Install SQLite Edition"
         $sc.Save()
         Write-AiLog "Desktop shortcut verified: $scPath" 'OK'
-    } catch { }
+    }
+    catch { }
 }
 
 # ----------------------------------------------------------------------------
@@ -420,7 +434,8 @@ function Repair-ServerLiveHealth {
         if ($res -and ($res.dbReady -eq $true -or $res.status -eq 'CONNECTED')) {
             $live = $true
         }
-    } catch { }
+    }
+    catch { }
 
     if ($live) {
         Write-AiLog "Server is LIVE and healthy! Opening browser..." 'OK'
@@ -443,7 +458,8 @@ function Repair-ServerLiveHealth {
                 try { Start-Process "http://localhost:4000" } catch { }
                 return
             }
-        } catch { }
+        }
+        catch { }
         Start-Sleep -Seconds 1
     }
 

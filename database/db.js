@@ -16,6 +16,11 @@ function isSqliteMode() {
             if (/DB_TYPE\s*=\s*sqlite/i.test(content)) return true;
         }
     } catch (_) { }
+    // If no SQL Server DB_SERVER configured, and SQLite DB exists or SQLite folder:
+    const dbFile = path.join(__dirname, 'data', 'cash_management.db');
+    if (!process.env.DB_SERVER && fs.existsSync(dbFile)) {
+        return true;
+    }
     return false;
 }
 

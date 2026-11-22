@@ -75,13 +75,25 @@ async function getSqlPool() {
 
 function getSqliteDb() {
     if (!sqliteDb) {
-        if (!fs.existsSync(path.dirname(resolvedSqlitePath))) {
-            fs.mkdirSync(path.dirname(resolvedSqlitePath), { recursive: true });
+        try {
+            const dir = path.dirname(resolvedSqlitePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            sqliteDb = new Database(resolvedSqlitePath, { timeout: 4000 });
+            sqliteDb.pragma('journal_mode = WAL');
+            sqliteDb.pragma('synchronous = NORMAL');
+            sqliteDb.pragma('busy_timeout = 4000');
+        } catch (e) {
+            // Fallback to local database/data
+            const fallbackPath = path.resolve(__dirname, '../database/data/cash_management.db');
+            const fDir = path.dirname(fallbackPath);
+            if (!fs.existsSync(fDir)) fs.mkdirSync(fDir, { recursive: true });
+            sqliteDb = new Database(fallbackPath, { timeout: 4000 });
+            sqliteDb.pragma('journal_mode = WAL');
+            sqliteDb.pragma('synchronous = NORMAL');
+            sqliteDb.pragma('busy_timeout = 4000');
         }
-        sqliteDb = new Database(resolvedSqlitePath, { timeout: 4000 });
-        sqliteDb.pragma('journal_mode = WAL');
-        sqliteDb.pragma('synchronous = NORMAL');
-        sqliteDb.pragma('busy_timeout = 4000');
     }
     return sqliteDb;
 }

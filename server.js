@@ -1,3 +1,28 @@
+// Bulletproof inline .env loader (runs synchronously before any module loads)
+(function loadEnvEarly() {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const envPath = path.join(__dirname, '.env');
+        if (fs.existsSync(envPath)) {
+            let content = fs.readFileSync(envPath, 'utf8');
+            if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+            content.split(/\r?\n/).forEach((line) => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) return;
+                const eq = trimmed.indexOf('=');
+                if (eq === -1) return;
+                const key = trimmed.slice(0, eq).trim();
+                let value = trimmed.slice(eq + 1).trim();
+                if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.slice(1, -1);
+                }
+                if (process.env[key] === undefined) process.env[key] = value;
+            });
+        }
+    } catch (_) { }
+})();
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
@@ -24,7 +49,8 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
-const PORT = Number(process.env.PORT) || 4000;
+const isSqliteDefault = String(process.env.DB_TYPE || '').toLowerCase() === 'sqlite' || fs.existsSync(path.join(__dirname, 'database', 'data', 'cash_management.db'));
+const PORT = Number(process.env.PORT) || (isSqliteDefault ? 4000 : 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_STARTUP_MAX_ATTEMPTS = 30;
 let dbStartupReady = false;
@@ -950,12 +976,15 @@ function startServer() {
             connectDbInBackground();
 
             // Real-Time Silent Sync engine to keep Port 4000 (SQLite) synced with Port 3000 (SQL Server)
-            setTimeout(() => {
-                try {
-                    const { initRealtimeSyncDaemon } = require('./utils/realtime_sync');
-                    initRealtimeSyncDaemon(15);
-                } catch (e) { }
-            }, 3000);
+            // Sirf tab chalu kare jab hum SQL Server mode (Port 3000) me chal rahe hon!
+            if (!isSqliteDefault && String(process.env.DB_TYPE || '').toLowerCase() !== 'sqlite') {
+                setTimeout(() => {
+                    try {
+                        const { initRealtimeSyncDaemon } = require('./utils/realtime_sync');
+                        initRealtimeSyncDaemon(15);
+                    } catch (e) { }
+                }, 3000);
+            }
 
             // Windows self-heal: PC boot par silent auto-start (task + startup entry)
             // aur Desktop/Start Menu shortcut ensure karo. Purane installs par bhi

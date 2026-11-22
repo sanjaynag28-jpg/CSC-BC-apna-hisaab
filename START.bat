@@ -4,6 +4,11 @@ title CSC ^& BC Apna Hisaab (SQLite Edition)
 color 0A
 cd /d "%~dp0"
 
+:: Ensure .env is configured
+if not exist ".env" (
+    if exist ".env.example" copy /y ".env.example" ".env" >nul 2>&1
+)
+
 :: Check if Node.js is installed
 where node >nul 2>&1
 if errorlevel 1 (

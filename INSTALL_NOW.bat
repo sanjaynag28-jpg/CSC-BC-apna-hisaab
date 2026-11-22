@@ -64,11 +64,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$dst = '%WIZ_SCRIPT%';" ^
   "$cb = '%CACHE_BUSTER%';" ^
   "$urls = @(" ^
+  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://gcore.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
+  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
   ");" ^
   "foreach ($u in $urls) {" ^
   "  try {" ^
