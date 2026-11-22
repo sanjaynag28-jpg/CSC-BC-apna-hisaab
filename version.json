@@ -1,7 +1,7 @@
 {
-  "version": "1.0.49",
+  "version": "1.0.50",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Full unattended SQL Server Express install for clean Windows with multi-stage fallback (winget, official silent bootstrapper, offline package) and strict gatekeepers."
+  "notes": "Bulletproof 1-click automated installer with AI DNS self-healing, direct standalone SQL Server Express unattended setup (248 MB), LocalSystem logon self-healing, and zero red error waterfalls."
 }

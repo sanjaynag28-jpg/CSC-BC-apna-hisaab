@@ -93,6 +93,47 @@ Write-Host ""
 $RepairsApplied = 0
 
 # ----------------------------------------------------------------------------
+# 0. DNS RESOLUTION & NETWORK AUTO-HEAL
+# ----------------------------------------------------------------------------
+function Repair-DnsAndNetwork {
+    Write-AiLog "Checking DNS resolution & network reachability..."
+    $dnsOk = $false
+    $hosts = @('raw.githubusercontent.com', 'github.com', 'cdn.jsdelivr.net')
+    foreach ($h in $hosts) {
+        try {
+            $ips = [System.Net.Dns]::GetHostAddresses($h)
+            if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
+        } catch { }
+    }
+    if ($dnsOk) {
+        Write-AiLog "DNS resolution is active & healthy." 'OK'
+        return
+    }
+
+    Write-AiLog "DNS resolution failed. Running AI DNS auto-healing..." 'WARN'
+    try {
+        ipconfig /flushdns | Out-Null
+        Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
+            Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8', '1.1.1.1', '8.8.4.4') -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 600
+        foreach ($h in $hosts) {
+            try {
+                $ips = [System.Net.Dns]::GetHostAddresses($h)
+                if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
+            } catch { }
+        }
+    } catch { }
+
+    if ($dnsOk) {
+        Write-AiLog "Auto-healed DNS settings to Google (8.8.8.8) & Cloudflare (1.1.1.1)." 'FIX'
+        $script:RepairsApplied++
+    } else {
+        Write-AiLog "DNS resolution still inactive. Please verify Wi-Fi / Hotspot connection." 'WARN'
+    }
+}
+
+# ----------------------------------------------------------------------------
 # 1. TLS 1.2 & STRONG CRYPTO REGISTRY AUTO-HEAL
 # ----------------------------------------------------------------------------
 function Repair-TlsAndCrypto {
@@ -256,23 +297,41 @@ function Repair-SqlServerService {
     Write-AiLog "Checking Microsoft SQL Server service & logon states..."
     $sqlSvcs = Get-Service -Name "MSSQL*" -ErrorAction SilentlyContinue
     if (-not $sqlSvcs) {
-        Write-AiLog "No SQL Server service found. Downloading SQL Server Express..." 'WARN'
-        $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
-        $sqlUrl = "https://go.microsoft.com/fwlink/p/?linkid=2216019"
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $sqlUrl -OutFile $sqlExe -UseBasicParsing -TimeoutSec 300
-            Write-AiLog "Installing SQL Server Express (SQLEXPRESS)..." 'FIX'
-            Start-Process -FilePath $sqlExe -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1" -Wait
-            Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 5
-            $script:RepairsApplied++
-            $sqlSvcs = Get-Service -Name "MSSQL*" -ErrorAction SilentlyContinue
-        } catch { }
+        Write-AiLog "No SQL Server service found. Initiating unattended installation..." 'WARN'
+        
+        # Method 1: winget
+        $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($winget) {
+            Write-AiLog "Attempting SQL Server Express installation via winget..." 'INFO'
+            try {
+                $p = Start-Process -FilePath "winget.exe" -ArgumentList "install --id Microsoft.SQLServer.2022Express --silent --accept-package-agreements --accept-source-agreements" -PassThru -Wait
+                Start-Sleep -Seconds 4
+                $sqlSvcs = Get-Service -Name "MSSQL*" -ErrorAction SilentlyContinue
+            } catch { }
+        }
+
+        # Method 2: Direct official standalone offline package (248 MB)
+        if (-not $sqlSvcs) {
+            $sqlPkg = Join-Path $env:TEMP "SQLEXPR_x64_ENU.exe"
+            $sqlUrl = "https://download.microsoft.com/download/7/c/1/7c14e92e-bdcb-4f89-b7cf-93543e7112d1/SQLEXPR_x64_ENU.exe"
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                Write-AiLog "Downloading Microsoft SQL Server Express standalone package (~248 MB)..." 'INFO'
+                Invoke-WebRequest -Uri $sqlUrl -OutFile $sqlPkg -UseBasicParsing -TimeoutSec 600
+                Write-AiLog "Installing SQL Server Express silently (SQLEXPRESS)..." 'FIX'
+                Start-Process -FilePath $sqlPkg -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1 /UPDATEENABLED=False /SUPPRESSPRIVACYSTATEMENTNOTICE=1" -Wait
+                Remove-Item $sqlPkg -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 5
+                $script:RepairsApplied++
+                $sqlSvcs = Get-Service -Name "MSSQL*" -ErrorAction SilentlyContinue
+            } catch {
+                Write-AiLog "SQL Server standalone download notice: $($_.Exception.Message)" 'WARN'
+            }
+        }
     }
 
     if (-not $sqlSvcs) {
-        Write-AiLog "SQL Server installation needs attention." 'WARN'
+        Write-AiLog "SQL Server installation needs attention. Service not detected." 'WARN'
         return
     }
 
@@ -404,13 +463,46 @@ function Repair-ProjectFilesIntegrity {
 function Repair-DatabaseSchema {
     Write-AiLog "Reconciling Database CashManagement schema & tables..."
     $setupJs = Join-Path $ProjectDir 'setup-database.js'
-    if (Test-Path $setupJs) {
-        $p = Start-Process -FilePath "node" -ArgumentList "setup-database.js" -WorkingDirectory $ProjectDir -PassThru -NoNewWindow -Wait
-        if ($p.ExitCode -eq 0) {
-            Write-AiLog "Database schema, tables, triggers and starter records verified." 'OK'
-        } else {
-            Write-AiLog "Database reconciliation exited with code $($p.ExitCode)." 'WARN'
-        }
+    if (-not (Test-Path $setupJs)) { return }
+
+    $p = Start-Process -FilePath "node" -ArgumentList "setup-database.js" -WorkingDirectory $ProjectDir -PassThru -NoNewWindow -Wait
+    if ($p.ExitCode -eq 0) {
+        Write-AiLog "Database schema, tables, triggers and starter records verified." 'OK'
+        return
+    }
+
+    Write-AiLog "Database setup hit error. Direct SQL master bootstrap initiation..." 'WARN'
+    $candidates = @('localhost\SQLEXPRESS', '.\SQLEXPRESS', 'localhost', '127.0.0.1')
+    $connected = $false
+    foreach ($srv in $candidates) {
+        try {
+            $connStr = "Server=$srv;Database=master;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=4;"
+            $c = New-Object System.Data.SqlClient.SqlConnection($connStr)
+            $c.Open()
+            $cmd = $c.CreateCommand()
+            $cmd.CommandText = @"
+IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'CashManagement')
+    CREATE DATABASE [CashManagement];
+IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'cmbc_user')
+    CREATE LOGIN [cmbc_user] WITH PASSWORD = N'CashMgmt@2026', CHECK_POLICY = OFF;
+ELSE
+    ALTER LOGIN [cmbc_user] WITH PASSWORD = N'CashMgmt@2026';
+ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
+"@
+            [void]$cmd.ExecuteNonQuery()
+            $c.Close()
+            $connected = $true
+            Write-AiLog "Direct master database & cmbc_user bootstrap applied on $srv." 'FIX'
+            $script:RepairsApplied++
+            break
+        } catch { }
+    }
+
+    $p2 = Start-Process -FilePath "node" -ArgumentList "setup-database.js" -WorkingDirectory $ProjectDir -PassThru -NoNewWindow -Wait
+    if ($p2.ExitCode -eq 0) {
+        Write-AiLog "Database schema reconciled successfully after bootstrap." 'OK'
+    } else {
+        Write-AiLog "Database reconciliation warning (Exit code: $($p2.ExitCode))." 'WARN'
     }
 }
 
@@ -489,6 +581,7 @@ function Invoke-GeminiAiAnalysis([string]$ProblemSummary) {
 # RUN COMPLETE DIAGNOSTIC & REPAIR PIPELINE
 # ----------------------------------------------------------------------------
 try {
+    Repair-DnsAndNetwork
     Repair-TlsAndCrypto
     Repair-VisualCppRuntime
     Repair-Port3000Conflict

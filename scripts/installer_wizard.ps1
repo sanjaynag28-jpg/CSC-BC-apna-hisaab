@@ -605,72 +605,61 @@ $workerBlock = {
             }
         }
 
-        # Method 2: Official Microsoft SQL Server 2022 Bootstrapper with official silent parameters
-        Log-Msg "Microsoft SQL Server 2022 Express download & silent setup chal raha hai..." 'INSTALL'
-        Update-Step 5 'RUNNING' 40 "SQL Express download ho raha hai..." "Microsoft SQL Server 2022 installer load ho raha hai..."
-
-        $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
-        $ok = Get-FileSmart -Urls @(
-            "https://go.microsoft.com/fwlink/p/?linkid=2216019",
-            "https://go.microsoft.com/fwlink/p/?LinkID=2164373"
-        ) -OutFile $sqlExe -Step 5 -FromPct 40 -ToPct 65 -Label "SQL Server Bootstrapper" -MinBytes 1000000
-
-        if ($ok) {
-            Update-Step 5 'RUNNING' 68 "SQL Server install ho raha hai..." "Background me Microsoft setup chal raha hai (3-5 min)..."
-            Log-Msg "SQL Server 2022 Express unattended install chal rahi hai (kripya 3-5 minute wait karein)..." 'INSTALL'
-            try {
-                $p = Start-Process -FilePath $sqlExe -ArgumentList "/IACCEPTSQLSERVERLICENSETERMS /ENU /ACTION=Install /quiet /InstallPath=`"C:\Program Files\Microsoft SQL Server`"" -PassThru -WindowStyle Hidden
-                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server Express install" -StartPct 68 -MaxPct 92
-            } catch { }
-            Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 5
-        }
-
-        # Check if service is now active
-        for ($w = 1; $w -le 25; $w++) {
-            $svc = Get-SqlSvc
-            if ($svc) {
-                if ($svc.Status -ne 'Running') {
-                    try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue } catch { }
-                    Start-Sleep -Seconds 2
-                    $svc = Get-SqlSvc
-                }
-                if ($svc.Status -eq 'Running') { break }
-            }
-            Start-Sleep -Seconds 2
-        }
-
-        if ($svc -and $svc.Status -eq 'Running') {
-            Log-Msg "SQL Express successfully install ho gaya: $($svc.Name)" 'OK'
-            Update-Step 5 'SUCCESS' 100 "$($svc.Name) installed" "Step 5 : SQL Server Installed"
-            return $true
-        }
-
-        # Method 3: Direct standalone offline package fallback (SQL Server 2019 Express complete setup ~260 MB)
-        Log-Msg "Direct standalone SQL Express offline package download ho raha hai (~260 MB)..." 'INSTALL'
-        Update-Step 5 'RUNNING' 60 "Offline SQL package download..." "Microsoft Direct SQL Express package load ho raha hai..."
+        # Method 2: Direct official standalone offline package (~248 MB, 100% self-contained unattended setup)
+        Log-Msg "Direct standalone SQL Express offline package download ho raha hai (~248 MB)..." 'INSTALL'
+        Update-Step 5 'RUNNING' 40 "Offline SQL package download..." "Microsoft Direct SQL Express package load ho raha hai..."
         $sqlPkg = Join-Path $env:TEMP "SQLEXPR_x64_ENU.exe"
         $okPkg = Get-FileSmart -Urls @(
             "https://download.microsoft.com/download/7/c/1/7c14e92e-bdcb-4f89-b7cf-93543e7112d1/SQLEXPR_x64_ENU.exe"
-        ) -OutFile $sqlPkg -Step 5 -FromPct 60 -ToPct 80 -Label "SQL Server Offline Package (260 MB)" -MinBytes 50000000
+        ) -OutFile $sqlPkg -Step 5 -FromPct 40 -ToPct 75 -Label "SQL Server Standalone Installer (248 MB)" -MinBytes 50000000
 
         if ($okPkg) {
-            Update-Step 5 'RUNNING' 82 "SQL Server offline install..." "SQLEXPR_x64_ENU unattended installation chal rahi hai..."
-            Log-Msg "SQL Server offline package install ho raha hai..." 'INSTALL'
+            Update-Step 5 'RUNNING' 78 "SQL Server offline install..." "SQLEXPR_x64_ENU unattended installation chal rahi hai..."
+            Log-Msg "SQL Server offline package install ho raha hai (kripya 3-5 minute wait karein)..." 'INSTALL'
             try {
-                $p = Start-Process -FilePath $sqlPkg -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1" -PassThru -WindowStyle Hidden
-                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server Offline Install" -StartPct 82 -MaxPct 95
+                $p = Start-Process -FilePath $sqlPkg -ArgumentList "/q /ACTION=Install /FEATURES=SQLEngine /INSTANCENAME=SQLEXPRESS /IACCEPTSQLSERVERLICENSETERMS=1 /SQLSYSADMINACCOUNTS=`"BUILTIN\Administrators`" /SECURITYMODE=SQL /SAPWD=`"CashMgmt@2026`" /TCPENABLED=1 /NPENABLED=1 /UPDATEENABLED=False /SUPPRESSPRIVACYSTATEMENTNOTICE=1" -PassThru -WindowStyle Hidden
+                $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Server Offline Install" -StartPct 78 -MaxPct 95
             } catch { }
             Remove-Item $sqlPkg -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 5
         }
 
-        # Final Verification loop
-        for ($w = 1; $w -le 30; $w++) {
+        # Method 3: Fallback Bootstrapper
+        $svc = Get-SqlSvc
+        if (-not $svc) {
+            Log-Msg "Microsoft SQL Server 2022 Express bootstrapper fallback chal raha hai..." 'INSTALL'
+            $sqlExe = Join-Path $env:TEMP "SQL2022-SSEI-Expr.exe"
+            $ok = Get-FileSmart -Urls @(
+                "https://go.microsoft.com/fwlink/p/?linkid=2216019",
+                "https://go.microsoft.com/fwlink/p/?LinkID=2164373"
+            ) -OutFile $sqlExe -Step 5 -FromPct 80 -ToPct 88 -Label "SQL Server Bootstrapper" -MinBytes 1000000
+
+            if ($ok) {
+                try {
+                    $p = Start-Process -FilePath $sqlExe -ArgumentList "/IACCEPTSQLSERVERLICENSETERMS /ENU /ACTION=Install /quiet /InstallPath=`"C:\Program Files\Microsoft SQL Server`"" -PassThru -WindowStyle Hidden
+                    $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQL Bootstrapper" -StartPct 88 -MaxPct 96
+                } catch { }
+                Remove-Item $sqlExe -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 5
+            }
+        }
+
+        # Final Verification & Service Self-Healing Loop
+        for ($w = 1; $w -le 35; $w++) {
             $svc = Get-SqlSvc
             if ($svc) {
+                try { Set-Service -Name $svc.Name -StartupType Automatic -ErrorAction SilentlyContinue } catch { }
                 if ($svc.Status -ne 'Running') {
-                    try { Start-Service -Name $svc.Name -ErrorAction SilentlyContinue } catch { }
+                    try {
+                        Start-Service -Name $svc.Name -ErrorAction Stop
+                    } catch {
+                        # Auto-heal logon error (1069) to LocalSystem
+                        try {
+                            & sc.exe config $svc.Name obj= "LocalSystem" | Out-Null
+                            Start-Sleep -Seconds 1
+                            Start-Service -Name $svc.Name -ErrorAction SilentlyContinue
+                        } catch { }
+                    }
                     Start-Sleep -Seconds 2
                     $svc = Get-SqlSvc
                 }

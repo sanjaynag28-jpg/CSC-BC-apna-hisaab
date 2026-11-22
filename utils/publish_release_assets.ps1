@@ -92,7 +92,7 @@ try {
     try {
         $cleanup = Join-Path $PSScriptRoot 'cleanup_old_releases.ps1'
         if (Test-Path $cleanup) {
-            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $cleanup -Keep 3
+            & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $cleanup -Keep 1
         }
     } catch {
         Write-Host "  [!] Releases cleanup skip: $($_.Exception.Message)"
