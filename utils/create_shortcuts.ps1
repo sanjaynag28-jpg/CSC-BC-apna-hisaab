@@ -38,7 +38,7 @@ foreach ($folder in $folders) {
     if ([string]::IsNullOrWhiteSpace($folder)) { continue }
     if (-not (Test-Path $folder)) { continue }
 
-    $lnkPath = Join-Path $folder 'CSC BC Apna Hisaab.lnk'
+    $lnkPath = Join-Path $folder 'CSC BC Apna Hisaab (SQLite).lnk'
 
     # Pehle se sahi shortcut hai to chhedo mat
     if (Test-Path $lnkPath) {
