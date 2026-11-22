@@ -52,10 +52,17 @@ ipconfig /flushdns >nul 2>&1
 taskkill /F /IM node.exe >nul 2>&1
 taskkill /F /IM wscript.exe >nul 2>&1
 
-:: Clean old database if present in target directory (Fresh Clean Install)
+:: Safe Database Handling: Preserves user data & creates auto-backup; only clears corrupt files
 if exist "%TARGET_DIR%\database\data\cash_management.db" (
-    del /f /q "%TARGET_DIR%\database\data\cash_management.db*" >nul 2>&1
-    echo   [OK] Purana adhoora SQLite database clean ho gaya.
+    for %%F in ("%TARGET_DIR%\database\data\cash_management.db") do (
+        if %%~zF LSS 1000 (
+            del /f /q "%TARGET_DIR%\database\data\cash_management.db*" >nul 2>&1
+            echo   [OK] Khali / corrupt database file ko clean kiya gaya.
+        ) else (
+            copy /y "%TARGET_DIR%\database\data\cash_management.db" "%TARGET_DIR%\database\data\cash_management_backup.db" >nul 2>&1
+            echo   [OK] Existing database ka safety backup banaya gaya (Aapka hisaab-kitaab 100%% safe hai).
+        )
+    )
 )
 
 :: Clear old cached installer scripts from TEMP
@@ -78,8 +85,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$urls = @(" ^
   "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://gcore.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
+  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
   ");" ^
   "foreach ($u in $urls) {" ^
   "  try {" ^

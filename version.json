@@ -1,8 +1,8 @@
 {
-  "version": "1.0.55",
+  "version": "1.0.56",
   "critical": true,
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "v1.0.55 Universal Self-Healing & 1-Click Screen Updater: 1-Click update button on screen, automatic database repair on launch, zero-config."
+  "notes": "v1.0.56 Universal Self-Healing Launcher: Fail-safe supervisor boot, early .env loader, instant Port 4000 live check."
 }

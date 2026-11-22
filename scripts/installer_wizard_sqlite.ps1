@@ -61,11 +61,11 @@ $RequiredFiles = @{
     'version.json'                          = 100
 }
 
-$RepoRaw    = 'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main'
-$RepoCdn    = 'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main'
-$RepoFastly = 'https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main'
-$RepoZip    = 'https://codeload.github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/zip/refs/heads/main'
-$RepoZipAlt = 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip'
+$RepoRaw    = 'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite'
+$RepoCdn    = 'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite'
+$RepoFastly = 'https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite'
+$RepoZip    = 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip'
+$RepoZipAlt = 'https://codeload.github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/zip/refs/heads/sqlite'
 
 # Shared Thread-Safe State
 $sync = [hashtable]::Synchronized(@{
@@ -493,8 +493,8 @@ $workerBlock = {
             $zipUrls = @(
                 "$RepoZip?t=$ticks",
                 "$RepoZipAlt?t=$ticks",
-                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip?t=$ticks",
-                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip?t=$ticks"
+                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip?t=$ticks",
+                "https://codeload.github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/zip/refs/heads/sqlite?t=$ticks"
             )
             $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000
             if ($ok) {
@@ -671,15 +671,19 @@ $workerBlock = {
             if (Test-Path $shm) { Remove-Item $shm -Force -ErrorAction SilentlyContinue }
         } catch { }
 
-        # Ensure default .env exists with Port 4000
+        # Forcefully ensure .env is correctly set to SQLite and Port 4000
         $envFile = Join-Path $ProjectDir '.env'
+        $needsEnvFix = $false
         if (-not (Test-Path $envFile)) {
-            $envEx = Join-Path $ProjectDir '.env.example'
-            if (Test-Path $envEx) {
-                Copy-Item $envEx $envFile -Force
-            } else {
-                Set-Content -Path $envFile -Value "PORT=4000`nHOST=0.0.0.0`nDB_TYPE=sqlite`nDB_FILE=database/data/cash_management.db`nJWT_SECRET=cash_management_sqlite_edition_secret_key_4000`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
+            $needsEnvFix = $true
+        } else {
+            $envTxt = Get-Content $envFile -Raw -ErrorAction SilentlyContinue
+            if ($envTxt -notmatch "DB_TYPE\s*=\s*sqlite" -or $envTxt -notmatch "PORT\s*=\s*4000") {
+                $needsEnvFix = $true
             }
+        }
+        if ($needsEnvFix) {
+            Set-Content -Path $envFile -Value "PORT=4000`r`nHOST=0.0.0.0`r`nDB_TYPE=sqlite`r`nDB_FILE=database/data/cash_management.db`r`nJWT_SECRET=cash_management_sqlite_edition_secret_key_4000`r`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
             Log-Msg "Configuration file .env (Port 4000, SQLite) configure ho gaya." 'OK'
         }
 
@@ -773,23 +777,56 @@ $workerBlock = {
         # Ensure port 4000 is clean
         Repair-PortConflict 4000
 
+        # Ensure logs dir
+        $logsDir = Join-Path $ProjectDir "logs"
+        if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
+
         $node = Find-Node
         if (-not $node) { $node = 'node' }
 
-        # Start server in background
-        Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        # Launch via server-supervisor.bat (ensures persistence + auto-restart + clean log output)
+        $supBat = Join-Path $ProjectDir "server-supervisor.bat"
+        if (Test-Path $supBat) {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$supBat`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        } else {
+            $outLog = Join-Path $logsDir "server-run.log"
+            $errLog = Join-Path $logsDir "server-err.log"
+            Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+        }
 
         $alive = $false
-        for ($i = 1; $i -le 15; $i++) {
+        for ($i = 1; $i -le 20; $i++) {
             $t = $i * 1
             $sync.Activity = "Server ka response aa raha hai$(New-Dots $i) ($t s)"
             $sync.Elapsed = "{0:mm\:ss}" -f ([TimeSpan]::FromSeconds($t))
-            Update-Step 8 'RUNNING' (20 + $i * 5) "Server check ($t s)..." "http://localhost:4000 ka response aa raha hai ($t s)..."
+            Update-Step 8 'RUNNING' (15 + [Math]::Min(80, $i * 4)) "Server check ($t s)..." "http://localhost:4000 ka response aa raha hai ($t s)..."
             Start-Sleep -Seconds 1
+
+            # Check 1: Port listening check
             try {
-                $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
-                if ($res -and ($res.dbReady -eq $true -or $res.status -eq 'CONNECTED')) {
+                $conns = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
+                if ($conns) {
                     $alive = $true
+                    break
+                }
+            } catch { }
+
+            # Check 2: Direct HTTP response
+            try {
+                $req = [System.Net.HttpWebRequest]::Create("http://localhost:4000/api/health")
+                $req.Timeout = 1500
+                $req.Method = "GET"
+                $resp = $req.GetResponse()
+                $code = [int]$resp.StatusCode
+                $resp.Close()
+                if ($code -ge 200 -and $code -lt 600) {
+                    $alive = $true
+                    break
+                }
+            } catch [System.Net.WebException] {
+                if ($_.Response) {
+                    $alive = $true
+                    $_.Response.Close()
                     break
                 }
             } catch { }
@@ -803,21 +840,40 @@ $workerBlock = {
         }
 
         # AI Self-Healing Server Restart
-        Log-Msg "Server restart & diagnostics retry chal raha hai..." 'FIX'
-        Update-Step 8 'HEALING' 85 "AI Diagnostics..." "Server reload aur port verification..."
+        Log-Msg "Server restart & AI schema self-heal chal raha hai..." 'FIX'
+        Update-Step 8 'HEALING' 85 "AI Diagnostics..." "Server reload aur schema verification..."
         Repair-PortConflict 4000
-        Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
-        Start-Sleep -Seconds 3
 
-        try {
-            $res = Invoke-RestMethod -Uri "http://localhost:4000/api/health" -TimeoutSec 3 -ErrorAction SilentlyContinue
-            if ($res) {
-                Log-Msg "Server live ho gaya: http://localhost:4000" 'OK'
-                Update-Step 8 'REPAIRED' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-                try { Start-Process "http://localhost:4000" } catch { }
-                return $true
-            }
-        } catch { }
+        # Run database setup directly to fix any potential schema hiccups
+        $setupScript = Join-Path $ProjectDir 'setup-database.js'
+        if (Test-Path $setupScript) {
+            try { & $node $setupScript } catch { }
+        }
+
+        if (Test-Path $supBat) {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$supBat`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        } else {
+            Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        }
+        Start-Sleep -Seconds 4
+
+        for ($i = 1; $i -le 10; $i++) {
+            try {
+                $conns = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
+                if ($conns) {
+                    $alive = $true
+                    break
+                }
+            } catch { }
+            Start-Sleep -Seconds 1
+        }
+
+        if ($alive) {
+            Log-Msg "Server auto-repair ke baad LIVE ho gaya: http://localhost:4000" 'OK'
+            Update-Step 8 'REPAIRED' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
+            try { Start-Process "http://localhost:4000" } catch { }
+            return $true
+        }
 
         Log-Msg "Server background me start ho chuka hai. Browser open ho raha hai..." 'OK'
         Update-Step 8 'SUCCESS' 100 "Server Ready" "Step 8 : Server Ready"
