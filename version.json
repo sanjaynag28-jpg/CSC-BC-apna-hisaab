@@ -1,7 +1,7 @@
 {
-  "version": "1.0.43",
+  "version": "1.0.44",
   "releasedAt": "2026-11-22",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "main",
-  "notes": "Fixes batch launcher immediate exit: removes multiline caret syntax errors, uses /k flag to keep window open on errors, and supports direct 1-line PowerShell zero-download execution."
+  "notes": "Fixes SQL Server connection resolution: auto-resolves named instances (CMBCSQL/SQLEXPRESS) via TCP port 1433 and dynamic fallbacks, prevents zombie node processes from locking port 3000, and ensures single-line dynamic self-updating batch launchers."
 }

@@ -4,11 +4,12 @@ const fs = require('fs');
 
 // SQL Server Configuration
 // Credentials: env vars preferred, phir .env file, phir local fallback.
-function loadDotEnv() {
+function loadDotEnv(force = false) {
     try {
         const envPath = path.join(__dirname, '..', '.env');
         if (!fs.existsSync(envPath)) return;
-        const content = fs.readFileSync(envPath, 'utf8');
+        let content = fs.readFileSync(envPath, 'utf8');
+        if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
         content.split(/\r?\n/).forEach((line) => {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#')) return;
@@ -19,7 +20,7 @@ function loadDotEnv() {
             if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
                 value = value.slice(1, -1);
             }
-            if (process.env[key] === undefined) process.env[key] = value;
+            if (force || process.env[key] === undefined) process.env[key] = value;
         });
     } catch (err) {
         console.warn('⚠️ .env load failed:', err.message);
@@ -27,24 +28,59 @@ function loadDotEnv() {
 }
 loadDotEnv();
 
-const config = {
-    server: process.env.DB_SERVER || 'localhost\\SQLEXPRESS',
-    database: process.env.DB_NAME || 'CashManagement',
-    user: process.env.DB_USER || 'sa',
-    password: process.env.DB_PASSWORD || '',
-    options: {
-        encrypt: false,
-        trustServerCertificate: true,
-        enableArithAbort: true,
-    },
-    pool: {
-        max: 20,
-        min: 2,
-        idleTimeoutMillis: 30000
-    },
-    connectionTimeout: 15000,
-    requestTimeout: 30000
-};
+let workingCandidate = null;
+
+function parseServerCandidates(rawServer, port) {
+    const raw = String(rawServer || '127.0.0.1').trim();
+    let host = raw;
+    let instance = undefined;
+    let explicitPort = port ? Number(port) : undefined;
+
+    if (host.includes('\\')) {
+        const parts = host.split('\\');
+        host = parts[0].trim();
+        instance = parts[1].trim();
+    }
+    if (host.includes(',')) {
+        const parts = host.split(',');
+        host = parts[0].trim();
+        explicitPort = Number(parts[1].trim()) || explicitPort;
+    }
+
+    const cleanHost = (host === 'localhost' || host === '.') ? '127.0.0.1' : host;
+    const candidates = [];
+
+    // Candidate 1: Direct configured instance with sanitized host
+    if (instance) {
+        candidates.push({ server: cleanHost, options: { instanceName: instance }, port: explicitPort });
+        candidates.push({ server: '127.0.0.1', options: { instanceName: instance }, port: explicitPort });
+        candidates.push({ server: 'localhost', options: { instanceName: instance }, port: explicitPort });
+    } else {
+        candidates.push({ server: cleanHost, port: explicitPort });
+    }
+
+    // Candidate 2: Direct static port 1433 (bypasses SQL Browser UDP 1434 completely)
+    candidates.push({ server: '127.0.0.1', port: 1433 });
+    candidates.push({ server: 'localhost', port: 1433 });
+
+    // Candidate 3: Named instance on 1433
+    if (instance) {
+        candidates.push({ server: '127.0.0.1', port: 1433, options: { instanceName: instance } });
+    }
+
+    // Candidate 4: Common instance fallbacks
+    candidates.push({ server: '127.0.0.1', options: { instanceName: 'SQLEXPRESS' } });
+    candidates.push({ server: '127.0.0.1', options: { instanceName: 'CMBCSQL' } });
+
+    // Deduplicate
+    const seen = new Set();
+    return candidates.filter(c => {
+        const key = `${c.server}:${c.port || ''}:${c.options?.instanceName || ''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
 
 let pool = null;
 let poolPromise = null;
@@ -57,39 +93,79 @@ async function getPool() {
         return poolPromise;
     }
 
-    const pendingPool = new sql.ConnectionPool(config).connect();
-    poolPromise = pendingPool;
-    try {
-        pool = await pendingPool;
-        if (poolPromise === pendingPool) poolPromise = null;
-        console.log('✅ SQL Server se connected!');
-        return pool;
-    } catch (err) {
-        if (poolPromise === pendingPool) {
+    loadDotEnv(true);
+
+    const baseConfig = {
+        database: process.env.DB_NAME || 'CashManagement',
+        user: process.env.DB_USER || 'sa',
+        password: process.env.DB_PASSWORD || '',
+        options: {
+            encrypt: false,
+            trustServerCertificate: true,
+            enableArithAbort: true,
+        },
+        pool: {
+            max: 20,
+            min: 2,
+            idleTimeoutMillis: 30000
+        },
+        connectionTimeout: 10000,
+        requestTimeout: 30000
+    };
+
+    const candidates = workingCandidate
+        ? [workingCandidate, ...parseServerCandidates(process.env.DB_SERVER, process.env.DB_PORT)]
+        : parseServerCandidates(process.env.DB_SERVER, process.env.DB_PORT);
+
+    let lastErr = null;
+    for (const cand of candidates) {
+        const testCfg = {
+            ...baseConfig,
+            server: cand.server,
+            port: cand.port,
+            options: {
+                ...baseConfig.options,
+                ...(cand.options || {})
+            }
+        };
+
+        try {
+            const pending = new sql.ConnectionPool(testCfg).connect();
+            poolPromise = pending;
+            pool = await pending;
+            poolPromise = null;
+            workingCandidate = cand;
+            const instStr = cand.options?.instanceName ? `\\${cand.options.instanceName}` : '';
+            const portStr = cand.port ? `:${cand.port}` : '';
+            console.log(`✅ SQL Server se connected (${cand.server}${instStr}${portStr})!`);
+            return pool;
+        } catch (err) {
             poolPromise = null;
             pool = null;
-        }
+            lastErr = err;
 
-        // Self-Healing: Agar target database abhi SQL Server par bana nahi hai (Error 4060)
-        if (err.message && (err.message.includes('Cannot open database') || err.number === 4060)) {
-            console.warn(`⚠️ Database "${config.database}" nahi mila. Master connection se auto-create kar rahe hain...`);
-            try {
-                const masterCfg = { ...config, database: 'master' };
-                const mPool = await new sql.ConnectionPool(masterCfg).connect();
-                await mPool.request().query(`IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${String(config.database).replace(/'/g, "''")}') CREATE DATABASE [${String(config.database).replace(/\]/g, ']]')}]`);
-                await mPool.close();
-                console.log(`✅ Database "${config.database}" successfully create ho gaya! Reconnecting...`);
-                pool = await new sql.ConnectionPool(config).connect();
-                console.log('✅ SQL Server se connected!');
-                return pool;
-            } catch (createErr) {
-                console.error('❌ Master se database create nahi ho paya:', createErr.message);
+            // Self-Healing: Error 4060 (Database does not exist on this SQL Server)
+            if (err.message && (err.message.includes('Cannot open database') || err.number === 4060)) {
+                console.warn(`⚠️ Database "${baseConfig.database}" nahi mila. Master connection se auto-create kar rahe hain...`);
+                try {
+                    const masterCfg = { ...testCfg, database: 'master' };
+                    const mPool = await new sql.ConnectionPool(masterCfg).connect();
+                    await mPool.request().query(`IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = N'${String(baseConfig.database).replace(/'/g, "''")}') CREATE DATABASE [${String(baseConfig.database).replace(/\]/g, ']]')}]`);
+                    await mPool.close();
+                    console.log(`✅ Database "${baseConfig.database}" successfully create ho gaya! Reconnecting...`);
+                    pool = await new sql.ConnectionPool(testCfg).connect();
+                    workingCandidate = cand;
+                    console.log('✅ SQL Server se connected!');
+                    return pool;
+                } catch (createErr) {
+                    console.error('❌ Master se database create nahi ho paya:', createErr.message);
+                }
             }
         }
-
-        console.error('❌ SQL Server connection error:', err.message);
-        throw err;
     }
+
+    console.error('❌ SQL Server connection error (all candidates failed):', lastErr?.message);
+    throw lastErr || new Error('SQL Server se connect nahi ho paya');
 }
 
 async function isDbAlive() {

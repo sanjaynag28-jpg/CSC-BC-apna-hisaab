@@ -994,7 +994,7 @@ async function connectDbInBackground() {
                     setInterval(runRecurring, 60 * 60 * 1000);
                 }
             } catch (err) { }
-        }, 10000);
+        }, 4000);
     }
 }
 

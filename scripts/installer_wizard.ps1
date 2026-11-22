@@ -259,6 +259,11 @@ $workerBlock = {
     function Exec-Step1 {
         Update-Step 1 'RUNNING' 12 "Step 1 / 11 : Administrator & Windows check..." "Windows administrator rights verify ho rahe hain..."
         Log-Msg "Administrator privileges aur OS version verify ho raha hai..." 'SYSTEM'
+        try {
+            Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object {
+                Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
         Start-Sleep -Milliseconds 250
         Update-Step 1 'RUNNING' 55 "Administrator access mil gaya" "Windows version check ho raha hai..."
         Start-Sleep -Milliseconds 250
@@ -628,6 +633,14 @@ $workerBlock = {
                 if (Test-Path $tcpKey) {
                     try { Set-ItemProperty -Path $tcpKey -Name Enabled -Value 1 -Type DWord -ErrorAction SilentlyContinue; $changed = $true } catch { }
                 }
+                $ipAllKey = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instId\MSSQLServer\SuperSocketNetLib\Tcp\IPAll"
+                if (Test-Path $ipAllKey) {
+                    try {
+                        Set-ItemProperty -Path $ipAllKey -Name TcpPort -Value "1433" -Type String -ErrorAction SilentlyContinue
+                        Set-ItemProperty -Path $ipAllKey -Name TcpDynamicPorts -Value "" -Type String -ErrorAction SilentlyContinue
+                        $changed = $true
+                    } catch { }
+                }
             }
         }
 
@@ -728,6 +741,7 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
             "PORT=3000",
             "HOST=0.0.0.0",
             "DB_SERVER=$chosenServer",
+            "DB_PORT=1433",
             "DB_NAME=CashManagement",
             "DB_USER=$chosenUser",
             "DB_PASSWORD=$chosenPass",
@@ -811,8 +825,8 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
     }
 
     function Exec-Step9 {
-        Update-Step 9 'RUNNING' 30 "Step 9 / 11 : Firewall (Port 3000)..." "Firewall rule check ho raha hai..."
-        Log-Msg "Windows Firewall me Port 3000 rule add ho raha hai..." 'NETWORK'
+        Update-Step 9 'RUNNING' 30 "Step 9 / 11 : Firewall (Port 3000, 1433)..." "Firewall rules check ho rahe hain..."
+        Log-Msg "Windows Firewall me Port 3000 aur SQL rules add ho rahe hain..." 'NETWORK'
         try {
             $ruleName = "CSC BC Apna Hisaab (Port 3000)"
             netsh advfirewall firewall show rule name="$ruleName" > $null 2>&1
@@ -821,8 +835,10 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
                 netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=3000 profile=private,domain > $null
                 Log-Msg "Firewall rule add ho gaya: '$ruleName'" 'OK'
             } else {
-                Log-Msg "Firewall rule pehle se active hai." 'OK'
+                Log-Msg "Firewall rule pehle se active hai: '$ruleName'" 'OK'
             }
+            netsh advfirewall firewall add rule name="CSC BC Apna Hisaab SQL (Port 1433)" dir=in action=allow protocol=TCP localport=1433 profile=private,domain > $null 2>&1
+            netsh advfirewall firewall add rule name="CSC BC Apna Hisaab SQLBrowser (Port 1434)" dir=in action=allow protocol=UDP localport=1434 profile=private,domain > $null 2>&1
         } catch { }
 
         Update-Step 9 'SUCCESS' 100 "Port 3000 open" "Step 9 : Firewall Port 3000 Open"
@@ -871,41 +887,41 @@ ALTER SERVER ROLE [sysadmin] ADD MEMBER [cmbc_user];
         Update-Step 11 'RUNNING' 12 "Step 11 / 11 : Server Live Health Check..." "Server alive hai ya nahi check ho raha hai..."
         Log-Msg "http://localhost:3000 health endpoint check ho raha hai..." 'HEALTH'
 
-        $alive = $false
+        # Ensure no stale zombie process on port 3000
         try {
-            $r = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -UseBasicParsing -TimeoutSec 3
-            if ($r.StatusCode -eq 200) { $alive = $true }
+            Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object {
+                Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
+            Start-Sleep -Milliseconds 500
         } catch { }
 
-        if (-not $alive) {
-            Update-Step 11 'RUNNING' 35 "Background server start ho raha hai..." "node server.js launch ho raha hai..."
-            Log-Msg "Application server background me start ho raha hai..." 'START'
-            $openAppVbs = Join-Path $ProjectDir "open-app.vbs"
-            if (Test-Path $openAppVbs) {
-                Start-Process -FilePath "wscript.exe" -ArgumentList "`"$openAppVbs`"" -WindowStyle Hidden
-            } else {
-                $node = Find-Node
-                if (-not $node) { $node = 'node' }
-                Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
-            }
-        }
+        Update-Step 11 'RUNNING' 35 "Background server start ho raha hai..." "node server.js launch ho raha hai..."
+        Log-Msg "Application server background me start ho raha hai..." 'START'
+        $node = Find-Node
+        if (-not $node) { $node = 'node' }
+        Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
 
-        for ($i = 1; $i -le 20; $i++) {
-            $pollPct = 35 + [int](($i / 20) * 60)
+        $alive = $false
+        for ($i = 1; $i -le 30; $i++) {
+            $pollPct = 35 + [int](($i / 30) * 60)
             $t = $i * 2
             $sync.Activity = "Server ka wait$(New-Dots $i) ($t s)"
             $sync.Elapsed = "{0:mm\:ss}" -f ([TimeSpan]::FromSeconds($t))
             Update-Step 11 'RUNNING' $pollPct "Server verify ho raha hai ($t s)..." "http://localhost:3000 ka response aa raha hai ($t s)..."
             Start-Sleep -Seconds 2
             try {
-                $res = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -UseBasicParsing -TimeoutSec 3
-                if ($res.StatusCode -eq 200) { $alive = $true; break }
+                $res = Invoke-RestMethod -Uri "http://localhost:3000/api/health" -TimeoutSec 3 -ErrorAction SilentlyContinue
+                if ($res -and ($res.dbReady -eq $true -or $res.status -eq 'CONNECTED')) {
+                    $alive = $true
+                    break
+                }
             } catch { }
         }
 
         if ($alive) {
             Log-Msg "Application 100% LIVE hai: http://localhost:3000" 'OK'
             Update-Step 11 'SUCCESS' 100 "LIVE 100%" "Step 11 : Application 100% LIVE!"
+            try { Start-Process "http://localhost:3000" } catch { }
             return $true
         }
 
