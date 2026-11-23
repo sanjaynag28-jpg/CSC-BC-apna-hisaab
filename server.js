@@ -1059,12 +1059,13 @@ function scheduleBootAutoUpdate() {
             const res = await autoUpdater.runSilentAutoUpdate({
                 restartOnUpdate: true,
                 requireIdle: true,
-                forceCritical: attempts >= 4,
                 isIdle: () => activeRequests === 0
             });
             if (res && res.updated) return;
-            if (res && res.skipped && attempts < maxAttempts) {
-                setTimeout(tryBootUpdate, 15000);
+            if (res && res.skipped) {
+                // Disabled / local changes / cooldown par boot retry ka koi matlab nahi.
+                if (/AUTO_UPDATE_DISABLED|Local changes|cooldown/i.test(String(res.reason || ''))) return;
+                if (attempts < maxAttempts) setTimeout(tryBootUpdate, 15000);
             }
         } catch (_) {
             if (attempts < maxAttempts) setTimeout(tryBootUpdate, 20000);

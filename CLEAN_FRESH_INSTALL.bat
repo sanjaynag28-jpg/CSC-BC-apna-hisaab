@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 chcp 65001 >nul 2>&1
-title CSC ^& BC Apna Hisaab - 100%% Dynamic Clean Re-Installer
+title CSC ^& BC Apna Hisaab - SQLite Edition 100%% Dynamic Clean Installer
 color 0C
 
 :: ====================================================================
@@ -10,14 +10,14 @@ color 0C
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [..] Administrator permission mang rahe hain...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%comspec%' -ArgumentList @('/k', 'call', ([char]34 + '%~f0' + [char]34)) -Verb RunAs"
     exit /b
 )
 
 cd /d "%~dp0"
 
 echo ======================================================================
-echo   CSC ^& BC APNA HISAAB - 100%% DYNAMIC CLEAN RE-INSTALLER
+echo   CSC ^& BC APNA HISAAB - 100%% DYNAMIC CLEAN INSTALLER (SQLITE)
 echo   Permanent Single-File Launcher ^| 100%% AI Live Self-Healing Active
 echo ======================================================================
 echo.
@@ -28,12 +28,20 @@ echo.
 :: ====================================================================
 :: 2. Resolve Safe Target Directory
 :: ====================================================================
-set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab"
+set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab-SQLite"
 
+:: If running inside an existing SQLite folder (and NOT the SQL Server workspace)
 if exist "%~dp0package.json" (
-    set "TARGET_DIR=%~dp0"
+    if not "%~dp0"=="D:\Cash Managment BC\" (
+        if not "%~dp0"=="d:\Cash Managment BC\" (
+            pushd "%~dp0"
+            set "TARGET_DIR=%CD%"
+            popd
+        )
+    )
 )
 
+if "%TARGET_DIR:~-1%"=="\" set "TARGET_DIR=%TARGET_DIR:~0,-1%"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
 echo   Target Directory: %TARGET_DIR%
@@ -69,7 +77,7 @@ set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite_%RANDOM%.ps1"
 echo.
 echo [2/4] Downloading latest AI Setup Engine from GitHub (Live Dynamic)...
 
-set "CACHE_BUSTER=%RANDOM%_%TIME:~6,2%"
+set "CACHE_BUSTER=%RANDOM%%RANDOM%"
 
 :: Method 1: PowerShell Multi-Mirror Download with Cache-Buster
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -79,8 +87,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$urls = @(" ^
   "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
+  "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://cdn.statically.io/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
   ");" ^
   "foreach ($u in $urls) {" ^
   "  try {" ^
@@ -99,7 +107,7 @@ if not exist "%WIZ_SCRIPT%" (
     where curl.exe >nul 2>&1
     if not errorlevel 1 (
         echo   [..] PowerShell network busy. Switching to AI curl fallback mirror...
-        curl.exe -fSL --retry 3 --connect-timeout 10 "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%" -o "%WIZ_SCRIPT%" >nul 2>&1
+        curl.exe -fSL --retry 3 --connect-timeout 10 "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%" -o "%WIZ_SCRIPT%" >nul 2>&1
     )
 )
 
@@ -121,6 +129,7 @@ if not exist "%WIZ_SCRIPT%" (
     exit /b 1
 )
 
+:: Unblock script if marked by Windows Security
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -Path '%WIZ_SCRIPT%' -ErrorAction SilentlyContinue" >nul 2>&1
 
 :: ====================================================================
@@ -135,6 +144,7 @@ echo.
 powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
 set "EXIT_CODE=%errorlevel%"
 
+:: Cleanup temporary execution file
 del /f /q "%WIZ_SCRIPT%" >nul 2>&1
 
 echo.

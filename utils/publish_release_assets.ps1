@@ -50,17 +50,14 @@ try {
     }
 
     $assets = @(
-        @{ Name = 'INSTALL_NOW.exe';            Path = (Join-Path $root 'INSTALL_NOW.exe') },
+        @{ Name = 'SETUP.bat';                  Path = (Join-Path $root 'SETUP.bat') },
+        @{ Name = 'INSTALL_SQLITE.bat';         Path = (Join-Path $root 'INSTALL_SQLITE.bat') },
         @{ Name = 'INSTALL_NOW.bat';            Path = (Join-Path $root 'INSTALL_NOW.bat') },
+        @{ Name = 'CLEAN_INSTALL_SQLITE.bat';   Path = (Join-Path $root 'CLEAN_INSTALL_SQLITE.bat') },
         @{ Name = 'CLEAN_FRESH_INSTALL.bat';    Path = (Join-Path $root 'CLEAN_FRESH_INSTALL.bat') },
-        @{ Name = 'INSTALL_NOW.zip';            Path = (Join-Path $root 'INSTALL_NOW.zip') },
-        @{ Name = 'AI_DOCTOR.bat';              Path = (Join-Path $root 'tools\AI_DOCTOR.bat') },
-        @{ Name = 'SETUP.bat';                  Path = (Join-Path $root 'INSTALL_NOW.bat') },
         @{ Name = 'INSTALL_FROM_GITHUB.bat';    Path = (Join-Path $root 'INSTALL_FROM_GITHUB.bat') },
-        @{ Name = 'SQL_FIX.bat';                Path = (Join-Path $root 'tools\SQL_FIX.bat') },
-        @{ Name = 'sql_fix.ps1';                Path = (Join-Path $root 'scripts\sql_fix.ps1') },
-        @{ Name = 'DOCTOR.bat';                 Path = (Join-Path $root 'tools\DOCTOR.bat') },
-        @{ Name = 'doctor.ps1';                 Path = (Join-Path $root 'scripts\doctor.ps1') }
+        @{ Name = 'AI_DOCTOR_SQLITE.bat';       Path = (Join-Path $root 'AI_DOCTOR_SQLITE.bat') },
+        @{ Name = 'installer_wizard_sqlite.ps1'; Path = (Join-Path $root 'scripts\installer_wizard_sqlite.ps1') }
     )
 
     $existing = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/$($rel.id)/assets" -Headers $headers -Method Get

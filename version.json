@@ -1,8 +1,8 @@
 {
-  "version": "1.0.73",
+  "version": "1.0.74",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: UTF-8 BOM on all powershell scripts, -STA on installer bats, and auto-updater fixes"
+  "notes": "fix:"
 }

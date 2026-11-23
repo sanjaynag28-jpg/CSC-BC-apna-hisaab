@@ -10,7 +10,7 @@ color 0A
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [..] Administrator permission mang rahe hain...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k \"\"%~f0\"\"' -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%comspec%' -ArgumentList @('/k', 'call', ([char]34 + '%~f0' + [char]34)) -Verb RunAs"
     exit /b
 )
 
@@ -33,11 +33,14 @@ set "TARGET_DIR=%USERPROFILE%\CSC-BC-Apna-Hisaab-SQLite"
 if exist "%~dp0package.json" (
     if not "%~dp0"=="D:\Cash Managment BC\" (
         if not "%~dp0"=="d:\Cash Managment BC\" (
-            set "TARGET_DIR=%~dp0"
+            pushd "%~dp0"
+            set "TARGET_DIR=%CD%"
+            popd
         )
     )
 )
 
+if "%TARGET_DIR:~-1%"=="\" set "TARGET_DIR=%TARGET_DIR:~0,-1%"
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 
 echo   Target Directory: %TARGET_DIR%
@@ -60,7 +63,7 @@ set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite_%RANDOM%.ps1"
 echo.
 echo [2/4] Downloading latest AI Setup Engine from GitHub (Live Dynamic)...
 
-set "CACHE_BUSTER=%RANDOM%_%TIME:~6,2%"
+set "CACHE_BUSTER=%RANDOM%%RANDOM%"
 
 :: Method 1: PowerShell Multi-Mirror Download with Cache-Buster
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
@@ -70,8 +73,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "$urls = @(" ^
   "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
-  "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@main/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
+  "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  ('https://cdn.statically.io/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
   ");" ^
   "foreach ($u in $urls) {" ^
   "  try {" ^

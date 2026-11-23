@@ -26,7 +26,7 @@ set "REL_NOTES=%~1"
 
 :: Step 0: Koi change hai ya nahi
 "%GIT_EXE%" status --porcelain > "%TEMP%\cmbc_changes.tmp" 2>nul
-for /f "delims=" %%L in ("%TEMP%\cmbc_changes.tmp") do set "HAS_CHANGES=1"
+for /f "usebackq delims=" %%L in ("%TEMP%\cmbc_changes.tmp") do set "HAS_CHANGES=1"
 del "%TEMP%\cmbc_changes.tmp" >nul 2>&1
 if not defined HAS_CHANGES (
     echo [INFO] Koi code change nahi mila - publish karne ki zaroorat nahi.

@@ -31,22 +31,33 @@ const TMP_DIR = path.join(ROOT_DIR, '.auto-update-tmp');
 const REPO_OWNER = 'sanjaynag28-jpg';
 const REPO_NAME = 'CSC-BC-apna-hisaab';
 let BRANCH = 'sqlite';
+let branchFromManifest = false;
 try {
     const vJson = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
-    if (vJson.branch) BRANCH = vJson.branch;
-} catch (_) { }
-try {
-    const gitBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 3000 }).trim();
-    if (gitBranch && gitBranch !== 'HEAD' && (gitBranch === 'sqlite' || gitBranch === 'main')) {
-        BRANCH = gitBranch;
+    if (vJson.branch) {
+        BRANCH = vJson.branch;
+        branchFromManifest = true;
     }
 } catch (_) { }
+
+// version.json hi edition ka source of truth hai. Git checkout galti se main par
+// ho lekin build SQLite ka hai, to bhi updater ko sqlite branch hi use karni chahiye.
+if (!branchFromManifest) {
+    try {
+        const gitBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8', timeout: 3000 }).trim();
+        if (gitBranch && gitBranch !== 'HEAD' && (gitBranch === 'sqlite' || gitBranch === 'main')) {
+            BRANCH = gitBranch;
+        }
+    } catch (_) { }
+}
+// Sirf is installation ka apna branch use karo. "main" fallback kabhi mat lagao —
+// agar SQLite edition galti se SQL Server edition ka code utha le to app poori tarah
+// break ho sakti hai. Same branch ke liye 3 independent mirrors kaafi hain.
 function getRemoteVersionUrls() {
     const urls = [
         `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`,
         `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH}/version.json`,
-        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/version.json`,
-        `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/version.json`
+        `https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH}/version.json`
     ];
     return [...new Set(urls)];
 }
@@ -55,8 +66,7 @@ function getRemoteZipUrls() {
     const urls = [
         `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.zip`,
         `https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/zip/refs/heads/${BRANCH}`,
-        `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/main.zip`,
-        `https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/zip/refs/heads/main`
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/zipball/${BRANCH}`
     ];
     return [...new Set(urls)];
 }
@@ -74,8 +84,14 @@ const PROTECTED_RELATIVE_PATHS = new Set([
     '.auto-update-tmp',
     '.antigravity',
     'database/data',
-    'public/uploads'
+    'public/uploads',
+    // Admin-managed license cache (universal keys + hardware blacklist).
+    // Release ZIP me iski purani copy hoti hai, isliye local file ko overwrite mat karo.
+    'config/licenses.json'
 ]);
+
+// These tracked files are expected to differ locally and must survive an update.
+const LOCAL_DATA_FILES = new Set(['version.json', 'config/licenses.json']);
 
 const state = {
     checking: false,
@@ -91,6 +107,8 @@ const state = {
     latestVersion: null,
     releaseNotes: null,
     lastError: null,
+    failedVersion: null,
+    failedAt: 0,
     periodicTimer: null,
     periodicIntervalMs: null
 };
@@ -179,9 +197,42 @@ function compareVersions(a, b) {
     return 0;
 }
 
-// Update available if latest > current OR if versions differ (handles cross-major-version updates)
+// Update available only when the remote version is strictly newer.
+// Equal ya older version par update offer nahi karna chahiye, warna app
+// har 20 minute me same release download karke restart hoti rehti hai.
 function isUpdateAvailable(current, latest) {
     return compareVersions(latest, current) > 0;
+}
+
+// version.json me "branch" field hota hai. Agar remote manifest kisi doosre
+// branch ka hai (jaise SQL Server edition ka main), use reject karo.
+function isRemoteInfoForBranch(info, branch = BRANCH) {
+    if (!info || typeof info !== 'object' || !info.version) return false;
+    if (!info.branch) return true; // purane manifests me branch field nahi tha
+    return String(info.branch).trim().toLowerCase() === String(branch).trim().toLowerCase();
+}
+
+function readVersionInfoFromDir(dir) {
+    try {
+        return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8'));
+    } catch (_) {
+        return null;
+    }
+}
+
+// Validate the downloaded archive BEFORE it overwrites the live installation.
+function validateArchiveVersion(archiveDir, expectedVersion) {
+    const info = readVersionInfoFromDir(archiveDir);
+    if (!info || !info.version) {
+        return { ok: false, reason: 'Downloaded archive me valid version.json nahi hai' };
+    }
+    if (!isRemoteInfoForBranch(info)) {
+        return { ok: false, reason: `Archive branch '${info.branch || 'unknown'}' hai, expected '${BRANCH}'` };
+    }
+    if (expectedVersion && compareVersions(info.version, expectedVersion) < 0) {
+        return { ok: false, reason: `Archive stale hai (v${info.version} < expected v${expectedVersion})` };
+    }
+    return { ok: true, version: info.version };
 }
 
 function fileHash(filePath) {
@@ -305,10 +356,10 @@ const CRITICAL_FILES = {
     'utils/autoUpdater.js': 1000
 };
 
-function findBrokenFiles() {
+function findBrokenFiles(baseDir = ROOT_DIR) {
     const broken = [];
     for (const rel of Object.keys(CRITICAL_FILES)) {
-        const abs = path.join(ROOT_DIR, rel);
+        const abs = path.join(baseDir, rel);
         try {
             const st = fs.statSync(abs);
             if (!st.isFile() || st.size < CRITICAL_FILES[rel]) broken.push(rel);
@@ -364,37 +415,86 @@ function runSafeBackupBeforeUpdate() {
 }
 
 async function applyCodeUpdateViaGit(gitBin, force = false) {
-    // Safety guard: do not clobber uncommitted local edits unless forced
-    if (!force) {
-        const statusOut = execFileSync(gitBin, ['status', '--porcelain'], {
-            cwd: ROOT_DIR,
-            encoding: 'utf8',
-            timeout: 10000
-        }).trim();
-        const changedPaths = statusOut.split(/\r?\n/).map(line => line.slice(3).replace(/^"|"$/g, '')).filter(Boolean);
-        const unexpectedChanges = changedPaths.filter(file => file !== 'version.json');
-        if (unexpectedChanges.length > 0) {
-            throw new Error('LOCAL_CHANGES_PRESENT');
-        }
-        if (changedPaths.length > 0) {
-            logUpdate('Ignoring generated local version.json change during update.');
-        }
-    }
-
-    logUpdate('Fetching latest release from GitHub via Git...');
+    logUpdate(`Fetching latest release from GitHub via Git (${BRANCH})...`);
     execFileSync(gitBin, ['fetch', 'origin', BRANCH, '--quiet'], {
         cwd: ROOT_DIR,
         stdio: 'ignore',
         timeout: 30000
     });
+
+    // Safety guard: do not clobber local commits/edits unless forced.
+    // Fetch pehle hota hai taaki pichli ZIP update ke baad working tree agar
+    // origin se already identical hai to use local change na samjha jaye.
+    if (!force) {
+        const ahead = parseInt(execFileSync(gitBin, ['rev-list', '--count', `origin/${BRANCH}..HEAD`], {
+            cwd: ROOT_DIR,
+            encoding: 'utf8',
+            timeout: 10000
+        }).trim(), 10) || 0;
+        if (ahead > 0) {
+            throw new Error('LOCAL_COMMITS_PRESENT');
+        }
+
+        const statusOut = execFileSync(gitBin, ['status', '--porcelain'], {
+            cwd: ROOT_DIR,
+            encoding: 'utf8',
+            timeout: 10000
+        }).trim();
+        const changedPaths = statusOut
+            .split(/\r?\n/)
+            .map(line => line.slice(3).replace(/^"|"$/g, ''))
+            .filter(Boolean);
+        const unexpectedChanges = changedPaths.filter(file => !LOCAL_DATA_FILES.has(file));
+        if (unexpectedChanges.length > 0) {
+            let diffVsRemote = '';
+            try {
+                diffVsRemote = execFileSync(gitBin, ['diff', '--name-only', `origin/${BRANCH}`, '--'], {
+                    cwd: ROOT_DIR,
+                    encoding: 'utf8',
+                    timeout: 10000
+                }).trim();
+            } catch (_) {
+                diffVsRemote = 'unknown';
+            }
+            const realDifferences = diffVsRemote
+                .split(/\r?\n/)
+                .filter(file => file && !LOCAL_DATA_FILES.has(file));
+            if (realDifferences.length > 0) {
+                throw new Error('LOCAL_CHANGES_PRESENT');
+            }
+            logUpdate('Working tree pehle se remote release se match karta hai; Git state sync ho raha hai.');
+        }
+        if (changedPaths.length > 0 && unexpectedChanges.length === 0) {
+            logUpdate('Ignoring generated local version.json / license config changes during update.');
+        }
+    }
+
+    // config/licenses.json tracked hai, isliye reset --hard use repo ki purani copy
+    // se replace kar dega. Admin ke banaye keys/blacklist ko restore karo.
+    const licensePath = path.join(ROOT_DIR, 'config', 'licenses.json');
+    let licenseBackup = null;
+    try {
+        if (fs.existsSync(licensePath)) licenseBackup = fs.readFileSync(licensePath);
+    } catch (_) { }
+
     execFileSync(gitBin, ['reset', '--hard', `origin/${BRANCH}`], {
         cwd: ROOT_DIR,
         stdio: 'ignore',
         timeout: 30000
     });
+
+    if (licenseBackup) {
+        try {
+            fs.mkdirSync(path.dirname(licensePath), { recursive: true });
+            fs.writeFileSync(licensePath, licenseBackup);
+            logUpdate('Local license config preserved across Git update.');
+        } catch (err) {
+            logUpdate(`License config restore warning: ${err.message}`);
+        }
+    }
 }
 
-async function applyCodeUpdateViaZip() {
+async function applyCodeUpdateViaZip(expectedVersion) {
     let lastErr = null;
 
     for (let round = 1; round <= 3; round++) {
@@ -441,6 +541,18 @@ async function applyCodeUpdateViaZip() {
             if (topEntries.length === 0) throw new Error('Extracted ZIP archive was empty');
             const extractedRoot = path.join(extractDir, topEntries[0].name);
 
+            // Live install ko chhoone se pehle hi archive verify karo. Isse galat branch,
+            // stale CDN copy, ya adhoora ZIP kabhi bhi app files ko overwrite nahi karega.
+            const archiveCheck = validateArchiveVersion(extractedRoot, expectedVersion);
+            if (!archiveCheck.ok) {
+                throw new Error(archiveCheck.reason);
+            }
+            const brokenArchive = findBrokenFiles(extractedRoot);
+            if (brokenArchive.length > 0) {
+                throw new Error(`Downloaded archive incomplete: ${brokenArchive.join(', ')}`);
+            }
+            logUpdate(`Archive verified as v${archiveCheck.version}; applying files...`);
+
             copyDirectorySafely(extractedRoot, ROOT_DIR);
 
             const broken = findBrokenFiles();
@@ -478,8 +590,12 @@ async function checkForUpdate() {
         let lastNetErr = null;
         for (const url of vUrls) {
             try {
-                remoteInfo = await fetchJson(`${url}?t=${Date.now()}`, 8000);
-                if (remoteInfo && remoteInfo.version) break;
+                const candidate = await fetchJson(`${url}?t=${Date.now()}`, 8000);
+                if (candidate && candidate.version && isRemoteInfoForBranch(candidate)) {
+                    remoteInfo = candidate;
+                    break;
+                }
+                lastNetErr = new Error(`Manifest branch mismatch (${candidate && candidate.branch ? candidate.branch : 'unknown'})`);
             } catch (netErr) {
                 lastNetErr = netErr;
             }
@@ -488,7 +604,7 @@ async function checkForUpdate() {
             throw lastNetErr || new Error('Version mirrors unreachable');
         }
         state.lastCheckedAt = new Date().toISOString();
-state.latestVersion = remoteInfo.version || localInfo.version;
+        state.latestVersion = remoteInfo.version || localInfo.version;
         state.releaseNotes = remoteInfo.notes || '';
         const hasUpdate = isUpdateAvailable(state.currentVersion, state.latestVersion);
         const critical = String(remoteInfo.critical || '').toLowerCase() === 'true';
@@ -517,6 +633,29 @@ state.latestVersion = remoteInfo.version || localInfo.version;
     }
 }
 
+// Standalone restart helper. `timeout` command redirect ke saath turant fail ho
+// jata hai ("Input redirection is not supported"), isliye Node ka chhota helper
+// process spawn karte hain jo 2 second wait karke naya server start karta hai.
+function buildStandaloneRelaunch() {
+    const inline = [
+        'const { spawn } = require("child_process");',
+        'setTimeout(() => {',
+        '  const child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), detached: true, stdio: "ignore", windowsHide: true });',
+        '  child.unref();',
+        '}, 2000);'
+    ].join(' ');
+    return {
+        command: process.execPath,
+        args: ['-e', inline],
+        options: {
+            cwd: ROOT_DIR,
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true
+        }
+    };
+}
+
 function triggerCleanRestart() {
     // 0. Hidden supervisor mode: exit karo — supervisor khud naya code load karke restart karega
     if (process.env.CMBC_SUPERVISOR === '1') {
@@ -532,15 +671,11 @@ function triggerCleanRestart() {
         return;
     }
 
-    // 2. Standalone Node process: spawn detached server after brief delay, then exit
+    // 2. Standalone Node process: delayed detached relaunch, then exit cleanly
     logUpdate('Respawning standalone server process with updated code...');
     try {
-        const child = spawn('cmd.exe', ['/c', 'timeout /t 2 /nobreak >nul && node server.js'], {
-            cwd: ROOT_DIR,
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true
-        });
+        const relaunch = buildStandaloneRelaunch();
+        const child = spawn(relaunch.command, relaunch.args, relaunch.options);
         child.unref();
     } catch (err) {
         logUpdate(`Auto-respawn warning: ${err.message}`);
@@ -600,8 +735,11 @@ async function runSilentAutoUpdate(options = {}) {
         return { success: false, skipped: true, reason: 'Update already in progress' };
     }
 
+    // AUTO_UPDATE_DISABLED ko sirf explicit --force hi bypass karta hai.
+    // Purana boot retry `forceCritical` is setting ko boot ke ~1 minute baad
+    // override kar deta tha, jisse user ka disable decision bekaar ho jata tha.
     const disabledFlag = String(process.env.AUTO_UPDATE_DISABLED || '').toLowerCase() === 'true';
-    if (disabledFlag && !force && !forceCritical) {
+    if (disabledFlag && !force) {
         state.lastResult = 'disabled-in-env';
         return { success: true, updated: false, skipped: true, reason: 'AUTO_UPDATE_DISABLED=true in .env' };
     }
@@ -643,6 +781,22 @@ async function runSilentAutoUpdate(options = {}) {
         };
     }
 
+    // Same version ka update recently fail hua ho to 45 minute tak dobara
+    // download/restart loop mat chalao. Isse network/stale-CDN issues par
+    // app har 20 minute me restart hone se bachti hai.
+    const FAILED_UPDATE_COOLDOWN_MS = 45 * 60 * 1000;
+    if (!force && state.failedVersion === check.latestVersion && (Date.now() - state.failedAt) < FAILED_UPDATE_COOLDOWN_MS) {
+        state.lastResult = 'skipped-recent-failure';
+        return {
+            success: true,
+            updated: false,
+            skipped: true,
+            reason: `v${check.latestVersion} update recently fail hua; 45 min cooldown active`,
+            currentVersion: check.currentVersion,
+            latestVersion: check.latestVersion
+        };
+    }
+
     // Critical update: force install even if busy (user safety fix)
     const isCritical = check.critical || forceCritical;
     if (isCritical && !force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
@@ -663,27 +817,41 @@ async function runSilentAutoUpdate(options = {}) {
         runSafeBackupBeforeUpdate();
         setProgress('safety', 38, 'Safety backup verified. Protected data safely isolated.');
 
-        // Step 2: Pull latest code safely (ZIP first for max compatibility, Git as fallback)
+        // Step 2: Pull latest code safely.
+        // Git installs: fetch + reset (exact release, repo clean rehta hai).
+        // Non-git installs (most users): version-verified ZIP.
         setProgress('download', 50, `Downloading latest release package v${check.latestVersion} from GitHub...`);
-        // ZIP first: works on ALL PCs (no git needed), git fallback for those with git installed
-        const zipResult = await applyCodeUpdateViaZip();
-        const hasGit = findGitBinary() !== null;
-        const gitBin = hasGit ? findGitBinary() : null;
+        const gitBin = findGitBinary();
+        let codeApplied = false;
         if (gitBin) {
             try {
                 await applyCodeUpdateViaGit(gitBin, force);
-                const brokenAfterGit = findBrokenFiles();
-                if (brokenAfterGit.length > 0) {
-                    // ZIP already applied; if git still corrupts things, re-apply ZIP to restore
-                    logUpdate(`Git update ke baad files missing/corrupt: ${brokenAfterGit.join(', ')} — ZIP se phir se restore...`);
-                    await applyCodeUpdateViaZip();
-                }
+                codeApplied = true;
+                logUpdate('Git update applied successfully.');
             } catch (gitErr) {
-                logUpdate(`Git update skipped (non-fatal): ${gitErr.message} — ZIP already applied, app chal rahi hai.`);
-                // ZIP already applied, keep current code — ghatailie ya critical na ho to skip karo
+                if (gitErr.message === 'LOCAL_CHANGES_PRESENT' || gitErr.message === 'LOCAL_COMMITS_PRESENT') {
+                    state.lastResult = 'skipped-local-changes';
+                    logUpdate('Local changes/commits mile — auto-update safely skip kiya gaya.');
+                    return {
+                        success: true,
+                        updated: false,
+                        skipped: true,
+                        reason: 'Local uncommitted changes ya local commits present hain; update skip kiya gaya (--force se override karein)',
+                        currentVersion: check.currentVersion,
+                        latestVersion: check.latestVersion
+                    };
+                }
+                logUpdate(`Git update failed (${gitErr.message}) — verified ZIP fallback try ho raha hai...`);
             }
         } else {
-            logUpdate('Git install nahi hai — ZIP se update complete ho chuka hai.');
+            logUpdate('Git install nahi hai — verified ZIP se update hoga.');
+        }
+        if (!codeApplied) {
+            await applyCodeUpdateViaZip(check.latestVersion);
+        }
+        const brokenAfterApply = findBrokenFiles();
+        if (brokenAfterApply.length > 0) {
+            throw new Error(`Update incomplete - missing/corrupt: ${brokenAfterApply.join(', ')}`);
         }
 
         setProgress('download', 72, 'Code package extracted cleanly. Validating dependencies...');
@@ -691,6 +859,15 @@ async function runSilentAutoUpdate(options = {}) {
         // Also repair missing modules, even when package.json itself did not change.
         const pkgHashAfter = fileHash(PKG_FILE);
         dependenciesRepaired = installDependenciesIfNeeded(pkgHashBefore !== pkgHashAfter) || dependenciesRepaired;
+
+        // Code apply hone ke baad confirm karo ki disk par expected version hi hai.
+        // Mismatch par restart/loop nahi karna — warna app bar-bar update karti rehti hai.
+        const appliedVersion = getLocalVersionInfo().version;
+        if (compareVersions(appliedVersion, check.latestVersion) < 0) {
+            throw new Error(`Update incomplete: installed v${appliedVersion}, expected v${check.latestVersion}`);
+        }
+        state.currentVersion = appliedVersion;
+        logUpdate(`Code version verified: v${appliedVersion}`);
 
         // Step 4: Run safe idempotent database migration (zero data loss)
         setProgress('database', 84, 'Applying database schema self-healing & indexes parity...');
@@ -709,7 +886,8 @@ async function runSilentAutoUpdate(options = {}) {
         }
         setProgress('database', 92, 'Database integrity & 115 performance indexes verified.');
 
-        state.currentVersion = getLocalVersionInfo().version;
+        state.failedVersion = null;
+        state.failedAt = 0;
         state.lastResult = 'updated';
         setProgress('restarting', 96, 'Restarting application engine into latest version...');
 
@@ -730,6 +908,8 @@ async function runSilentAutoUpdate(options = {}) {
     } catch (err) {
         state.lastError = err.message;
         state.lastResult = 'error';
+        state.failedVersion = check.latestVersion;
+        state.failedAt = Date.now();
         logUpdate(`Update failed safely (app unaffected): ${err.message}`);
         return { success: false, updated: false, error: err.message };
     } finally {
@@ -818,6 +998,12 @@ if (require.main === module) {
 module.exports = {
     checkForUpdate,
     runSilentAutoUpdate,
+    compareVersions,
+    isUpdateAvailable,
+    isRemoteInfoForBranch,
+    validateArchiveVersion,
+    isProtectedPath,
+    buildStandaloneRelaunch,
     findMissingDependencies,
     npmInstallCommand,
     getUpdateStatus,

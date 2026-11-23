@@ -15,13 +15,36 @@ $ProgressPreference = 'SilentlyContinue'
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls } catch { }
 
-if ([string]::IsNullOrWhiteSpace($ProjectDir) -or -not (Test-Path $ProjectDir)) {
-    try { if ($PSScriptRoot) { $ProjectDir = (Get-Item -Path $PSScriptRoot).Parent.FullName } } catch { }
+if ($ProjectDir) {
+    $ProjectDir = $ProjectDir.Trim('"', "'", ' ', "`t").TrimEnd('\', '/')
 }
+
+if ([string]::IsNullOrWhiteSpace($ProjectDir) -or -not (Test-Path -LiteralPath $ProjectDir)) {
+    try {
+        if ($PSScriptRoot) {
+            $parent = (Get-Item -LiteralPath $PSScriptRoot).Parent.FullName
+            if (Test-Path -LiteralPath (Join-Path $parent 'package.json')) {
+                $ProjectDir = $parent
+            }
+        }
+    } catch { }
+}
+
+# If ProjectDir happens to be inside 'scripts' folder, climb up to project root
+if (Test-Path -LiteralPath $ProjectDir) {
+    if ((Split-Path -Leaf $ProjectDir).ToLower() -eq 'scripts' -and (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $ProjectDir) 'package.json'))) {
+        $ProjectDir = Split-Path -Parent $ProjectDir
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
     $ProjectDir = Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite'
 }
-try { $ProjectDir = (Resolve-Path $ProjectDir).Path } catch { }
+try {
+    if (Test-Path -LiteralPath $ProjectDir) {
+        $ProjectDir = (Resolve-Path -LiteralPath $ProjectDir).Path
+    }
+} catch { }
 if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
     $ProjectDir = Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite'
 }
@@ -436,12 +459,25 @@ $workerBlock = {
             New-Item -ItemType Directory -Force -Path $ProjectDir | Out-Null
         }
 
+        # Admin-managed license config ko sync se pehle safe copy karo. Reset/ZIP
+        # us file ki purani repo copy le aata hai, jisse local keys/blacklist ud sakte hain.
+        $licensePath = Join-Path $ProjectDir 'config\licenses.json'
+        $licenseBackup = $null
+        if (Test-Path $licensePath) {
+            $licenseBackup = Join-Path $env:TEMP "cmbc_licenses_$(Get-Random).json"
+            Copy-Item -Path $licensePath -Destination $licenseBackup -Force -ErrorAction SilentlyContinue
+        }
+
         # 1. Pull latest code via git if git repository exists
         if (Test-Path (Join-Path $ProjectDir ".git")) {
             try {
                 Log-Msg "Git repository detect hua. GitHub se latest code sync kiya ja raha hai..." 'PULL'
-                $branch = if (Test-Path (Join-Path $ProjectDir "database\data\cash_management.db")) { 'sqlite' } else { 'main' }
-                & git -C "$ProjectDir" pull origin $branch --no-edit 2>&1 | Out-Null
+                # SQLite edition hamesha sqlite branch se hi sync hota hai.
+                # DB file missing hone par bhi doosri branch pull karna galat hai.
+                & git -C "$ProjectDir" fetch origin sqlite --quiet 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    & git -C "$ProjectDir" reset --hard origin/sqlite 2>&1 | Out-Null
+                }
             } catch { }
         }
 
@@ -458,14 +494,25 @@ $workerBlock = {
             $vUrls = @(
                 "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/version.json?t=$ticks",
                 "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/version.json?t=$ticks",
-                "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/version.json?t=$ticks"
+                "$RepoFastly/version.json?t=$ticks"
             )
             foreach ($u in $vUrls) {
                 try {
                     $vResp = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
                     $remoteObj = $vResp.Content | ConvertFrom-Json
                     if ($remoteObj -and $remoteObj.version) {
-                        if ($remoteObj.version -ne $localVer) {
+                        # Sirf sqlite edition ka manifest accept karo.
+                        if ($remoteObj.branch -and "$($remoteObj.branch)".Trim().ToLower() -ne 'sqlite') { continue }
+
+                        # Sirf newer version par sync karo. Older/different version par
+                        # baar-baar download karna band.
+                        $isNewer = $false
+                        try {
+                            $isNewer = ([version]([string]$remoteObj.version) -gt [version]([string]$localVer))
+                        } catch {
+                            $isNewer = ([string]$remoteObj.version -ne [string]$localVer)
+                        }
+                        if ($isNewer) {
                             Log-Msg "Naya version detect hua: Local v$localVer -> Remote v$($remoteObj.version). Auto-syncing files..." 'UPDATE'
                             $needsCodeUpdate = $true
                         }
@@ -500,14 +547,70 @@ $workerBlock = {
             if ($ok) {
                 Update-Step 2 'RUNNING' 80 "Extracting ZIP..." "Archive extract ho raha hai..."
                 Log-Msg "Archive extract ho raha hai..." 'EXTRACT'
-                Expand-Archive -Path $zip -DestinationPath $extr -Force
+                try {
+                    Expand-Archive -Path $zip -DestinationPath $extr -Force -ErrorAction Stop
+                } catch {
+                    Log-Msg "Expand-Archive error: $($_.Exception.Message)" 'WARN'
+                    $ok = $false
+                }
                 $subDir = Get-ChildItem -Path $extr -Directory | Select-Object -First 1
                 $src = if ($subDir) { $subDir.FullName } else { $extr }
-                Copy-Item -Path "$src\*" -Destination $ProjectDir -Recurse -Force
+
+                # Live files overwrite karne se pehle archive verify karo:
+                # - server.js aur SQLite setup script present hone chahiye
+                # - version.json ka branch sqlite hona chahiye (SQL Server build kabhi na aaye)
+                $archiveOk = $false
+                if ($ok -and (Test-Path (Join-Path $src 'server.js')) -and (Test-Path (Join-Path $src 'database\setup_sqlite.js'))) {
+                    $archiveOk = $true
+                    $archiveVerFile = Join-Path $src 'version.json'
+                    if (Test-Path $archiveVerFile) {
+                        try {
+                            $archiveVer = Get-Content $archiveVerFile -Raw | ConvertFrom-Json
+                            if ($archiveVer.branch -and "$($archiveVer.branch)".Trim().ToLower() -ne 'sqlite') { $archiveOk = $false }
+                        } catch { $archiveOk = $false }
+                    }
+                }
+
+                if ($archiveOk) {
+                    try {
+                        # Preserve existing .env and user database if present
+                        $envPath = Join-Path $ProjectDir '.env'
+                        $envBackup = $null
+                        if (Test-Path $envPath) {
+                            $envBackup = Join-Path $env:TEMP "cmbc_env_$(Get-Random).tmp"
+                            Copy-Item -Path $envPath -Destination $envBackup -Force -ErrorAction SilentlyContinue
+                        }
+                        $dbPath = Join-Path $ProjectDir 'database\data\cash_management.db'
+                        $dbBackup = $null
+                        if (Test-Path $dbPath) {
+                            $dbBackup = Join-Path $env:TEMP "cmbc_db_$(Get-Random).tmp"
+                            Copy-Item -Path $dbPath -Destination $dbBackup -Force -ErrorAction SilentlyContinue
+                        }
+
+                        Copy-Item -Path "$src\*" -Destination $ProjectDir -Recurse -Force -ErrorAction SilentlyContinue
+
+                        if ($envBackup -and (Test-Path $envBackup)) {
+                            Copy-Item -Path $envBackup -Destination $envPath -Force -ErrorAction SilentlyContinue
+                            Remove-Item $envBackup -Force -ErrorAction SilentlyContinue
+                        }
+                        if ($dbBackup -and (Test-Path $dbBackup)) {
+                            Copy-Item -Path $dbBackup -Destination $dbPath -Force -ErrorAction SilentlyContinue
+                            Remove-Item $dbBackup -Force -ErrorAction SilentlyContinue
+                        }
+
+                        Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
+                    } catch {
+                        Log-Msg "File copy error: $($_.Exception.Message)" 'WARN'
+                    }
+                } else {
+                    $ok = $false
+                    Log-Msg "Downloaded ZIP SQLite edition ka valid build nahi hai - use apply nahi kiya gaya." 'WARN'
+                }
+
                 Remove-Item $zip -Force -ErrorAction SilentlyContinue
                 Remove-Item $extr -Recurse -Force -ErrorAction SilentlyContinue
-                Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
-            } else {
+            }
+            if (-not $ok) {
                 Log-Msg "Direct ZIP download fail hua. Individual files sync ki ja rahi hain..." 'WARN'
                 # Fallback: Sync individual critical files via CDN with cache-buster
                 foreach ($f in $RequiredFiles.Keys) {
@@ -525,6 +628,15 @@ $workerBlock = {
             }
         } else {
             Log-Msg "Saari project files 100% verified hain." 'OK'
+        }
+
+        # License config restore karo (agar local copy thi).
+        if ($licenseBackup -and (Test-Path $licenseBackup)) {
+            $cfgDir = Join-Path $ProjectDir 'config'
+            if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
+            Copy-Item -Path $licenseBackup -Destination $licensePath -Force -ErrorAction SilentlyContinue
+            Remove-Item $licenseBackup -Force -ErrorAction SilentlyContinue
+            Log-Msg "Local license config (config\licenses.json) safely preserved." 'OK'
         }
 
         Update-Step 2 'SUCCESS' 100 "Project Files Ready" "Step 2 : Project Files 100% Verified"
@@ -1327,14 +1439,14 @@ if ($guiAvailable) {
 
         $global:Window.ShowDialog() | Out-Null
         $ps.Dispose(); $rs.Close(); $rs.Dispose()
-        exit 0
+        if ($sync.HasError) { exit 1 } else { exit 0 }
     } catch {
         Write-Host "GUI launch notice: $($_.Exception.Message)" -ForegroundColor Yellow
         Write-Host "High-speed console mode me chal raha hai..." -ForegroundColor Cyan
         & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoFastly $RepoZip $RepoZipAlt ([bool]($Clean.IsPresent -or ($env:CLEAN_INSTALL -eq '1')))
-        exit 0
+        if ($sync.HasError) { exit 1 } else { exit 0 }
     }
 } else {
     & $workerBlock $sync $ProjectDir $isAdmin $RequiredFiles $LogFile $RepoRaw $RepoCdn $RepoFastly $RepoZip $RepoZipAlt ([bool]($Clean.IsPresent -or ($env:CLEAN_INSTALL -eq '1')))
-    exit 0
+    if ($sync.HasError) { exit 1 } else { exit 0 }
 }
