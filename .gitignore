@@ -73,3 +73,5 @@ scripts/*
 !scripts/reconcile_and_backfill_all_sn.js
 !scripts/create_project_zip.js
 !scripts/gdrive_backup.js
+!scripts/sync_delta_sqlite_to_sqlserver.js
+!scripts/sync_delta_sqlserver_to_sqlite.js
