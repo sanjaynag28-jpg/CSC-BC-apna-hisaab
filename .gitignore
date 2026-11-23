@@ -75,3 +75,4 @@ scripts/*
 !scripts/gdrive_backup.js
 !scripts/sync_delta_sqlite_to_sqlserver.js
 !scripts/sync_delta_sqlserver_to_sqlite.js
+!scripts/switch_to_sqlite.js
