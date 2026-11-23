@@ -1046,20 +1046,36 @@ function startServer() {
                 try { require('./utils/windows_autostart').ensureWindowsAutostart(); } catch (e) { }
             }, 10000);
 
-// Automatic Silent Update from GitHub:
-// boot ke 5s baad ek check + har raat 2:30 AM (idle hone par hi restart).
-// Din me restart nahi hoga, isliye kisi transaction ke beech update ka risk nahi.
-setTimeout(() => {
-    autoUpdater.runSilentAutoUpdate({
-        restartOnUpdate: true,
-        requireIdle: true,
-        isIdle: () => activeRequests === 0
-    }).catch(() => { });
-}, 5000);
+// Smart Proactive Auto-Update Engine (Immediate Zero-Touch Delivery):
+// 1. Boot ke 8s baad pehla check, agar app busy ho to har 15s me retry karega (max 8 attempts).
+// 2. Har 20 minute me automatic background check (4 ghante lambe intezar ki zaroorat nahi).
+// 3. Raat 2:30 AM scheduler.
+function scheduleBootAutoUpdate() {
+    let attempts = 0;
+    const maxAttempts = 8;
+    const tryBootUpdate = async () => {
+        attempts++;
+        try {
+            const res = await autoUpdater.runSilentAutoUpdate({
+                restartOnUpdate: true,
+                requireIdle: true,
+                forceCritical: attempts >= 4,
+                isIdle: () => activeRequests === 0
+            });
+            if (res && res.updated) return;
+            if (res && res.skipped && attempts < maxAttempts) {
+                setTimeout(tryBootUpdate, 15000);
+            }
+        } catch (_) {
+            if (attempts < maxAttempts) setTimeout(tryBootUpdate, 20000);
+        }
+    };
+    setTimeout(tryBootUpdate, 8000);
+}
+scheduleBootAutoUpdate();
 
-// Background periodic auto-update check: har 4 ghante mein GitHub se naya version check karega.
-// Agar naya version mila to silent install hoga (idle hone par restart).
-autoUpdater.startPeriodicCheck(4 * 60 * 60 * 1000, () => activeRequests === 0);
+// Har 20 minute me automatic background check (Sanjay ji ke push karte hi sabhi PC par bina restart update)
+autoUpdater.startPeriodicCheck(20 * 60 * 1000, () => activeRequests === 0);
 
 scheduleNightlyUpdate();
         });

@@ -1,8 +1,8 @@
 {
-  "version": "1.0.71",
+  "version": "1.0.72",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: tenant isolation, sqlite integrity constraints, foreign keys and audit fixes"
+  "notes": "feat: 100% zero-touch auto-update with 20min interval, multi-mirror CDN and boot retry"
 }

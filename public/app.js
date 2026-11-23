@@ -27294,6 +27294,19 @@ async function refreshAppVersionBadge(showGlow) {
                 renderUpdateBanner(data);
                 renderDashboardUpdateBanner(data);
                 updateSettingsSystemTab(data);
+
+                // Zero-touch: Auto-apply critical updates without requiring manual click
+                if (data.critical && !window._autoUpdateTriggered) {
+                    window._autoUpdateTriggered = true;
+                    if (typeof showToast === 'function') {
+                        showToast(`नया ज़रूरी अपडेट (v${data.latestVersion}) बैकग्राउंड में स्वतः लागू हो रहा है...`, 'info', 'Auto Update');
+                    }
+                    setTimeout(() => {
+                        if (typeof window.applyLiveUpdateFromWeb === 'function') {
+                            window.applyLiveUpdateFromWeb();
+                        }
+                    }, 8000);
+                }
             } else {
                 const dbBanner = document.getElementById('dashboardUpdateNotificationBanner');
                 if (dbBanner) dbBanner.innerHTML = '';

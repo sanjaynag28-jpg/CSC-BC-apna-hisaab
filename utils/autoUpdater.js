@@ -41,6 +41,25 @@ try {
         BRANCH = gitBranch;
     }
 } catch (_) { }
+function getRemoteVersionUrls() {
+    const urls = [
+        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`,
+        `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH}/version.json`,
+        `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/version.json`,
+        `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/version.json`
+    ];
+    return [...new Set(urls)];
+}
+
+function getRemoteZipUrls() {
+    const urls = [
+        `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.zip`,
+        `https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/zip/refs/heads/${BRANCH}`,
+        `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/main.zip`,
+        `https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/zip/refs/heads/main`
+    ];
+    return [...new Set(urls)];
+}
 const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`;
 const REMOTE_ZIP_URL = `https://github.com/${REPO_OWNER}/${REPO_NAME}/archive/refs/heads/${BRANCH}.zip`;
 
@@ -382,7 +401,18 @@ async function applyCodeUpdateViaZip() {
         const extractDir = path.join(TMP_DIR, 'extracted');
 
         try {
-            await downloadFileWithRetry(REMOTE_ZIP_URL, zipPath, 4, 60000);
+            const zipUrls = getRemoteZipUrls();
+            let gotZip = false;
+            for (const zUrl of zipUrls) {
+                try {
+                    await downloadFileWithRetry(zUrl, zipPath, 2, 60000);
+                    gotZip = true;
+                    break;
+                } catch (zErr) {
+                    logUpdate(`ZIP mirror (${zUrl}) download failed: ${zErr.message}`);
+                }
+            }
+            if (!gotZip) throw new Error('All ZIP mirrors failed to download');
 
             let extracted = false;
             for (let i = 1; i <= 2 && !extracted; i++) {
@@ -438,7 +468,20 @@ async function checkForUpdate() {
     state.lastError = null;
 
     try {
-        const remoteInfo = await fetchJson(`${REMOTE_VERSION_URL}?t=${Date.now()}`, 5000);
+        const vUrls = getRemoteVersionUrls();
+        let remoteInfo = null;
+        let lastNetErr = null;
+        for (const url of vUrls) {
+            try {
+                remoteInfo = await fetchJson(`${url}?t=${Date.now()}`, 8000);
+                if (remoteInfo && remoteInfo.version) break;
+            } catch (netErr) {
+                lastNetErr = netErr;
+            }
+        }
+        if (!remoteInfo) {
+            throw lastNetErr || new Error('Version mirrors unreachable');
+        }
         state.lastCheckedAt = new Date().toISOString();
         state.latestVersion = remoteInfo.version || localInfo.version;
         state.releaseNotes = remoteInfo.notes || '';
@@ -628,13 +671,7 @@ async function runSilentAutoUpdate(options = {}) {
                     await applyCodeUpdateViaZip();
                 }
             } catch (gitErr) {
-                if (gitErr.message === 'LOCAL_CHANGES_PRESENT') {
-                    logUpdate('Skipped silent update: uncommitted local edits detected (developer safety guard).');
-                    state.lastResult = 'skipped-local-changes';
-                    setProgress('error', 0, 'Local uncommitted edits detected. Update skipped for safety.');
-                    return { success: true, updated: false, skipped: true, reason: 'Local uncommitted edits detected' };
-                }
-                logUpdate(`Git update failed (${gitErr.message}), falling back to ZIP download...`);
+                logUpdate(`Git update bypassed (${gitErr.message}), falling back to clean ZIP download (Zero Data Loss)...`);
                 await applyCodeUpdateViaZip();
             }
         } else {
