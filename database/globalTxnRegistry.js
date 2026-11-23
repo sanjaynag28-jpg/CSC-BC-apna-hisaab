@@ -73,7 +73,7 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
 
         // Atomic serial allocation
         const maxRes = await tQ(`
-            SELECT IFNULL(MAX(ModuleSerialNo), 0) + 1 AS nextMod 
+            SELECT COALESCE(MAX(ModuleSerialNo), 0) + 1 AS nextMod 
             FROM UniversalTxnRegistry 
             WHERE SourceModule = @sourceModule
         `, { sourceModule: queryParams.sourceModule });

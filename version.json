@@ -1,8 +1,8 @@
 {
-  "version": "1.0.57",
+  "version": "1.0.58",
   "critical": true,
-  "releasedAt": "2026-11-22",
+  "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "v1.0.57 Self-Healing CSC Services: Auto-repair CSCServices schema, fail-safe 200 OK fallback, zero dashboard red error toasts."
+  "notes": "v1.0.58 SQL Server & SQLite Cross-Parity: Fix COALESCE in Universal SN Registry for seamless BillPay on SQL Server (Port 3000)."
 }
