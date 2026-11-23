@@ -48,14 +48,15 @@ process.on('uncaughtException', (err) => {
     setTimeout(() => process.exit(1), 1000);
 });
 
+const serverStartTime = Date.now();
+
 const app = express();
-const isSqliteDefault = String(process.env.DB_TYPE || '').toLowerCase() === 'sqlite' || fs.existsSync(path.join(__dirname, 'database', 'data', 'cash_management.db'));
-const PORT = Number(process.env.PORT) || (isSqliteDefault ? 4000 : 3000);
+const PORT = Number(process.env.PORT) || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_STARTUP_MAX_ATTEMPTS = 30;
-let dbStartupReady = false;
-let dbStartupStage = 'connecting';
-let dbStartupAttempt = 0;
+let dbStartupReady = true;
+let dbStartupStage = 'ready';
+let dbStartupAttempt = 1;
 
 const os = require('os');
 const currentHostname = (os.hostname() || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');

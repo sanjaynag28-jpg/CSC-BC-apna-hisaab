@@ -1246,19 +1246,17 @@
             <h2>DATABASE NOT CONNECTED!</h2>
             <div class="db-lockdown-badge">PROJECT OPERATIONS LOCKED</div>
             <p class="db-lockdown-msg">
-                SQL Server se sampark toot gaya hai ya database band hai.<br>
+                Database service se sampark toot gaya hai ya server band hai.<br>
                 <strong>Kisi bhi galat entry ya data loss se bachne ke liye project ko lock kiya gaya hai.</strong>
             </p>
             <div class="db-lockdown-tips">
                 <div class="dlt-item">
                     <i data-lucide="check-circle-2"></i>
-                    <span>Check karein ki <strong>SQL Server (SQLEXPRESS)</strong> service chal rahi hai (Windows Run
-                        -&gt; <code>services.msc</code>)</span>
+                    <span>Check karein ki <strong>Cash Management Local Server (Port 4000)</strong> service chal rahi hai</span>
                 </div>
                 <div class="dlt-item">
                     <i data-lucide="check-circle-2"></i>
-                    <span>Database: <strong>CashManagement</strong> on <code>localhost\SQLEXPRESS</code> (as configured
-                        in <code>.env</code>)</span>
+                    <span>Database: <strong>cash_management.db</strong> (Embedded SQLite Zero-Install Edition)</span>
                 </div>
             </div>
             <div class="db-lockdown-actions">
