@@ -28136,3 +28136,219 @@ function hideLicenseLockModal() {
 setTimeout(() => loadLicenseSettingsUI(true), 1200);
 setInterval(() => loadLicenseSettingsUI(true), 15 * 60 * 1000);
 
+// ============================================================================
+// ADMIN CLOUD LICENSE CONTROL PANEL WIZARD (GitHub Cloud Manager)
+// ============================================================================
+let currentAdminCloudConfig = null;
+let adminBlacklistHwIds = [];
+
+async function openAdminCloudControlModal() {
+    const modal = document.getElementById('adminCloudControlModal');
+    if (!modal) return;
+
+    try {
+        const res = await fetch('/api/license/admin/cloud-config');
+        if (!res.ok) {
+            if (typeof showToast === 'function') {
+                showToast('❌ केवल एडमिन को ही इस पैनल की अनुमति है', 'error');
+            }
+            return;
+        }
+        const data = await res.json();
+        if (data && data.success && data.config) {
+            currentAdminCloudConfig = data.config;
+            const u = (data.config.universalKeys && data.config.universalKeys['TEST123']) || {};
+            
+            const expInput = document.getElementById('accExpiryDate');
+            if (expInput) expInput.value = u.expiryDate || '2027-02-23';
+
+            const planInput = document.getElementById('accPlanName');
+            if (planInput) planInput.value = u.planHindi || u.plan || '९० दिन फ्री ट्रायल (Universal Offer)';
+
+            const msgInput = document.getElementById('accMessage');
+            if (msgInput) msgInput.value = u.message || '९० दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है!';
+
+            const activeCheck = document.getElementById('accKeyActive');
+            if (activeCheck) {
+                activeCheck.checked = u.isActive !== false;
+                updateAccActiveLabel();
+            }
+
+            adminBlacklistHwIds = Array.isArray(data.config.blacklistedHardwareIds) ? [...data.config.blacklistedHardwareIds] : [];
+            renderAccBlacklist();
+
+            modal.style.display = 'flex';
+            try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+        }
+    } catch (e) {
+        if (typeof showToast === 'function') {
+            showToast('❌ त्रुटि: ' + e.message, 'error');
+        }
+    }
+}
+
+function closeAdminCloudControlModal(e) {
+    if (e && e.target && e.target.id !== 'adminCloudControlModal' && !e.target.classList.contains('btn-close')) {
+        return;
+    }
+    const modal = document.getElementById('adminCloudControlModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function updateAccActiveLabel() {
+    const chk = document.getElementById('accKeyActive');
+    const lbl = document.getElementById('accKeyActiveLabel');
+    if (chk && lbl) {
+        if (chk.checked) {
+            lbl.textContent = 'सक्रिय (Active)';
+            lbl.style.color = '#34d399';
+        } else {
+            lbl.textContent = 'निष्क्रिय (Disabled - Lock All)';
+            lbl.style.color = '#f87171';
+        }
+    }
+}
+
+function extendAdminLicenseDays(daysToAdd) {
+    const expInput = document.getElementById('accExpiryDate');
+    if (!expInput) return;
+
+    let base = new Date();
+    if (expInput.value) {
+        const parts = expInput.value.split('-').map(Number);
+        if (parts.length === 3) {
+            const parsed = new Date(parts[0], parts[1] - 1, parts[2]);
+            if (!isNaN(parsed.getTime()) && parsed > base) {
+                base = parsed;
+            }
+        }
+    }
+
+    base.setDate(base.getDate() + Number(daysToAdd));
+    const yyyy = base.getFullYear();
+    const mm = String(base.getMonth() + 1).padStart(2, '0');
+    const dd = String(base.getDate()).padStart(2, '0');
+    const newDateStr = `${yyyy}-${mm}-${dd}`;
+
+    expInput.value = newDateStr;
+    expInput.style.borderColor = '#10b981';
+    expInput.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+    setTimeout(() => {
+        expInput.style.borderColor = '';
+        expInput.style.boxShadow = '';
+    }, 1500);
+
+    if (typeof showToast === 'function') {
+        showToast(`+${daysToAdd} दिन जोड़े गए! नई समाप्ति तारीख: ${newDateStr}`, 'info');
+    }
+}
+
+function renderAccBlacklist() {
+    const container = document.getElementById('accBlacklistContainer');
+    if (!container) return;
+
+    if (!adminBlacklistHwIds.length) {
+        container.innerHTML = '<span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">वर्तमान में कोई मशीन ब्लॉक नहीं है।</span>';
+        return;
+    }
+
+    container.innerHTML = adminBlacklistHwIds.map(hw => `
+        <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 12px;">
+            <span>${hw}</span>
+            <button type="button" onclick="removeBlacklistHardwareId('${hw}')" style="background: none; border: none; color: #f87171; cursor: pointer; padding: 0 2px; font-weight: bold;">✕</button>
+        </span>
+    `).join('');
+}
+
+function addBlacklistHardwareId() {
+    const input = document.getElementById('accNewBlacklistHwId');
+    const val = input ? input.value.trim().toUpperCase() : '';
+    if (!val) return;
+
+    if (!adminBlacklistHwIds.includes(val)) {
+        adminBlacklistHwIds.push(val);
+        renderAccBlacklist();
+        if (input) input.value = '';
+    }
+}
+
+function removeBlacklistHardwareId(hwId) {
+    adminBlacklistHwIds = adminBlacklistHwIds.filter(x => x !== hwId);
+    renderAccBlacklist();
+}
+
+async function saveAndPushCloudLicenses() {
+    const expDate = document.getElementById('accExpiryDate')?.value;
+    const planName = document.getElementById('accPlanName')?.value;
+    const message = document.getElementById('accMessage')?.value;
+    const isActive = document.getElementById('accKeyActive')?.checked !== false;
+
+    if (!expDate) {
+        if (typeof showToast === 'function') showToast('❌ कृपया एक्सपायरी तारीख चुनें!', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btnSavePushCloud');
+    const progressArea = document.getElementById('accProgressArea');
+    const progressText = document.getElementById('accProgressText');
+
+    if (btn) btn.disabled = true;
+    if (progressArea) progressArea.style.display = 'block';
+    if (progressText) {
+        progressText.innerHTML = '<i data-lucide="loader-2" class="spin" style="color: #a78bfa;"></i> <span>GitHub पर सेव और लाइव पुश किया जा रहा है... कृपया 5-10 सेकंड प्रतीक्षा करें</span>';
+        try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+    }
+
+    const payload = {
+        universalKeys: {
+            'TEST123': {
+                key: 'TEST123',
+                plan: planName || '90 Days Free Trial',
+                planHindi: planName || '९० दिन फ्री ट्रायल (Universal Offer)',
+                expiryDate: expDate,
+                isActive: isActive,
+                maxDevices: 99999,
+                message: message || '९० दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है!'
+            }
+        },
+        blacklistedHardwareIds: adminBlacklistHwIds
+    };
+
+    try {
+        const res = await fetch('/api/license/admin/cloud-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data && data.success) {
+            if (progressText) {
+                progressText.innerHTML = '<i data-lucide="check-circle" style="color: #34d399;"></i> <span style="color: #34d399;">🎉 बधाई! ' + (data.message || 'GitHub पर सफलतापूर्वक लाइव हो गया!') + '</span>';
+                try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+            }
+            if (typeof showToast === 'function') {
+                showToast('🎉 GitHub पर नई तारीख तुरंत लाइव हो गई!', 'success');
+            }
+            setTimeout(() => {
+                syncLicenseWithCloud();
+                closeAdminCloudControlModal();
+                if (progressArea) progressArea.style.display = 'none';
+                if (btn) btn.disabled = false;
+            }, 1800);
+        } else {
+            if (progressText) {
+                progressText.innerHTML = '<i data-lucide="alert-circle" style="color: #f87171;"></i> <span style="color: #f87171;">❌ ' + (data.error || 'पुश विफल') + '</span>';
+                try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+            }
+            if (btn) btn.disabled = false;
+        }
+    } catch (e) {
+        if (progressText) {
+            progressText.innerHTML = '<i data-lucide="alert-circle" style="color: #f87171;"></i> <span style="color: #f87171;">❌ कनेक्शन त्रुटि: ' + e.message + '</span>';
+            try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+        }
+        if (btn) btn.disabled = false;
+    }
+}
+

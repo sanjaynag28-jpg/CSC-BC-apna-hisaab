@@ -6220,6 +6220,11 @@
                                     <i data-lucide="refresh-cw" id="iconSyncLicense"></i>
                                     <span>GitHub क्लाउड सिंक</span>
                                 </button>
+                                <button type="button" class="btn btn-primary" onclick="openAdminCloudControlModal()" id="btnAdminCloudControl"
+                                    style="display: flex; align-items: center; gap: 6px; font-weight: 700; padding: 7px 16px; border-radius: 8px; font-size: 13px; background: linear-gradient(135deg, #8b5cf6, #6366f1); border: none; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+                                    <i data-lucide="sliders"></i>
+                                    <span>क्लाउड कंट्रोल पैनल (Admin)</span>
+                                </button>
                             </div>
                         </div>
 
@@ -12547,6 +12552,122 @@
                 </div>
                 <div id="lockModalMsg" style="display: none; margin-top: 8px; font-size: 12px; font-weight: 600;"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
+             MODAL: ADMIN CLOUD LICENSE CONTROL PANEL WIZARD
+             (संजय जी के लिए GitHub क्लाउड कंट्रोल पैनल)
+             ========================================== -->
+    <div class="modal-overlay" id="adminCloudControlModal" style="display: none; z-index: 999999; backdrop-filter: blur(8px); background: rgba(15, 23, 42, 0.85);" onclick="closeAdminCloudControlModal(event)">
+        <div class="modal" onclick="event.stopPropagation()"
+            style="width: min(720px, calc(100vw - 32px)); max-width: 720px; border-radius: 16px; border: 1.5px solid rgba(139, 92, 246, 0.4); box-shadow: 0 25px 50px -12px rgba(139, 92, 246, 0.25); padding: 24px; max-height: 90vh; overflow-y: auto;">
+            
+            <!-- Modal Header -->
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(139, 92, 246, 0.15); color: #a78bfa; display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                        <i data-lucide="cloud-cog" style="width: 24px; height: 24px;"></i>
+                    </div>
+                    <div>
+                        <h2 style="font-size: 18px; font-weight: 800; color: var(--text-primary); margin: 0;">
+                            क्लाउड लाइसेंस कंट्रोल पैनल (GitHub Cloud Wizard)
+                        </h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+                            बिना GitHub खोले एक क्लिक में सभी ग्राहकों की तारीख बढ़ाएं, घटाएं या प्लान नियंत्रित करें।
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" onclick="closeAdminCloudControlModal()" style="background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer;">✕</button>
+            </div>
+
+            <!-- CARD 1: UNIVERSAL KEY (TEST123) CONTROLS -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; margin-bottom: 18px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-family: monospace; font-size: 15px; font-weight: 800; background: rgba(168, 85, 247, 0.2); color: #c084fc; padding: 4px 10px; border-radius: 6px;">TEST123</span>
+                        <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">यूनिवर्सल कम्युनिटी की (Universal Key)</span>
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 700;">
+                        <input type="checkbox" id="accKeyActive" checked style="width: 16px; height: 16px; accent-color: #10b981;" onchange="updateAccActiveLabel()">
+                        <span id="accKeyActiveLabel" style="color: #34d399;">सक्रिय (Active)</span>
+                    </label>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">प्लान का नाम (हिंदी/अंग्रेजी):</label>
+                        <input type="text" id="accPlanName" value="९० दिन फ्री ट्रायल (Universal Offer)" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">समाप्ति तारीख (Expiry Date):</label>
+                        <input type="date" id="accExpiryDate" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 700;">
+                    </div>
+                </div>
+
+                <!-- FAST QUICK-ADD EXTENSION BUTTONS -->
+                <div style="margin-bottom: 14px;">
+                    <label style="font-size: 11px; font-weight: 700; color: #a78bfa; text-transform: uppercase; display: block; margin-bottom: 6px;">
+                        ⚡ एक क्लिक में तारीख आगे बढ़ाएं (Quick Add Days):
+                    </label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(15)" style="padding: 5px 12px; font-size: 12px; font-weight: 700;">+15 दिन</button>
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(30)" style="padding: 5px 12px; font-size: 12px; font-weight: 700;">+30 दिन</button>
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(60)" style="padding: 5px 12px; font-size: 12px; font-weight: 700;">+60 दिन</button>
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(90)" style="padding: 5px 12px; font-size: 12px; font-weight: 700; background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);">+90 दिन (Recommended)</button>
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(180)" style="padding: 5px 12px; font-size: 12px; font-weight: 700;">+6 महीने</button>
+                        <button type="button" class="btn btn-secondary" onclick="extendAdminLicenseDays(365)" style="padding: 5px 12px; font-size: 12px; font-weight: 700; background: rgba(99, 102, 241, 0.15); color: #818cf8; border-color: rgba(99, 102, 241, 0.3);">+1 साल</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">ग्राहकों के लिए संदेश / नोटिस:</label>
+                    <input type="text" id="accMessage" value="९० दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है!" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                </div>
+            </div>
+
+            <!-- CARD 2: BLACKLIST HARDWARE IDS -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                        <i data-lucide="shield-ban" style="width: 16px; height: 16px; color: #ef4444;"></i>
+                        <span>ब्लैकलिस्टेड मशीन कोड (Block Remote Computers)</span>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-secondary);">कोई विवाद या चोरी होने पर मशीन ब्लॉक करें</span>
+                </div>
+                
+                <div id="accBlacklistContainer" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; min-height: 28px;">
+                    <span style="font-size: 12px; color: var(--text-secondary); font-style: italic;">वर्तमान में कोई मशीन ब्लॉक नहीं है।</span>
+                </div>
+
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="accNewBlacklistHwId" placeholder="ब्लॉक करने के लिए Hardware ID दर्ज करें (उदा. HWID-A1B2-C3D4)..." style="flex: 1 1 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; text-transform: uppercase;">
+                    <button type="button" class="btn btn-secondary" onclick="addBlacklistHardwareId()" style="padding: 8px 14px; font-size: 12px; font-weight: 700; color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+                        🚫 ब्लॉक लिस्ट में जोड़ें
+                    </button>
+                </div>
+            </div>
+
+            <!-- PROGRESS & LOG NOTIFICATION AREA -->
+            <div id="accProgressArea" style="display: none; background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-bottom: 18px;">
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700;" id="accProgressText">
+                    <i data-lucide="loader-2" class="spin" style="color: #a78bfa;"></i>
+                    <span>GitHub पर सेव और लाइव पुश किया जा रहा है...</span>
+                </div>
+            </div>
+
+            <!-- MODAL ACTIONS -->
+            <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <button type="button" class="btn btn-secondary" onclick="closeAdminCloudControlModal()" style="padding: 10px 18px; font-weight: 600;">
+                    रद्द करें (Cancel)
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveAndPushCloudLicenses()" id="btnSavePushCloud"
+                    style="padding: 10px 24px; font-weight: 800; font-size: 14px; background: linear-gradient(135deg, #10b981, #059669); border: none; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="upload-cloud"></i>
+                    <span>🚀 एक क्लिक में GitHub पर लागू करें (Save & Push)</span>
+                </button>
+            </div>
+
         </div>
     </div>
 
