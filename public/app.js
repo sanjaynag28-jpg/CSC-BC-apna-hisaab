@@ -640,6 +640,13 @@ function handleLiveEventMessage(event) {
             refreshDebounceTimer = setTimeout(() => {
                 refreshAllActiveViews('sse_realtime');
             }, 80);
+        } else if (data.type === 'UPDATE_AVAILABLE' || data.module === 'SYSTEM_UPDATE') {
+            if (typeof renderUpdateBanner === 'function') {
+                renderUpdateBanner(data);
+            }
+            if (typeof renderDashboardUpdateBanner === 'function') {
+                renderDashboardUpdateBanner(data);
+            }
         }
     } catch (err) { }
 }
@@ -3158,6 +3165,10 @@ function showPage(page, navEl) {
 
     currentPage = page;
     updateBreadcrumb();
+
+    if (page === 'dashboard' && typeof checkLiveUpdate === 'function') {
+        checkLiveUpdate(false);
+    }
 
     // Instant top progress visual feedback
     startTopLoading();
@@ -27288,10 +27299,18 @@ async function refreshAppVersionBadge(showGlow) {
             const data = await res.json();
             if (data && data.hasUpdate) {
                 renderUpdateBanner(data);
+                renderDashboardUpdateBanner(data);
                 updateSettingsSystemTab(data);
-            } else if (isUserClick) {
-                if (typeof showToast === 'function') {
-                    showToast(`Aapka app sabse latest version (v${data.currentVersion || '1.0.54'}) par hai! Koi naya update nahi hai.`, 'success', 'App Up to Date');
+            } else {
+                const dbBanner = document.getElementById('dashboardUpdateNotificationBanner');
+                if (dbBanner) dbBanner.innerHTML = '';
+                const topBanner = document.getElementById('cmbcLiveUpdateBanner');
+                if (topBanner && !updateBannerDismissed) topBanner.remove();
+                const badge = document.getElementById('badge-update-alert');
+                if (badge) badge.style.display = 'none';
+
+                if (isUserClick && typeof showToast === 'function') {
+                    showToast(`Aapka app sabse latest version (v${data.currentVersion || '1.0.59'}) par hai! Koi naya update nahi hai.`, 'success', 'App Up to Date');
                 }
             }
         } catch (e) {
@@ -27302,6 +27321,58 @@ async function refreshAppVersionBadge(showGlow) {
             updateCheckInProgress = false;
         }
     }
+
+    function renderDashboardUpdateBanner(info) {
+        let container = document.getElementById('dashboardUpdateNotificationBanner');
+        if (!container) {
+            const pageDashboard = document.getElementById('page-dashboard');
+            if (!pageDashboard) return;
+            const pageHeader = pageDashboard.querySelector('.page-header');
+            container = document.createElement('div');
+            container.id = 'dashboardUpdateNotificationBanner';
+            if (pageHeader && pageHeader.nextSibling) {
+                pageDashboard.insertBefore(container, pageHeader.nextSibling);
+            } else {
+                pageDashboard.prepend(container);
+            }
+        }
+
+        const badge = document.getElementById('badge-update-alert');
+        if (badge) badge.style.display = 'inline-block';
+
+        const safeVer = escapeHtml(info.latestVersion || '1.0.59');
+        const safeCur = escapeHtml(info.currentVersion || '1.0.58');
+        const safeNotes = escapeHtml(info.notes || 'Naye features, bugs fix aur automatic database self-repair updates.');
+
+        container.innerHTML = `
+            <div style="background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%); color: #ffffff; padding: 20px 24px; border-radius: 14px; margin-bottom: 22px; box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.45); display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1.5px solid rgba(96, 165, 250, 0.4); animation: fadeIn 0.3s ease-in-out;">
+                <div style="display: flex; align-items: center; gap: 18px;">
+                    <div style="font-size: 34px; background: rgba(255,255,255,0.15); width: 56px; height: 56px; min-width: 56px; display: flex; align-items: center; justify-content: center; border-radius: 14px; box-shadow: inset 0 2px 4px rgba(255,255,255,0.2);">🚀</div>
+                    <div>
+                        <div style="font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <span>नया सॉफ्टवेयर अपडेट उपलब्ध है! (v${safeVer})</span>
+                            <span style="background: #22c55e; color: #ffffff; font-size: 11px; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Update Ready</span>
+                            <span style="background: rgba(255,255,255,0.2); font-size: 11px; padding: 2px 8px; border-radius: 6px;">वर्तमान वर्ज़न: v${safeCur}</span>
+                        </div>
+                        <div style="font-size: 13.5px; color: #e2e8f0; margin-top: 5px; line-height: 1.45;">
+                            ${safeNotes}
+                        </div>
+                        <div style="font-size: 11.5px; color: #93c5fd; margin-top: 4px; display: flex; align-items: center; gap: 6px;">
+                            <span>🔒 <strong>डेटा सुरक्षा गारंटी:</strong> आपका पूरा डेटा (खाता, ग्राहक, बैलेंस, बिल) 100% सुरक्षित रहेगा।</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+                    <button onclick="window.applyLiveUpdateFromWeb()" id="btnDashboardApplyUpdate" style="background: #ffffff; color: #1e40af; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.25); transition: all 0.2s ease;" onmouseover="this.style.background='#f8fafc'; this.style.transform='scale(1.04)'" onmouseout="this.style.background='#ffffff'; this.style.transform='scale(1)'">
+                        ⚡ अभी 1-क्लिक में अपडेट करें
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    window.renderDashboardUpdateBanner = renderDashboardUpdateBanner;
+    window.checkLiveUpdate = checkLiveUpdate;
 
     function renderUpdateBanner(info) {
         if (updateBannerDismissed) return;
@@ -27427,6 +27498,7 @@ async function refreshAppVersionBadge(showGlow) {
         }, 1500);
     };
 
-    setTimeout(() => checkLiveUpdate(false), 5000);
-    setInterval(() => checkLiveUpdate(false), 30 * 60 * 1000);
+    setTimeout(() => checkLiveUpdate(false), 2000);
+    setInterval(() => checkLiveUpdate(false), 10 * 60 * 1000);
+    window.addEventListener('focus', () => checkLiveUpdate(false));
 })();

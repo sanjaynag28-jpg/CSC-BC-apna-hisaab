@@ -1013,6 +1013,7 @@
                 id="nav-dashboard" title="Dashboard">
                 <i data-lucide="layout-dashboard"></i>
                 <span>Dashboard</span>
+                <span class="nav-badge special" id="badge-update-alert" style="background: #ef4444; color: #ffffff; display: none; font-size: 10px; padding: 1px 6px; border-radius: 999px;">UPDATE</span>
             </a>
             <a href="#bc" class="nav-item bc-nav-highlight" onclick="showPage('bc', this); return false;" id="nav-bc"
                 title="BC Banking Counter (CSP)">
@@ -1242,6 +1243,7 @@
         <div class="page-content">
             <!-- DASHBOARD PAGE -->
             <div id="page-dashboard" class="page active">
+                <div id="dashboardUpdateNotificationBanner"></div>
                 <div class="page-header">
                     <h1>Namaste! 👋 Aapka Hisaab</h1>
                     <div class="month-selector">

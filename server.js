@@ -522,6 +522,25 @@ app.get('/api/live-events', async (req, res) => {
     // Initial connection handshake
     res.write(`data: ${JSON.stringify({ type: 'CONNECTED', timestamp: Date.now() })}\n\n`);
 
+    // Check if an update is available and push notification immediately to this client
+    try {
+        autoUpdater.checkForUpdate().then(upd => {
+            if (upd && upd.hasUpdate) {
+                try {
+                    res.write(`data: ${JSON.stringify({
+                        type: 'UPDATE_AVAILABLE',
+                        module: 'SYSTEM_UPDATE',
+                        latestVersion: upd.latestVersion,
+                        currentVersion: upd.currentVersion,
+                        notes: upd.notes,
+                        releasedAt: upd.releasedAt,
+                        critical: upd.critical
+                    })}\n\n`);
+                } catch (_) { }
+            }
+        }).catch(() => { });
+    } catch (_) { }
+
     req.on('close', () => {
         sseClients.delete(res);
     });
@@ -631,6 +650,17 @@ app.get('/api/system/update-status', (req, res) => {
 
 app.get('/api/system/check-update', async (req, res) => {
     const result = await autoUpdater.checkForUpdate();
+    if (result && result.hasUpdate) {
+        broadcastDataChange({
+            type: 'UPDATE_AVAILABLE',
+            module: 'SYSTEM_UPDATE',
+            latestVersion: result.latestVersion,
+            currentVersion: result.currentVersion,
+            notes: result.notes,
+            releasedAt: result.releasedAt,
+            critical: result.critical
+        });
+    }
     res.json(result);
 });
 
@@ -775,12 +805,12 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/idempotency', require('./routes/idempotency'));
 
-// Authenticated Admin Manual Trigger for Silent Auto-Updater
+// Authenticated User Trigger for 1-Click Auto-Updater from Dashboard
 app.post('/api/system/apply-update', async (req, res) => {
     const isLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'].includes(req.hostname) || ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
-    const isAdmin = isLoopback || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1));
+    const isAdmin = isLoopback || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1 || req.user.Role === 'Admin' || req.user.Role === 'User'));
     if (!isAdmin) {
-        return res.status(403).json({ success: false, error: 'Sirf Admin hi manual update chala sakta hai.' });
+        return res.status(403).json({ success: false, error: 'Kripya update karne ke liye login karein.' });
     }
     const force = Boolean(req.body && req.body.force !== false);
     const result = await autoUpdater.runSilentAutoUpdate({ force, restartOnUpdate: true });
