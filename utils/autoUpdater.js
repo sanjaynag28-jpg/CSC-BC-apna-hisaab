@@ -181,9 +181,7 @@ function compareVersions(a, b) {
 
 // Update available if latest > current OR if versions differ (handles cross-major-version updates)
 function isUpdateAvailable(current, latest) {
-    const cmp = compareVersions(latest, current);
-    // Update if: latest is numerically greater, OR versions are different (handles major version jumps like 6.1.x -> 1.0.x)
-    return cmp > 0 || current !== latest;
+    return compareVersions(latest, current) > 0;
 }
 
 function fileHash(filePath) {
@@ -492,11 +490,7 @@ async function checkForUpdate() {
         state.lastCheckedAt = new Date().toISOString();
 state.latestVersion = remoteInfo.version || localInfo.version;
         state.releaseNotes = remoteInfo.notes || '';
-state.latestVersion = remoteInfo.version || localInfo.version;
-        state.releaseNotes = remoteInfo.notes || '';
-        // Update available if versions differ (handles cross-major-version updates like 6.1.x -> 1.0.x)
-        // Users on different version branches will be offered the update
-        const hasUpdate = state.currentVersion !== state.latestVersion;
+        const hasUpdate = isUpdateAvailable(state.currentVersion, state.latestVersion);
         const critical = String(remoteInfo.critical || '').toLowerCase() === 'true';
         state.lastResult = hasUpdate ? (critical ? 'critical-update-available' : 'update-available') : 'up-to-date';
         return {
