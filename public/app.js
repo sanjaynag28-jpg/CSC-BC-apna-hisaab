@@ -28101,17 +28101,30 @@ async function syncLicenseWithCloud() {
 }
 
 function showLicenseLockModal(lic) {
-    const modal = document.getElementById('licenseLockModal');
-    if (!modal) return;
-    modal.style.display = 'flex';
+    if (typeof openModal === 'function') {
+        openModal('licenseLockModal');
+    } else {
+        const modal = document.getElementById('licenseLockModal');
+        if (modal) {
+            modal.classList.add('active');
+            modal.style.removeProperty('display');
+        }
+    }
     const hwEl = document.getElementById('lockModalHwId');
     if (hwEl && lic) hwEl.textContent = lic.hardwareId || '';
     try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
 }
 
 function hideLicenseLockModal() {
-    const modal = document.getElementById('licenseLockModal');
-    if (modal) modal.style.display = 'none';
+    if (typeof closeModal === 'function') {
+        closeModal('licenseLockModal');
+    } else {
+        const modal = document.getElementById('licenseLockModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+        }
+    }
 }
 
 // Global Interceptor: If backend returns 403 LICENSE_EXPIRED on any transaction, open lock modal!
@@ -28146,8 +28159,20 @@ async function openAdminCloudControlModal() {
     const modal = document.getElementById('adminCloudControlModal');
     if (!modal) return;
 
+    // Instantly open modal with application's modal stack system
+    if (typeof openModal === 'function') {
+        openModal('adminCloudControlModal');
+    } else {
+        modal.classList.add('active');
+        modal.style.removeProperty('display');
+    }
+
     try {
-        const res = await fetch('/api/license/admin/cloud-config');
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch('/api/license/admin/cloud-config', { headers });
         if (!res.ok) {
             if (typeof showToast === 'function') {
                 showToast('❌ केवल एडमिन को ही इस पैनल की अनुमति है', 'error');
@@ -28177,7 +28202,6 @@ async function openAdminCloudControlModal() {
             adminBlacklistHwIds = Array.isArray(data.config.blacklistedHardwareIds) ? [...data.config.blacklistedHardwareIds] : [];
             renderAccBlacklist();
 
-            modal.style.display = 'flex';
             try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
         }
     } catch (e) {
@@ -28191,8 +28215,15 @@ function closeAdminCloudControlModal(e) {
     if (e && e.target && e.target.id !== 'adminCloudControlModal' && !e.target.classList.contains('btn-close')) {
         return;
     }
-    const modal = document.getElementById('adminCloudControlModal');
-    if (modal) modal.style.display = 'none';
+    if (typeof closeModal === 'function') {
+        closeModal('adminCloudControlModal');
+    } else {
+        const modal = document.getElementById('adminCloudControlModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.style.display = 'none';
+        }
+    }
 }
 
 function updateAccActiveLabel() {
@@ -28315,9 +28346,13 @@ async function saveAndPushCloudLicenses() {
     };
 
     try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
         const res = await fetch('/api/license/admin/cloud-config', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -28351,4 +28386,20 @@ async function saveAndPushCloudLicenses() {
         if (btn) btn.disabled = false;
     }
 }
+
+// Global window exposure for reliable button click handlers
+window.openAdminCloudControlModal = openAdminCloudControlModal;
+window.closeAdminCloudControlModal = closeAdminCloudControlModal;
+window.extendAdminLicenseDays = extendAdminLicenseDays;
+window.updateAccActiveLabel = updateAccActiveLabel;
+window.addBlacklistHardwareId = addBlacklistHardwareId;
+window.removeBlacklistHardwareId = removeBlacklistHardwareId;
+window.saveAndPushCloudLicenses = saveAndPushCloudLicenses;
+window.showLicenseLockModal = showLicenseLockModal;
+window.hideLicenseLockModal = hideLicenseLockModal;
+window.copyHardwareId = copyHardwareId;
+window.activateLicenseKey = activateLicenseKey;
+window.activateLicenseKeyFromLockModal = activateLicenseKeyFromLockModal;
+window.syncLicenseWithCloud = syncLicenseWithCloud;
+window.loadLicenseSettingsUI = loadLicenseSettingsUI;
 

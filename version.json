@@ -1,8 +1,8 @@
 {
-  "version": "1.0.63",
+  "version": "1.0.64",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "feat: add visual admin control wizard for one-click cloud license management"
+  "notes": "fix: use native modal overlay stack for cloud admin control wizard and bump app.js cache buster"
 }
