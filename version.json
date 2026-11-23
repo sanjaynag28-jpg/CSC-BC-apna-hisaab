@@ -1,8 +1,8 @@
 {
-  "version": "1.0.66",
+  "version": "1.0.67",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: default port strictly 4000, define serverStartTime, update db lockdown modal for sqlite"
+  "notes": "fix: restore complete index.html with app.js and auto reload active page on recovery"
 }

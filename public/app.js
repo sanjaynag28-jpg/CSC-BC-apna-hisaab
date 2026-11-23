@@ -458,10 +458,13 @@ async function checkLiveDatabaseConnection(isManual = false) {
             if (data.success && data.status === 'CONNECTED') {
                 const wasPreviouslyDown = !isDatabaseConnected;
                 setDatabaseStatus(true);
-                if (isManual) showToast('✅ SQL Server Database Connected! Project unlocked.', 'success');
-                // Reload master data ONLY if manual click or if database was previously disconnected and has now recovered!
-                if ((wasPreviouslyDown || isManual) && typeof loadMasterData === 'function') {
-                    await loadMasterData();
+                if (isManual && typeof showToast === 'function') showToast('✅ Database Connected! Project unlocked.', 'success');
+                // Reload master data and re-render active page if database was previously disconnected and has recovered!
+                if (wasPreviouslyDown || isManual) {
+                    if (typeof loadMasterData === 'function') await loadMasterData();
+                    if (typeof showPage === 'function') {
+                        showPage(currentPage || 'dashboard');
+                    }
                 }
                 return true;
             }
