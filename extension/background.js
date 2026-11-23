@@ -9,7 +9,7 @@
 // kar deta hai (page refresh ki bhi zarurat nahi).
 // ============================================================================
 
-const API_SERVERS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
+const API_SERVERS = ['http://localhost:4000', 'http://127.0.0.1:4000', 'http://localhost:3000', 'http://127.0.0.1:3000'];
 const UPDATE_ALARM = 'cm-extension-update-check';
 const BUILD_KEY = 'cm_ext_build_id';
 const PENDING_REINJECT_KEY = 'cm_pending_reinject';
@@ -30,22 +30,22 @@ function fireAndForget(promise) {
     } catch (e) { }
 }
 
-// Auto Error Telemetry for Background Service Worker
+// Auto Error Telemetry for Background Service Worker (supporting Port 4000 and 3000)
 self.addEventListener('error', (event) => {
     try {
-        fetch('http://localhost:3000/api/logs/client-error', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                source: 'Chrome Extension (background.js)',
-                type: 'worker_error',
-                message: event.message || (event.error && event.error.message) || 'Service Worker Error',
-                filename: event.filename || 'background.js',
-                lineno: event.lineno || 0,
-                colno: event.colno || 0,
-                stack: event.error ? event.error.stack : ''
-            })
-        }).catch(() => { });
+        const payload = JSON.stringify({
+            source: 'Chrome Extension (background.js)',
+            type: 'worker_error',
+            message: event.message || (event.error && event.error.message) || 'Service Worker Error',
+            filename: event.filename || 'background.js',
+            lineno: event.lineno || 0,
+            colno: event.colno || 0,
+            stack: event.error ? event.error.stack : ''
+        });
+        const headers = { 'Content-Type': 'application/json' };
+        fetch('http://localhost:4000/api/logs/client-error', { method: 'POST', headers, body: payload })
+            .catch(() => fetch('http://localhost:3000/api/logs/client-error', { method: 'POST', headers, body: payload }))
+            .catch(() => { });
     } catch (e) { }
 });
 
@@ -586,13 +586,19 @@ async function openProjectTabWithPayload(payload) {
     } catch (e) { }
 
     const cfg = await chrome.storage.local.get(['cm_server_url']);
-    const targetBase = (cfg && cfg.cm_server_url) ? cfg.cm_server_url : 'http://localhost:3000';
-    let targetHost = 'localhost:3000';
+    const targetBase = (cfg && cfg.cm_server_url) ? cfg.cm_server_url : 'http://localhost:4000';
+    let targetHost = 'localhost:4000';
     try { targetHost = new URL(targetBase).host; } catch (e) { }
 
-    // Find any existing project tab
+    // Find any existing project tab (supporting Port 4000, Port 3000, and custom host)
     const allTabs = await chrome.tabs.query({});
-    const projectTab = allTabs.find(t => t.url && (t.url.includes(targetHost) || t.url.includes('localhost:3000') || t.url.includes('127.0.0.1:3000')));
+    const projectTab = allTabs.find(t => t.url && (
+        t.url.includes(targetHost) ||
+        t.url.includes('localhost:4000') ||
+        t.url.includes('127.0.0.1:4000') ||
+        t.url.includes('localhost:3000') ||
+        t.url.includes('127.0.0.1:3000')
+    ));
 
     if (projectTab && projectTab.id) {
         // Activate existing tab

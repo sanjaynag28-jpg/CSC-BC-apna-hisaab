@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load existing settings
   chrome.storage.local.get(['cm_server_url', 'cm_api_token'], (items) => {
     if (items.cm_server_url) serverInput.value = items.cm_server_url;
-    else serverInput.value = 'http://localhost:3000';
+    else serverInput.value = 'http://localhost:4000';
 
     if (items.cm_api_token) tokenInput.value = items.cm_api_token;
   });
@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const token = tokenInput.value.trim();
 
     chrome.storage.local.set({
-      cm_server_url: sUrl || 'http://localhost:3000',
+      cm_server_url: sUrl || 'http://localhost:4000',
       cm_api_token: token
     }, () => {
       statusMsg.style.display = 'block';
