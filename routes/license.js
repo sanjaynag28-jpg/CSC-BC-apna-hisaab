@@ -92,17 +92,37 @@ router.post('/admin/cloud-config', (req, res) => {
     if (!isAuthorizedAdmin(req)) {
         return res.status(403).json({ success: false, error: 'अनुमति नहीं है (Admin Only)' });
     }
-    const { universalKeys, blacklistedHardwareIds } = req.body || {};
+    const { universalKeys, blacklistedHardwareIds, announcement, adminContact } = req.body || {};
     if (!universalKeys || typeof universalKeys !== 'object') {
         return res.status(400).json({ success: false, error: 'Invalid universalKeys object' });
     }
 
     try {
+        let existingConfig = {};
+        try {
+            if (fs.existsSync(LOCAL_CONFIG_PATH)) {
+                existingConfig = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'));
+            }
+        } catch (_) {}
+
         const newConfig = {
             version: 1,
             updatedAt: new Date().toISOString(),
+            adminContact: adminContact || existingConfig.adminContact || {
+                whatsapp: "919616928635",
+                name: "Sanjay Nag",
+                supportHours: "10:00 AM - 8:00 PM"
+            },
+            announcement: announcement || existingConfig.announcement || {
+                isActive: false,
+                title: "विशेष सूचना",
+                message: "सॉफ़्टवेयर का नया अपडेट उपलब्ध है।",
+                type: "info",
+                actionText: "संजय जी से संपर्क करें",
+                actionUrl: "https://wa.me/919616928635"
+            },
             universalKeys: universalKeys,
-            blacklistedHardwareIds: Array.isArray(blacklistedHardwareIds) ? blacklistedHardwareIds : []
+            blacklistedHardwareIds: Array.isArray(blacklistedHardwareIds) ? blacklistedHardwareIds : (existingConfig.blacklistedHardwareIds || [])
         };
 
         fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(newConfig, null, 2), 'utf8');

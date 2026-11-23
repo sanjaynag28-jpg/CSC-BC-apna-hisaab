@@ -19,8 +19,14 @@ const { getDb } = require('../database/db');
 // Master Cryptographic Salt for Signed Personal Keys (Admin Only)
 const MASTER_KEY_SALT = 'HISAAB_BC_APNA_HISAAB_SECURE_SALT_2026_X98';
 
-// GitHub Raw URL for Remote Cloud Sync
-const GITHUB_LICENSE_URL = 'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/config/licenses.json';
+// GitHub Raw & CDN URLs for Remote Cloud Sync
+const GITHUB_LICENSE_URLS = [
+    'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/config/licenses.json',
+    'https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/config/licenses.json',
+    'https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/main/config/licenses.json',
+    'https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/config/licenses.json'
+];
+const GITHUB_LICENSE_URL = GITHUB_LICENSE_URLS[0];
 const LOCAL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'licenses.json');
 
 let cachedHardwareId = null;
@@ -98,12 +104,12 @@ function getLocalConfig() {
 }
 
 /**
- * Fetch remote licenses config from GitHub with 4-second timeout
+ * Fetch remote licenses config from GitHub/CDN with multi-mirror fallback
  */
-function fetchRemoteConfig() {
+function fetchSingleUrl(u) {
     return new Promise((resolve) => {
         try {
-            const req = https.get(GITHUB_LICENSE_URL, { timeout: 4000 }, (res) => {
+            const req = https.get(u, { timeout: 3500 }, (res) => {
                 if (res.statusCode !== 200) {
                     res.resume();
                     return resolve(null);
@@ -119,16 +125,27 @@ function fetchRemoteConfig() {
                     }
                 });
             });
-
             req.on('error', () => resolve(null));
             req.on('timeout', () => {
                 req.destroy();
                 resolve(null);
             });
-        } catch (e) {
+        } catch (_) {
             resolve(null);
         }
     });
+}
+
+async function fetchRemoteConfig() {
+    for (const u of GITHUB_LICENSE_URLS) {
+        try {
+            const res = await fetchSingleUrl(u);
+            if (res && res.universalKeys) {
+                return res;
+            }
+        } catch (_) { }
+    }
+    return null;
 }
 
 /**
@@ -232,6 +249,11 @@ async function syncWithCloud() {
     if (!record) return null;
 
     const remoteCfg = await fetchRemoteConfig();
+    if (remoteCfg && remoteCfg.universalKeys) {
+        try {
+            fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+        } catch (_) {}
+    }
     const cfg = remoteCfg || getLocalConfig();
     if (!cfg) return null;
 
@@ -368,6 +390,11 @@ async function activateKey(keyInput, shopDetails = {}) {
 
     // Check Cloud & Local Universal Keys
     const remoteCfg = await fetchRemoteConfig();
+    if (remoteCfg && remoteCfg.universalKeys) {
+        try {
+            fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+        } catch (_) {}
+    }
     const cfg = remoteCfg || getLocalConfig();
 
     let planName = 'Universal Free Trial';
@@ -442,6 +469,7 @@ function getLicenseStatus() {
     const hwId = getHardwareId();
     const record = getActiveRecord();
 
+    const localCfg = getLocalConfig();
     if (!record) {
         return {
             isLicensed: false,
@@ -451,7 +479,9 @@ function getLicenseStatus() {
             plan: 'लाइसेंस अनुपलब्ध',
             status: 'Inactive',
             expiryDate: null,
-            message: 'कृपया सॉफ्टवेयर एक्टिवेट करें'
+            message: 'कृपया सॉफ्टवेयर एक्टिवेट करें',
+            announcement: localCfg.announcement || null,
+            adminContact: localCfg.adminContact || { whatsapp: '919616928635', name: 'Sanjay Nag' }
         };
     }
 
@@ -486,7 +516,9 @@ function getLicenseStatus() {
         shopName: record.CustomerShopName || '',
         ownerName: record.OwnerName || '',
         mobileNumber: record.MobileNumber || '',
-        lastSync: lastSyncTime
+        lastSync: lastSyncTime,
+        announcement: localCfg.announcement || null,
+        adminContact: localCfg.adminContact || { whatsapp: '919616928635', name: 'Sanjay Nag' }
     };
 }
 

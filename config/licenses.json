@@ -1,6 +1,19 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-23T15:35:00Z",
+  "updatedAt": "2026-11-23T15:55:00Z",
+  "adminContact": {
+    "whatsapp": "919616928635",
+    "name": "Sanjay Nag",
+    "supportHours": "10:00 AM - 8:00 PM"
+  },
+  "announcement": {
+    "isActive": false,
+    "title": "विशेष सूचना",
+    "message": "सॉफ़्टवेयर का नया अपडेट उपलब्ध है। कृपया सेटिंग्स में जाकर अपडेट करें।",
+    "type": "info",
+    "actionText": "संजय जी से व्हाट्सएप पर बात करें",
+    "actionUrl": "https://wa.me/919616928635"
+  },
   "universalKeys": {
     "TEST123": {
       "key": "TEST123",

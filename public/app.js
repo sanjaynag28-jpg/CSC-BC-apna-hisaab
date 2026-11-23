@@ -27826,6 +27826,7 @@ async function loadLicenseSettingsUI(silent = false) {
             currentLicenseStatus = data.license;
             renderLicenseUI(data.license);
             renderDashboardLicenseBanner(data.license);
+            renderAnnouncementBanner(data.license.announcement);
             if (data.license.isExpired) {
                 showLicenseLockModal(data.license);
             } else {
@@ -27889,15 +27890,67 @@ function renderLicenseUI(lic) {
     if (lockHw) lockHw.textContent = lic.hardwareId || 'HWID-0000-0000-0000';
 
     // 4. WhatsApp Links
-    const rawMsg = `नमस्ते संजय जी! मुझे अपने सॉफ़्टवेयर HisaabBC के लिए लाइसेंस की चाहिए।\nदुकान: ${lic.shopName || ''}\nमशीन कोड: ${lic.hardwareId}\nकृपया नया लाइसेंस एक्टिवेट करें।`;
-    const waUrl = `https://wa.me/919616928635?text=${encodeURIComponent(rawMsg)}`;
+    const adminPhone = (lic.adminContact && lic.adminContact.whatsapp) ? lic.adminContact.whatsapp.replace(/\D/g, '') : '919616928635';
+    const adminName = (lic.adminContact && lic.adminContact.name) ? lic.adminContact.name : 'संजय जी';
+    const rawMsg = `नमस्ते ${adminName}! मुझे अपने सॉफ़्टवेयर HisaabBC के लिए लाइसेंस की चाहिए।\nदुकान: ${lic.shopName || ''}\nमशीन कोड: ${lic.hardwareId}\nकृपया नया लाइसेंस एक्टिवेट करें।`;
+    const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(rawMsg)}`;
 
     const waLink = document.getElementById('linkWhatsappAdmin');
     if (waLink) waLink.href = waUrl;
 
     const lockWa = document.getElementById('lockModalWhatsappBtn');
-    if (lockWa) lockWa.href = waUrl;
+    if (lockWa) {
+        lockWa.href = waUrl;
+        const lockSpan = lockWa.querySelector('span');
+        if (lockSpan) lockSpan.textContent = `${adminName} से व्हाट्सएप पर नई की प्राप्त करें (+${adminPhone})`;
+    }
 
+    try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+}
+
+function renderAnnouncementBanner(ann) {
+    let banner = document.getElementById('dashboardAnnouncementBanner');
+    if (!banner) {
+        const licBanner = document.getElementById('dashboardLicenseNotificationBanner');
+        if (licBanner && licBanner.parentNode) {
+            banner = document.createElement('div');
+            banner.id = 'dashboardAnnouncementBanner';
+            banner.style.marginBottom = '16px';
+            licBanner.parentNode.insertBefore(banner, licBanner.nextSibling);
+        }
+    }
+    if (!banner) return;
+
+    if (!ann || !ann.isActive) {
+        banner.innerHTML = '';
+        return;
+    }
+
+    const typeThemes = {
+        info: { bg: 'rgba(56, 189, 248, 0.15)', border: 'rgba(56, 189, 248, 0.4)', text: '#38bdf8', icon: 'info' },
+        success: { bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.4)', text: '#34d399', icon: 'sparkles' },
+        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.4)', text: '#fbbf24', icon: 'alert-triangle' },
+        urgent: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', text: '#f87171', icon: 'alert-octagon' }
+    };
+    const t = typeThemes[ann.type] || typeThemes.info;
+
+    let actionBtnHtml = '';
+    if (ann.actionText && ann.actionUrl) {
+        actionBtnHtml = `<a href="${ann.actionUrl}" target="_blank" class="btn" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: ${t.text}; color: #0f172a; border: none; border-radius: 6px; text-decoration: none; white-space: nowrap;">${ann.actionText}</a>`;
+    }
+
+    banner.innerHTML = `
+        <div style="background: ${t.bg}; border: 1.5px solid ${t.border}; border-radius: 10px; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; color: ${t.text}; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <i data-lucide="${t.icon}" style="width: 22px; height: 22px; flex-shrink: 0;"></i>
+                <div>
+                    <div style="font-size: 13.5px; font-weight: 800; line-height: 1.3;">${ann.title || 'विशेष सूचना'}</div>
+                    <div style="font-size: 12.5px; font-weight: 500; opacity: 0.95; margin-top: 2px;">${ann.message || ''}</div>
+                </div>
+            </div>
+            ${actionBtnHtml}
+        </div>
+    `;
     try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
 }
 
