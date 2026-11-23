@@ -1,4 +1,4 @@
-# Auto local backup (zip) for Cash Management BC
+﻿# Auto local backup (zip) for Cash Management BC
 # Excludes node_modules, logs, backups to keep size small.
 $src = "D:\Cash Managment BC"
 $dest = "D:\Cash Managment BC\backups\auto"

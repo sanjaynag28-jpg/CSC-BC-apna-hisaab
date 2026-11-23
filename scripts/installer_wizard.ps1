@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - Master Enterprise Setup & Health Engine (POWER EDITION)
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # 100% Free AI Live Self-Healing (Port, SQL Service, TLS 1.2, VC++, Registry)

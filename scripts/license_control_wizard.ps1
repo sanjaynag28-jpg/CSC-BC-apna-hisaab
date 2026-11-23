@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # HisaabBC - Master License & Cloud Control Wizard (PowerShell WPF Edition)
 # Full Control: Cloud Keys, Personal Key Generator, Remote Blacklist & 1-Click GitHub Push
 # ============================================================================

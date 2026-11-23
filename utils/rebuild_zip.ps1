@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $zipPath = Join-Path $root 'INSTALL_NOW.zip'
 Remove-Item $zipPath -Force -ErrorAction SilentlyContinue

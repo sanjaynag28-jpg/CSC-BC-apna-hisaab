@@ -139,7 +139,7 @@ echo   [3/4] Launching AI Live Self-Healing Setup Wizard (Clean Reset)...
 echo ======================================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
+powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%" -Clean
 set "EXIT_CODE=%errorlevel%"
 
 :: Cleanup temporary execution file

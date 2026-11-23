@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # utils/publish_release_assets.ps1
 # PUBLISH_UPDATE.bat ke baad chalta hai:
 # - version.json ka version uthata hai (e.g. 1.0.3 -> v1.0.3)

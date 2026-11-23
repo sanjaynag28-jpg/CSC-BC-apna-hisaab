@@ -119,7 +119,7 @@ echo   [3/4] Launching AI Live Self-Healing Setup Wizard...
 echo ======================================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%"
+powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File "%WIZ_SCRIPT%" -ProjectDir "%TARGET_DIR%"
 set "EXIT_CODE=%errorlevel%"
 
 del /f /q "%WIZ_SCRIPT%" >nul 2>&1

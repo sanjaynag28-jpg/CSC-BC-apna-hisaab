@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # utils/cleanup_old_releases.ps1
 # GitHub par sirf latest releases rakhta hai (default: 3 = latest + 2 purane)
 # - Purane releases + unke git tags delete ho jate hain

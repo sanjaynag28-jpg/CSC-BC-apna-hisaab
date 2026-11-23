@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ProjectDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab'),
     [switch]$Force
 )

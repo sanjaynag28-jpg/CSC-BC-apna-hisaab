@@ -60,6 +60,33 @@
                 window._queuedOpenPACModal = true;
                 window.openModal('pacModal');
             };
+
+            window.checkForUpdateManual = function () {
+                if (typeof window.checkAppUpdateManual === 'function') {
+                    return window.checkAppUpdateManual();
+                }
+                fetch('/api/system/check-update', {
+                    method: 'GET',
+                    headers: { 'Cache-Control': 'no-cache' }
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (result) {
+                    if (result && result.hasUpdate) {
+                        if (typeof window.applyLiveUpdateFromWeb === 'function') {
+                            window.applyLiveUpdateFromWeb(result);
+                        } else if (confirm('📦 नया अपडेट उपलब्ध है: v' + result.latestVersion + '\n\nक्या आप अभी अपडेट करना चाहते हैं?')) {
+                            window.location.href = '/api/system/apply-update?force=true';
+                        }
+                    } else if (result && result.success) {
+                        alert('✅ आपका ऐप बिल्कुल नवीनतम वर्ज़न (v' + (result.currentVersion || '1.0.73') + ') पर है!');
+                    } else {
+                        alert('❌ अपडेट चेक विफल: ' + ((result && result.error) || 'सर्वर से संपर्क नहीं हो सका'));
+                    }
+                })
+                .catch(function (err) {
+                    alert('❌ अपडेट चेक विफल: ' + (err.message || 'नेटवर्क समस्या'));
+                });
+            };
         })();
     </script>
     <!-- Auto Error Telemetry & Logger (Loads first to capture all startup/runtime errors) -->
@@ -1519,11 +1546,14 @@
             </div>
 
             <div class="topbar-right">
-                <!-- Offline Pending Sync Badge -->
-                <span id="offlineSyncBadge"
-                    style="display: none; background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid #f59e0b; padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer;"
-                    onclick="window.offlineSyncEngine && window.offlineSyncEngine.sync()"
-                    title="Click to sync offline entries now"></span>
+                <!-- Check for Update Button in Top Bar -->
+                <div class="topbar-update-check" id="topbarUpdateCheckBtn"
+                    style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius: 20px; font-size: 12px; cursor: pointer; margin-left: 12px;"
+                    onclick="window.checkForUpdateManual && window.checkForUpdateManual()"
+                    title="Naya version check karein aur update karein">
+                    <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+                    <span>Check Update</span>
+                </div>
                 <!-- Live Real-Time Activity & Sync State -->
                 <div class="fast-sync-badge" id="fastSyncBadge" title="Real-Time Data State">
                     <span class="fsb-dot"></span>

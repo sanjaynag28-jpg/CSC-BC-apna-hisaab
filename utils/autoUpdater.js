@@ -179,6 +179,13 @@ function compareVersions(a, b) {
     return 0;
 }
 
+// Update available if latest > current OR if versions differ (handles cross-major-version updates)
+function isUpdateAvailable(current, latest) {
+    const cmp = compareVersions(latest, current);
+    // Update if: latest is numerically greater, OR versions are different (handles major version jumps like 6.1.x -> 1.0.x)
+    return cmp > 0 || current !== latest;
+}
+
 function fileHash(filePath) {
     try {
         if (!fs.existsSync(filePath)) return '';
@@ -483,9 +490,13 @@ async function checkForUpdate() {
             throw lastNetErr || new Error('Version mirrors unreachable');
         }
         state.lastCheckedAt = new Date().toISOString();
-        state.latestVersion = remoteInfo.version || localInfo.version;
+state.latestVersion = remoteInfo.version || localInfo.version;
         state.releaseNotes = remoteInfo.notes || '';
-        const hasUpdate = compareVersions(state.latestVersion, state.currentVersion) > 0;
+state.latestVersion = remoteInfo.version || localInfo.version;
+        state.releaseNotes = remoteInfo.notes || '';
+        // Update available if versions differ (handles cross-major-version updates like 6.1.x -> 1.0.x)
+        // Users on different version branches will be offered the update
+        const hasUpdate = state.currentVersion !== state.latestVersion;
         const critical = String(remoteInfo.critical || '').toLowerCase() === 'true';
         state.lastResult = hasUpdate ? (critical ? 'critical-update-available' : 'update-available') : 'up-to-date';
         return {
@@ -658,24 +669,27 @@ async function runSilentAutoUpdate(options = {}) {
         runSafeBackupBeforeUpdate();
         setProgress('safety', 38, 'Safety backup verified. Protected data safely isolated.');
 
-        // Step 2: Pull latest code safely (Git if available, otherwise ZIP)
+        // Step 2: Pull latest code safely (ZIP first for max compatibility, Git as fallback)
         setProgress('download', 50, `Downloading latest release package v${check.latestVersion} from GitHub...`);
-        const gitBin = findGitBinary();
-        const isGitRepo = fs.existsSync(path.join(ROOT_DIR, '.git'));
-        if (gitBin && isGitRepo) {
+        // ZIP first: works on ALL PCs (no git needed), git fallback for those with git installed
+        const zipResult = await applyCodeUpdateViaZip();
+        const hasGit = findGitBinary() !== null;
+        const gitBin = hasGit ? findGitBinary() : null;
+        if (gitBin) {
             try {
                 await applyCodeUpdateViaGit(gitBin, force);
                 const brokenAfterGit = findBrokenFiles();
                 if (brokenAfterGit.length > 0) {
-                    logUpdate(`Git update ke baad files missing/corrupt: ${brokenAfterGit.join(', ')} — ZIP se auto-repair...`);
+                    // ZIP already applied; if git still corrupts things, re-apply ZIP to restore
+                    logUpdate(`Git update ke baad files missing/corrupt: ${brokenAfterGit.join(', ')} — ZIP se phir se restore...`);
                     await applyCodeUpdateViaZip();
                 }
             } catch (gitErr) {
-                logUpdate(`Git update bypassed (${gitErr.message}), falling back to clean ZIP download (Zero Data Loss)...`);
-                await applyCodeUpdateViaZip();
+                logUpdate(`Git update skipped (non-fatal): ${gitErr.message} — ZIP already applied, app chal rahi hai.`);
+                // ZIP already applied, keep current code — ghatailie ya critical na ho to skip karo
             }
         } else {
-            await applyCodeUpdateViaZip();
+            logUpdate('Git install nahi hai — ZIP se update complete ho chuka hai.');
         }
 
         setProgress('download', 72, 'Code package extracted cleanly. Validating dependencies...');
