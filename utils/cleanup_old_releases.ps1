@@ -11,7 +11,7 @@
 # ============================================================================
 
 param(
-    [int]$Keep = 3
+    [int]$Keep = 2
 )
 
 $ErrorActionPreference = 'Continue'
