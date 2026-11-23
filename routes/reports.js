@@ -597,9 +597,9 @@ router.get('/master', async (req, res) => {
                         -payment.KhataID, payment.GlobalSerialNo, payment.SNCode, payment.ModuleCode,
                         payment.EntryDate, payment.EntryTime, payment.CreatedAt, payment.Description,
                         'Income', payment.ReferenceNo, payment.AccountID, CAST(NULL AS INT),
-                        (SELECT TOP 1 CategoryID FROM Categories
+                        (SELECT CategoryID FROM Categories
                          WHERE UserID = payment.UserID
-                           AND (CategoryName = 'Business Income' OR CategoryType = 'Income')),
+                           AND (CategoryName = 'Business Income' OR CategoryType = 'Income') LIMIT 1),
                         CAST(NULL AS INT), CAST(NULL AS NVARCHAR(1000)), payment.Amount,
                         payment.UserID, CAST(0 AS BIT)
                     FROM KhataEntries payment

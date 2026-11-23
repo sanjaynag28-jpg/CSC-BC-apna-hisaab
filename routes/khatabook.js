@@ -317,7 +317,7 @@ router.post('/entry', async (req, res) => {
                         OUTPUT INSERTED.TransactionID
                         VALUES (
                             @date, 'Income', @amount, @accId,
-                            (SELECT TOP 1 CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId),
+                            (SELECT CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId LIMIT 1),
                             @desc, @ref, @userId
                         )
                     `, {
@@ -355,7 +355,7 @@ router.post('/entry', async (req, res) => {
                         OUTPUT INSERTED.TransactionID
                         VALUES (
                             @date, 'Expense', @amount, @accId,
-                            (SELECT TOP 1 CategoryID FROM Categories WHERE (CategoryName = 'Miscellaneous' OR CategoryType = 'Expense') AND UserID = @userId),
+                            (SELECT CategoryID FROM Categories WHERE (CategoryName = 'Miscellaneous' OR CategoryType = 'Expense') AND UserID = @userId LIMIT 1),
                             @desc, @ref, @userId
                         )
                     `, {

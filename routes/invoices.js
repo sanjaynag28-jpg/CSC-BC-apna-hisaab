@@ -458,7 +458,7 @@ router.post('/', async (req, res) => {
                     )
                     VALUES (
                         @date, 'Income', @amount, @accId, 
-                        (SELECT TOP 1 CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId),
+                        (SELECT CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId LIMIT 1),
                         @desc, @ref, @userId,
                         'Invoices', @invId, 'PAYMENT_IN'
                     )
@@ -695,7 +695,7 @@ router.put('/:id/pay', async (req, res) => {
                     )
                     VALUES (
                         @date, 'Income', @amount, @accId, 
-                        (SELECT TOP 1 CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId),
+                        (SELECT CategoryID FROM Categories WHERE (CategoryName = 'Business Income' OR CategoryType = 'Income') AND UserID = @userId LIMIT 1),
                         @desc, @ref, @userId,
                         @GlobalSerialNo, @SNCode, @ModuleCode,
                         'Invoices', @invId, 'PAYMENT_IN'

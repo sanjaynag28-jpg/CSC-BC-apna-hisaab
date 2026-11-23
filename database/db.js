@@ -234,7 +234,36 @@ function translateSql(queryStr) {
     s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+DATE\s*\)/gi, "date($1)");
     s = s.replace(/GETDATE\s*\(\s*\)/gi, "datetime('now', 'localtime')");
 
-    // 12. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
+    // 12a. Universal subquery SELECT TOP n converter (with balanced parenthesis)
+    if (s.includes('TOP')) {
+        s = s.replace(/\(\s*SELECT\s+TOP\s+(\d+|\(\d+\))\s+/gi, (m, num) => {
+            return `(SELECT /*TOP_${num.replace(/[()]/g, '')}*/ `;
+        });
+        let tagMatch;
+        while ((tagMatch = s.match(/\(SELECT\s+\/\*TOP_(\d+)\*\/\s+/))) {
+            const tagIndex = tagMatch.index;
+            const num = tagMatch[1];
+            let depth = 1;
+            let i = tagIndex + tagMatch[0].length;
+            while (i < s.length && depth > 0) {
+                if (s[i] === '(') depth++;
+                else if (s[i] === ')') depth--;
+                if (depth === 0) break;
+                i++;
+            }
+            if (depth === 0) {
+                const inner = s.slice(tagIndex + tagMatch[0].length, i);
+                const before = s.slice(0, tagIndex);
+                const after = s.slice(i + 1);
+                const limitClause = /\bLIMIT\s+\d+/i.test(inner) ? '' : ` LIMIT ${num}`;
+                s = `${before}(SELECT ${inner}${limitClause})${after}`;
+            } else {
+                s = s.replace(`/*TOP_${num}*/`, '');
+            }
+        }
+    }
+
+    // 12b. SELECT TOP n ... -> SELECT ... LIMIT n (Single query)
     const topMatch = s.match(/^(\s*SELECT(?:\s+DISTINCT)?)\s+TOP\s+(\d+|\(\d+\))\s+([\s\S]+)$/i);
     if (topMatch && !s.includes('UNION') && !s.includes('EXCEPT')) {
         const sel = topMatch[1];
