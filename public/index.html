@@ -25,6 +25,29 @@
                 }
             } catch (e) { }
 
+            // Early Post-Update Foreground Splash (Persists until dashboard fully loads)
+            try {
+                var upd = sessionStorage.getItem('cmbc_update_in_progress');
+                if (upd) {
+                    var updData = {};
+                    try { updData = JSON.parse(upd); } catch (_) {}
+                    var targetV = updData.targetVersion || '';
+                    var d = document.createElement('div');
+                    d.id = 'cmbc-post-update-splash';
+                    d.style.cssText = 'position:fixed;inset:0;background:linear-gradient(160deg,#0f172a 0%,#1e293b 100%);z-index:999999999;display:flex;align-items:center;justify-content:center;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px;';
+                    d.innerHTML = '<div style="background:rgba(255,255,255,0.03);border:1.5px solid rgba(96,165,250,0.4);border-radius:20px;padding:36px 32px;width:100%;max-width:540px;box-shadow:0 25px 70px rgba(0,0,0,0.8);text-align:center;">' +
+                        '<div style="font-size:48px;margin-bottom:12px;">🚀</div>' +
+                        '<h2 style="margin:0 0 8px;font-size:20px;font-weight:800;color:#f8fafc;">सिस्टम अपडेट सफलतापूर्वक लागू हुआ ' + (targetV ? '(v' + targetV + ')' : '') + '</h2>' +
+                        '<p id="cmbcPostUpdateSub" style="margin:0 0 20px;font-size:13.5px;color:#94a3b8;">सर्वर शुरू हो चुका है। आपका डैशबोर्ड खोला जा रहा है...</p>' +
+                        '<div style="width:100%;height:8px;background:#0f172a;border-radius:999px;overflow:hidden;padding:2px;margin-bottom:14px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.5);">' +
+                        '<div id="cmbcPostUpdateBar" style="width:96%;height:100%;background:linear-gradient(90deg,#2563eb,#10b981);border-radius:999px;transition:width 0.4s ease;"></div>' +
+                        '</div>' +
+                        '<div id="cmbcPostUpdateBadge" style="font-size:12px;color:#34d399;font-weight:700;">● डैशबोर्ड डेटा लोड हो रहा है...</div>' +
+                        '</div>';
+                    document.documentElement.appendChild(d);
+                }
+            } catch (e) { }
+
             // Early stubs so clicks during HTML streaming before app.js runs never throw ReferenceError
             window.showPage = function (page, navEl) {
                 if (window._realShowPage) {
@@ -110,7 +133,7 @@
         })();
     </script>
     <!-- Auto Error Telemetry & Logger (Loads first to capture all startup/runtime errors) -->
-    <script src="error-logger.js?v=1795445000000"></script>
+    <script src="error-logger.js?v=1795452000000"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#10b981">
@@ -12715,11 +12738,11 @@
     </div>
 
     <!-- Scripts -->
-    <script src="universal-doc-uploader.js?v=1795445000000"></script>
-    <script src="global-dob.js?v=1795445000000"></script>
-    <script src="searchable-select.js?v=1795445000000"></script>
-    <script src="auth.js?v=1795445000000"></script>
-    <script src="app.js?v=1795445000000"></script>
+    <script src="universal-doc-uploader.js?v=1795452000000"></script>
+    <script src="global-dob.js?v=1795452000000"></script>
+    <script src="searchable-select.js?v=1795452000000"></script>
+    <script src="auth.js?v=1795452000000"></script>
+    <script src="app.js?v=1795452000000"></script>
 </body>
 
 </html>

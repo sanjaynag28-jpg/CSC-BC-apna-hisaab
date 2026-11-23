@@ -186,7 +186,7 @@ app.get('/api/health', async (req, res) => {
             isDatabaseDown: true,
             startupStage: 'reconnecting',
             uptimeSeconds,
-            error: 'SQL Server connection is DOWN. Check SQL Server (SQLEXPRESS) service.'
+            error: 'Database connection is DOWN.'
         });
     }
 });
@@ -508,7 +508,7 @@ app.get('/api/live-events', async (req, res) => {
             success: false,
             status: 'DISCONNECTED',
             isDatabaseDown: true,
-            error: 'SQL Server is unreachable; live updates are unavailable.'
+            error: 'Database is unreachable; live updates are unavailable.'
         });
     }
 
@@ -609,7 +609,7 @@ app.use('/api', async (req, res, next) => {
         return res.status(503).json({
             success: false,
             isDatabaseDown: true,
-            error: 'DATABASE NOT CONNECTED! SQL Server is unreachable. Kisi bhi galat calculation ya data loss se bachne ke liye project operations lock hain.'
+            error: 'DATABASE NOT CONNECTED! Database is unreachable. Kisi bhi galat calculation ya data loss se bachne ke liye project operations lock hain.'
         });
     }
     next();
@@ -1023,7 +1023,7 @@ function startServer() {
             console.log(`║   📱 Mobile / Other:  http://${lanIp}:${PORT}               ║`);
             console.log('╠════════════════════════════════════════════════════════════════╣');
             console.log('║   ⚡ Web Server: Active & Listening (Instant Boot)             ║');
-            console.log('║   🔄 Database: Connecting to SQL Server in background...       ║');
+            console.log('║   🔄 Database: Connecting to SQLite Database in background...  ║');
             console.log('║   📶 Network: LOCAL + SAME WI-FI / LAN ALLOWED                 ║');
             console.log('╚════════════════════════════════════════════════════════════════╝');
             console.log('');

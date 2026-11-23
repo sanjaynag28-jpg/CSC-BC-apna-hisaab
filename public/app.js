@@ -1,4 +1,55 @@
 
+// ============================================================================
+// DASHBOARD FULLY LOADED HOOK: Dismisses foreground update wizard/splash only when dashboard opens
+// ============================================================================
+window.onDashboardFullyLoaded = function () {
+    const splash = typeof document !== 'undefined' ? document.getElementById('cmbc-post-update-splash') : null;
+    const wizard = typeof document !== 'undefined' ? document.getElementById('cmbcUpdateWizardModal') : null;
+    const hasUpdateFlag = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('cmbc_update_in_progress') : null;
+
+    if (splash || wizard || hasUpdateFlag) {
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem('cmbc_update_in_progress');
+        }
+
+        if (splash) {
+            const sub = document.getElementById('cmbcPostUpdateSub');
+            const bar = document.getElementById('cmbcPostUpdateBar');
+            const badge = document.getElementById('cmbcPostUpdateBadge');
+            if (sub) sub.textContent = 'डैशबोर्ड सफलतापूर्वक लोड हो चुका है!';
+            if (bar) bar.style.width = '100%';
+            if (badge) {
+                badge.textContent = '✅ डैशबोर्ड तैयार है!';
+                badge.style.color = '#10b981';
+            }
+            setTimeout(() => {
+                splash.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+                splash.style.opacity = '0';
+                splash.style.transform = 'scale(1.02)';
+                setTimeout(() => {
+                    if (splash.parentNode) splash.parentNode.removeChild(splash);
+                }, 400);
+            }, 500);
+        }
+
+        if (wizard) {
+            setTimeout(() => {
+                wizard.style.transition = 'opacity 0.4s ease';
+                wizard.style.opacity = '0';
+                setTimeout(() => {
+                    if (wizard.parentNode) wizard.parentNode.removeChild(wizard);
+                }, 400);
+            }, 500);
+        }
+
+        setTimeout(() => {
+            if (typeof showToast === 'function') {
+                showToast('🎉 सिस्टम नए वर्ज़न पर सफलतापूर्वक अपडेट हो गया! डैशबोर्ड लाइव है।', 'success', 'Update Complete');
+            }
+        }, 800);
+    }
+};
+
 // ==========================================================================
 // REAL-TIME ZERO-CACHE & LIVE DATABASE ENFORCEMENT
 // "jo bhi data ka adana pradaan ho wo live databace se ho,
@@ -120,13 +171,20 @@ function getContextualLoadingText(url, method = 'GET') {
     if (u.includes('/api/khata')) return { title: 'Khatabook Ledger Load Ho Raha Hai...', msg: 'Customer ka master khata hisaab sync ho raha hai...' };
     if (u.includes('/api/accounts')) return { title: 'Bank Khate Load Ho Rahe Hain...', msg: 'Bank balance aur cash accounts sync ho rahe hain...' };
     if (u.includes('/api/documents')) return { title: 'Documents Vault Load Ho Raha Hai...', msg: 'Surakshit dastavez fetch ho rahe hain...' };
-    if (u.includes('/api/database')) return { title: 'Database Live Table Load Ho Rahi Hai...', msg: 'SQL Server tables se live data aa raha hai...' };
+    if (u.includes('/api/database')) return { title: 'Database Live Table Load Ho Rahi Hai...', msg: 'SQLite database tables se live data aa raha hai...' };
     if (u.includes('/api/search')) return { title: 'Data Khoja Ja Raha Hai...', msg: 'Live database me search query run ho rahi hai...' };
 
     return { title: 'Data Load Ho Raha Hai...', msg: 'Live database se taja data prapt kiya ja raha hai...' };
 }
 
 function startUniversalLoading(url = '', method = 'GET') {
+    // Suppress generic data loader during system update or post-update boot splash
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cmbc_update_in_progress')) {
+        return;
+    }
+    if (typeof document !== 'undefined' && (document.getElementById('cmbc-post-update-splash') || document.getElementById('cmbcUpdateWizardModal'))) {
+        return;
+    }
     const lSettings = typeof getCustomLoaderSettings === 'function' ? getCustomLoaderSettings() : { enabled: true, onDataLoad: true, duration: 0 };
     if (!lSettings.enabled || lSettings.speedMode === 'off' || lSettings.displayMode === 'none') {
         return;
@@ -397,7 +455,7 @@ window.fetch = async function (resource, init = {}) {
             const errorText = String(err && err.message ? err.message : err);
             const isOffline = !navigator.onLine || /failed to fetch|networkerror|offline/i.test(errorText);
             if (!err.offlineQueueBlocked) {
-                setDatabaseStatus(false, 'Server ya SQL Server se sampark toot gaya hai: ' + errorText);
+                setDatabaseStatus(false, 'Server ya database se sampark toot gaya hai: ' + errorText);
             }
             if (preparedOfflineMutation && window.offlineSyncEngine) {
                 await window.offlineSyncEngine.markUncertain(preparedOfflineMutation);
@@ -430,7 +488,7 @@ function setDatabaseStatus(connected, errorMsg = '') {
         document.body.style.overflow = '';
         if (indicator) {
             indicator.className = 'db-live-indicator connected';
-            indicator.title = 'SQL Server Live Database se connected hai (Real-time active)';
+            indicator.title = 'SQLite Live Database se connected hai (Real-time active)';
         }
         if (statusText) {
             statusText.textContent = 'LIVE DB';
@@ -489,7 +547,7 @@ function setDatabaseStatus(connected, errorMsg = '') {
 
 // Window global alias for lockdown modal
 window.showDbLockdownModal = function (msg) {
-    setDatabaseStatus(false, msg || 'SQL Server database offline hai. Project operations lock hain.');
+    setDatabaseStatus(false, msg || 'SQLite database offline hai. Project operations lock hain.');
 };
 
 async function checkLiveDatabaseConnection(isManual = false) {
@@ -696,6 +754,11 @@ function handleLiveEventMessage(event) {
             refreshDebounceTimer = setTimeout(() => {
                 refreshAllActiveViews('sse_realtime');
             }, 80);
+        } else if (data.type === 'UPDATE_PROGRESS' || (data.module === 'SYSTEM_UPDATE' && (data.stage || data.percent > 0))) {
+            // Front-facing foreground wizard: auto-update background me nahi, user ke saamne aayega
+            if (typeof window.showForegroundUpdateProgress === 'function') {
+                window.showForegroundUpdateProgress(data);
+            }
         } else if (data.type === 'UPDATE_AVAILABLE' || data.module === 'SYSTEM_UPDATE') {
             if (typeof renderUpdateBanner === 'function') {
                 renderUpdateBanner(data);
@@ -2093,7 +2156,7 @@ function showUniversalLoader(title = 'Kirpya Pratiksha Karein...', message = 'Da
 
     if (titleEl && title) titleEl.textContent = title;
     if (msgEl && message) msgEl.textContent = message;
-    if (statusTextEl) statusTextEl.textContent = 'Live SQL Server se data aa raha hai...';
+    if (statusTextEl) statusTextEl.textContent = 'Live database se data sync ho raha hai...';
     if (progressBarEl) progressBarEl.style.width = '20%';
 
     const isSystemSpeed = !isManualPreview && (customDurationSec === null || customDurationSec === 0) && (settings.speedMode === 'system' || (settings.duration || 0) <= 0);
@@ -3300,7 +3363,7 @@ function showPage(page, navEl) {
     const pTitle = pageLabels[page] || 'Page Load Ho Raha Hai...';
     const lSettings = typeof getCustomLoaderSettings === 'function' ? getCustomLoaderSettings() : { enabled: true, onDataLoad: true };
     if (lSettings.enabled && lSettings.onDataLoad !== false && lSettings.displayMode === 'fullscreen') {
-        showUniversalLoader(pTitle, 'Live SQL Server se data sync ho raha hai...', true);
+        showUniversalLoader(pTitle, 'Live database se data sync ho raha hai...', true);
     }
     if (loaders[page]) {
         Promise.resolve(loaders[page]()).finally(() => {
@@ -3466,6 +3529,11 @@ function renderDashboardContent(dashboardData) {
     if (recentTransactions && typeof renderRecentTransactions === 'function') renderRecentTransactions(recentTransactions);
 
     if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+
+    // Signal dashboard is 100% rendered to dismiss foreground update splash/wizard cleanly
+    if (typeof window.onDashboardFullyLoaded === 'function') {
+        try { window.onDashboardFullyLoaded(); } catch (_) { }
+    }
 }
 
 function renderAccountMiniCards(accounts) {
@@ -15061,10 +15129,10 @@ async function loadDatabasePage() {
         if (nameEl) nameEl.textContent = json.database || 'CashManagement';
 
         const srvEl = document.getElementById('dbOverviewServer');
-        if (srvEl) srvEl.textContent = json.server || 'SQL Server';
+        if (srvEl) srvEl.textContent = json.server || 'SQLite 3';
 
         const engEl = document.getElementById('dbOverviewEngine');
-        if (engEl) engEl.textContent = json.engine || 'SQL Server 2025 Express';
+        if (engEl) engEl.textContent = json.engine || 'SQLite 3 (Zero-Install Edition)';
 
         const tblEl = document.getElementById('dbOverviewTables');
         if (tblEl) tblEl.textContent = `${json.totalTables || allDbTablesList.length} Tables`;
@@ -17761,7 +17829,7 @@ async function loadSettingsPage() {
         const ok = Boolean(h && h.success && h.status === 'CONNECTED');
         isDatabaseConnected = ok;
         if (dbS) { dbS.textContent = ok ? '● LIVE DB' : '● DB OFFLINE'; dbS.classList.toggle('live', ok); }
-        if (dbI) dbI.textContent = ok ? 'SQL Server — CashManagement (Connected)' : 'SQL Server — Not connected';
+        if (dbI) dbI.textContent = ok ? 'SQLite 3 — cash_management.db (Connected)' : 'SQLite 3 — Not connected';
         if (telemConn) {
             telemConn.textContent = ok ? '● CONNECTED' : '● DISCONNECTED';
             telemConn.className = ok ? 'dtc-val connected' : 'dtc-val';
@@ -17773,7 +17841,7 @@ async function loadSettingsPage() {
     } catch (e) {
         isDatabaseConnected = false;
         if (dbS) { dbS.textContent = '● STATUS UNKNOWN'; dbS.classList.remove('live'); }
-        if (dbI) dbI.textContent = 'SQL Server — Status could not be confirmed';
+        if (dbI) dbI.textContent = 'SQLite 3 — Status could not be confirmed';
         if (svS) svS.textContent = 'STATUS UNKNOWN — server could not be reached';
         if (telemConn) {
             telemConn.textContent = '● OFFLINE';
@@ -27489,11 +27557,93 @@ async function refreshAppVersionBadge(showGlow) {
     let currentTargetUpdateInfo = null;
 
     window.applyLiveUpdateFromWeb = async function (targetInfo = null) {
-        const info = targetInfo || currentTargetUpdateInfo || { latestVersion: '1.0.61', currentVersion: '1.0.60', notes: 'Latest release' };
-        openUpdateWizard(info);
+        const info = targetInfo || currentTargetUpdateInfo || { latestVersion: '1.0.77', currentVersion: '1.0.76', notes: 'Latest release' };
+        openUpdateWizard(info, true);
     };
 
-    function openUpdateWizard(info) {
+    window.showForegroundUpdateProgress = function (data) {
+        if (!data) return;
+        const info = {
+            latestVersion: data.latestVersion || (currentTargetUpdateInfo && currentTargetUpdateInfo.latestVersion) || '1.0.77',
+            currentVersion: data.currentVersion || (currentTargetUpdateInfo && currentTargetUpdateInfo.currentVersion) || '1.0.76',
+            notes: data.notes || (currentTargetUpdateInfo && currentTargetUpdateInfo.notes) || 'नवीनतम सिस्टम अपडेट'
+        };
+
+        let modal = document.getElementById('cmbcUpdateWizardModal');
+        if (!modal) {
+            openUpdateWizard(info, false);
+            modal = document.getElementById('cmbcUpdateWizardModal');
+        }
+
+        if (typeof updateWizardUI === 'function') {
+            updateWizardUI(data.percent || 15, data.message || 'अपडेट प्रगति पर है...', data.stage || 'download');
+        }
+        if (data.message && typeof addWizardLog === 'function') {
+            addWizardLog(data.message, '#93c5fa');
+        }
+
+        if (data.stage === 'restarting' || (data.percent && data.percent >= 95)) {
+            if (typeof sessionStorage !== 'undefined') {
+                sessionStorage.setItem('cmbc_update_in_progress', JSON.stringify({
+                    targetVersion: info.latestVersion,
+                    active: true,
+                    stage: 'restarting'
+                }));
+            }
+            if (typeof updateWizardUI === 'function') {
+                updateWizardUI(95, 'सर्वर इंजन रीस्टार्ट हो रहा है... नए वर्ज़न से कनेक्ट किया जा रहा है...', 'restarting');
+            }
+            if (typeof monitorServerRebootAndReload === 'function') {
+                monitorServerRebootAndReload(info);
+            }
+        }
+    };
+
+    let rebootPollerActive = false;
+    function monitorServerRebootAndReload(info) {
+        if (rebootPollerActive) return;
+        rebootPollerActive = true;
+
+        if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('cmbc_update_in_progress', JSON.stringify({
+                targetVersion: info.latestVersion || '',
+                active: true,
+                stage: 'rebooting'
+            }));
+        }
+
+        let attempts = 0;
+        const maxAttempts = 150;
+        const checkTimer = setInterval(async () => {
+            attempts++;
+            try {
+                const res = await fetch('/api/health?t=' + Date.now(), { cache: 'no-store' });
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json && json.success && json.dbReady) {
+                        clearInterval(checkTimer);
+                        if (typeof updateWizardUI === 'function') {
+                            updateWizardUI(98, 'सर्वर पुनः चालू हो गया! डैशबोर्ड खोला जा रहा है...', 'completed');
+                        }
+                        if (typeof addWizardLog === 'function') {
+                            addWizardLog('Server online and database ready! Opening dashboard...', '#34d399');
+                        }
+                        setTimeout(() => {
+                            window.location.reload(true);
+                        }, 500);
+                        return;
+                    }
+                }
+            } catch (_) { }
+
+            if (attempts >= maxAttempts) {
+                clearInterval(checkTimer);
+                window.location.reload(true);
+            }
+        }, 600);
+    }
+
+    function openUpdateWizard(info, triggerBackend = true) {
         let modal = document.getElementById('cmbcUpdateWizardModal');
         if (!modal) {
             modal = document.createElement('div');
@@ -27636,7 +27786,7 @@ async function refreshAppVersionBadge(showGlow) {
         `;
 
         // Start real-time wizard tracking
-        startWizardProcess(info);
+        startWizardProcess(info, triggerBackend);
     }
 
     function addWizardLog(msg, color = '#cbd5e1') {
@@ -27728,20 +27878,22 @@ async function refreshAppVersionBadge(showGlow) {
         }
     }
 
-    async function startWizardProcess(info) {
-        addWizardLog('Calling backend auto-update engine (/api/system/apply-update)...', '#38bdf8');
+    async function startWizardProcess(info, triggerBackend = true) {
+        addWizardLog('Live Update Wizard connected.', '#38bdf8');
         updateWizardUI(15, 'GitHub रिपॉजिटरी से कोड सत्यापन किया जा रहा है...', 'manifest');
 
-        // Trigger the backend update execution
-        fetch('/api/system/apply-update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ force: true })
-        }).then(r => r.json()).then(res => {
-            if (res && res.updated) {
-                addWizardLog(`Update applied cleanly: v${res.fromVersion} -> v${res.toVersion}`, '#34d399');
-            }
-        }).catch(() => { });
+        if (triggerBackend) {
+            addWizardLog('Calling backend auto-update engine (/api/system/apply-update)...', '#38bdf8');
+            fetch('/api/system/apply-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force: true })
+            }).then(r => r.json()).then(res => {
+                if (res && res.updated) {
+                    addWizardLog(`Update applied cleanly: v${res.fromVersion} -> v${res.toVersion}`, '#34d399');
+                }
+            }).catch(() => { });
+        }
 
         let currentPercent = 15;
         let pollCount = 0;
@@ -27793,10 +27945,19 @@ async function refreshAppVersionBadge(showGlow) {
                     if (hRes.ok && (currentPercent >= 85 || serverRebootDetected)) {
                         clearInterval(updateTimer);
                         currentPercent = 100;
-                        updateWizardUI(100, 'अपडेट सफलतापूर्वक संपन्न हुआ!', 'completed');
+                        updateWizardUI(100, 'अपडेट सफलतापूर्वक संपन्न हुआ! डैशबोर्ड खोला जा रहा है...', 'completed');
                         addWizardLog('Connection re-established with new server build!', '#34d399');
-                        addWizardLog('🎉 100% Update Complete! Launching updated application...', '#4ade80');
-                        showWizardCompletion(info);
+                        addWizardLog('🎉 100% Update Complete! Loading dashboard...', '#4ade80');
+                        if (typeof sessionStorage !== 'undefined') {
+                            sessionStorage.setItem('cmbc_update_in_progress', JSON.stringify({
+                                targetVersion: info.latestVersion || '',
+                                active: true,
+                                stage: 'launching_dashboard'
+                            }));
+                        }
+                        setTimeout(() => {
+                            window.location.reload(true);
+                        }, 600);
                         return;
                     }
                 } catch (_) { }
