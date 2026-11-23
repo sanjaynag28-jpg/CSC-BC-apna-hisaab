@@ -223,6 +223,11 @@ window.fetch = async function (resource, init = {}) {
         url.includes('/api/health') ||
         url.includes('/api/sync/version') ||
         url.includes('/api/auth/me') ||
+        url.includes('/api/app-version') ||
+        url.includes('/api/system/check-update') ||
+        url.includes('/api/system/update-status') ||
+        url.includes('/api/license/status') ||
+        url.includes('/api/logs') ||
         url.includes('/api/idempotency/') ||
         url.includes('/api/live-events') ||
         Boolean(init && init.silent) ||
@@ -27144,20 +27149,6 @@ async function openMobileConnectModal() {
 }
 window.openMobileConnectModal = openMobileConnectModal;
 
-// Global auto-sync on tab focus / visibility change for dynamic real-time reports
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && currentPage === 'reports' && typeof loadReportKPIs === 'function' && typeof loadReportData === 'function') {
-        loadReportKPIs();
-        loadReportData();
-    }
-});
-window.addEventListener('focus', () => {
-    if (currentPage === 'reports' && typeof loadReportKPIs === 'function' && typeof loadReportData === 'function') {
-        loadReportKPIs();
-        loadReportData();
-    }
-});
-
 // ==================== Reports: Universal Record + Grahak 360° Helpers ====================
 function openUniversalRecordDetail(sourceModule, recordId, snCode) {
     try {
@@ -27274,10 +27265,6 @@ async function refreshAppVersionBadge(showGlow) {
 
         refreshAppVersionBadge(false);
         setInterval(() => refreshAppVersionBadge(true), 5 * 60 * 1000);
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden) refreshAppVersionBadge(true);
-        });
-        window.addEventListener('focus', () => refreshAppVersionBadge(true));
     };
 
     if (document.readyState === 'loading') {
@@ -27806,7 +27793,6 @@ async function refreshAppVersionBadge(showGlow) {
 
     setTimeout(() => checkLiveUpdate(false), 2000);
     setInterval(() => checkLiveUpdate(false), 10 * 60 * 1000);
-    window.addEventListener('focus', () => checkLiveUpdate(false));
 })();
 
 // ============================================================================

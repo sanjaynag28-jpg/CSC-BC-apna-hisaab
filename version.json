@@ -1,8 +1,8 @@
 {
-  "version": "1.0.67",
+  "version": "1.0.68",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: restore complete index.html with app.js and auto reload active page on recovery"
+  "notes": "fix: remove all tab switch and minimize focus listeners and mark background APIs silent"
 }
