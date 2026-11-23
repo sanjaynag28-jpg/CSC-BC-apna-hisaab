@@ -1,8 +1,8 @@
 {
-  "version": "1.0.68",
+  "version": "1.0.69",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: remove all tab switch and minimize focus listeners and mark background APIs silent"
+  "notes": "refactor: remove desktop wizard and web admin buttons from settings UI"
 }
