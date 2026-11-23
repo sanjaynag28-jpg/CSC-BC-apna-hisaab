@@ -28387,7 +28387,35 @@ async function saveAndPushCloudLicenses() {
     }
 }
 
+// Launch Desktop Master License Wizard (PowerShell WPF)
+async function launchDesktopLicenseWizard() {
+    try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        if (typeof showToast === 'function') {
+            showToast('🖥️ डेस्कटॉप मास्टर लाइसेंस विजार्ड शुरू हो रहा है...', 'info');
+        }
+        const res = await fetch('/api/license/admin/launch-wizard', { method: 'POST', headers });
+        const data = await res.json();
+        if (data && data.success) {
+            if (typeof showToast === 'function') {
+                showToast('✅ ' + (data.message || 'विजार्ड स्क्रीन पर खुल गया है!'), 'success');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast('⚠️ ' + (data.error || data.message || 'विजार्ड शुरू नहीं हो सका'), 'warning');
+            }
+        }
+    } catch (e) {
+        if (typeof showToast === 'function') {
+            showToast('❌ त्रुटि: ' + e.message, 'error');
+        }
+    }
+}
+
 // Global window exposure for reliable button click handlers
+window.launchDesktopLicenseWizard = launchDesktopLicenseWizard;
 window.openAdminCloudControlModal = openAdminCloudControlModal;
 window.closeAdminCloudControlModal = closeAdminCloudControlModal;
 window.extendAdminLicenseDays = extendAdminLicenseDays;

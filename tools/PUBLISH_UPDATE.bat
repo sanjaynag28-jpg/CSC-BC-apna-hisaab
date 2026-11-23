@@ -85,6 +85,7 @@ for /l %%i in (1,1,3) do (
         echo   push attempt %%i/3 to !CUR_BRANCH!...
         "%GIT_EXE%" push origin !CUR_BRANCH!
         if !errorlevel! equ 0 (
+            "%GIT_EXE%" push origin !CUR_BRANCH!:main >nul 2>&1
             set "PUSH_OK=1"
         ) else (
             timeout /t 5 /nobreak >nul

@@ -136,4 +136,15 @@ router.post('/admin/cloud-config', (req, res) => {
     }
 });
 
+// POST /api/license/admin/launch-wizard - Launch native desktop PowerShell WPF wizard on host PC
+router.post('/admin/launch-wizard', (req, res) => {
+    if (!isAuthorizedAdmin(req)) {
+        return res.status(403).json({ success: false, error: 'अनुमति नहीं है (Admin Only)' });
+    }
+    const psScript = path.join(__dirname, '..', 'scripts', 'license_control_wizard.ps1');
+    const cmd = `start powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psScript}"`;
+    exec(cmd, { cwd: path.join(__dirname, '..') });
+    res.json({ success: true, message: 'डेस्कटॉप मास्टर लाइसेंस विजार्ड आपकी स्क्रीन पर खुल रहा है...' });
+});
+
 module.exports = router;

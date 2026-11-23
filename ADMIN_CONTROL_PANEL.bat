@@ -1,7 +1,5 @@
 @echo off
-title HisaabBC - Cloud License Control Panel
-echo ============================================================
-echo   HisaabBC - Cloud License Control Panel
-echo   Opening Settings -> License Control Wizard in Browser...
-echo ============================================================
-start http://localhost:4000/#settings?tab=license
+title HisaabBC - Master License and Cloud Control Wizard
+cd /d "%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\license_control_wizard.ps1"
+exit /b 0

@@ -857,29 +857,25 @@
             banner.style.cssText = `
                 position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
                 background: linear-gradient(135deg, #059669, #0284c7); color: white;
-                padding: 12px 24px; border-radius: 30px; font-size: 13.5px; font-weight: 800;
+                padding: 10px 20px; border-radius: 30px; font-size: 13px; font-weight: 800;
                 box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 9999999;
-                display: flex; align-items: center; gap: 10px; font-family: system-ui;
+                display: flex; align-items: center; gap: 12px; font-family: system-ui;
                 border: 1.5px solid rgba(255,255,255,0.4); animation: slideDown 0.3s ease;
             `;
             banner.innerHTML = `
-                <span style="font-size: 16px;">🚀</span>
-                <span>Naya Update Aaya Hai! Latest project load ho raha hai...</span>
+                <span>🚀 Naya version upalabdh hai!</span>
+                <button onclick="window.location.reload(true)" style="background: white; color: #0284c7; border: none; padding: 4px 12px; border-radius: 20px; font-weight: 800; cursor: pointer; font-size: 12px;">
+                    ⚡ Abhi Reload Karein
+                </button>
+                <button onclick="this.parentElement.remove()" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 14px; margin-left: 4px;">✕</button>
             `;
             document.body.appendChild(banner);
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 1200);
-        } catch (e) {
-            window.location.reload();
-        }
+        } catch (e) { }
     }
 
-    window.addEventListener('load', () => setTimeout(checkForProjectUpdates, 2500));
-    window.addEventListener('focus', () => checkForProjectUpdates());
-    window.addEventListener('online', () => setTimeout(checkForProjectUpdates, 1500));
-    setInterval(checkForProjectUpdates, 45000);
+    window.addEventListener('load', () => setTimeout(checkForProjectUpdates, 5000));
+    window.addEventListener('online', () => setTimeout(checkForProjectUpdates, 2000));
+    setInterval(checkForProjectUpdates, 10 * 60 * 1000);
 
     // ------------------------------------------------------------------------
     // 7. SUPERADMIN CLIENT ERROR LOGS VIEWER

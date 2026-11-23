@@ -629,16 +629,13 @@ if (autoUpdater && autoUpdater.state) {
     };
 }
 
-// Dynamic Application Version Tracking (Updates automatically whenever version.json, app.js or server updates)
-const serverStartTime = Date.now();
+// Dynamic Application Version Tracking (Stable Release Version)
 function getAppVersion() {
     try {
         const localVer = autoUpdater.getLocalVersionInfo().version || '1.0.0';
-        const appStat = fs.statSync(path.join(__dirname, 'public', 'app.js'));
-        const htmlStat = fs.statSync(path.join(__dirname, 'public', 'index.html'));
-        return `${localVer}-${Math.max(Math.floor(appStat.mtimeMs), Math.floor(htmlStat.mtimeMs), serverStartTime)}`;
+        return localVer;
     } catch (e) {
-        return `${serverStartTime}`;
+        return '1.0.0';
     }
 }
 

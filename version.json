@@ -1,8 +1,8 @@
 {
-  "version": "1.0.64",
+  "version": "1.0.65",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: use native modal overlay stack for cloud admin control wizard and bump app.js cache buster"
+  "notes": "feat: desktop WPF Master License Wizard, sticky buttons, and fix tab-switch reload"
 }
