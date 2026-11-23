@@ -93,9 +93,20 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
         `, { ...queryParams, nextMod, moduleCode });
 
         const inserted = insertRes.recordset?.[0] || {};
-        const GlobalSerialNo = inserted.GlobalSerialNo || insertRes.insertId || 1;
-        const SNCode = inserted.SNCode || `TXN-${String(GlobalSerialNo).padStart(6, '0')}`;
+        const GlobalSerialNo = parseInt(inserted.GlobalSerialNo || insertRes.insertId || 1, 10);
+        const SNCode = (inserted.SNCode && !inserted.SNCode.startsWith('TXN-'))
+            ? inserted.SNCode
+            : `SN-${GlobalSerialNo}`;
         const ModuleCode = inserted.ModuleCode || moduleCode;
+
+        // Ensure UniversalTxnRegistry has SNCode populated as SN-XXXX
+        try {
+            await tQ(`
+                UPDATE UniversalTxnRegistry 
+                SET SNCode = @snCode 
+                WHERE GlobalSerialNo = @gsn AND (SNCode IS NULL OR SNCode = '' OR SNCode LIKE 'TXN-%')
+            `, { snCode: SNCode, gsn: GlobalSerialNo });
+        } catch (_) { }
 
         // Update source table (if dedicated table configured or dynamic ServiceRecords)
         const targetTable = (modConfig && modConfig.table) ? modConfig.table : (MODULE_TABLES[sourceModule]?.table || 'ServiceRecords');
@@ -104,9 +115,11 @@ async function registerGlobalTransaction({ sourceModule, recordId, entityName, a
         if (targetTable && pkCol) {
             try {
                 const serialCol = (targetTable === 'ServiceRecords') ? 'DocCode = @ModuleCode, ModuleCodeSerial = @ModuleCode' : 'ModuleCode = @ModuleCode';
+                const hasSerialNo = (targetTable === 'UCLUpdates');
+                const extraSerialNo = hasSerialNo ? ', SerialNo = @SNCode' : '';
                 await tQ(`
                     UPDATE ${targetTable} 
-                    SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ${serialCol}
+                    SET GlobalSerialNo = @GlobalSerialNo, SNCode = @SNCode, ${serialCol}${extraSerialNo}
                     WHERE ${pkCol} = @recordId
                 `, {
                     GlobalSerialNo,

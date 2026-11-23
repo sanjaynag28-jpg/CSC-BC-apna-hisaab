@@ -28,6 +28,12 @@ try {
         Accept        = 'application/vnd.github+json'
     }
 
+    $targetBranch = 'sqlite'
+    try {
+        $b = (& git rev-parse --abbrev-ref HEAD)
+        if ($b) { $targetBranch = $b.Trim() }
+    } catch {}
+
     $rel = $null
     try {
         $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/tags/$tag" -Headers $headers -Method Get
@@ -38,7 +44,7 @@ try {
             body             = 'Windows single-file installer. Download SETUP.bat and run it as Administrator.'
             draft            = $false
             prerelease       = $false
-            target_commitish = 'main'
+            target_commitish = $targetBranch
         } | ConvertTo-Json -Compress)
         $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases" -Headers $headers -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) -ContentType 'application/json; charset=utf-8'
     }

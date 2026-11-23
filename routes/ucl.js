@@ -438,6 +438,7 @@ router.get('/', async (req, res) => {
                 u.AadhaarLast4 LIKE @search OR
                 u.SID LIKE @search OR
                 u.SerialNo LIKE @search OR
+                u.SNCode LIKE @search OR
                 u.PACCode LIKE @search
             )`;
         }
@@ -639,7 +640,7 @@ router.post('/', async (req, res) => {
                     userId
                 }, tQuery);
                 if (regRes) {
-                    effGlobSN = regRes.globalSerialNo || regRes.GlobalSerialNo || null;
+                    effGlobSN = parseInt(regRes.globalSerialNo || regRes.GlobalSerialNo, 10) || null;
                     effSNCode = regRes.snCode || regRes.SNCode || effSNCode;
                 }
             } catch (regErr) {
@@ -647,8 +648,9 @@ router.post('/', async (req, res) => {
             }
 
             // Update UCL SerialNo
-            await tQuery(`UPDATE UCLUpdates SET SerialNo = @sn WHERE UCLID = @id`, {
+            await tQuery(`UPDATE UCLUpdates SET SerialNo = @sn, SNCode = @sn, GlobalSerialNo = @gsn WHERE UCLID = @id`, {
                 sn: effSNCode,
+                gsn: effGlobSN,
                 id: uclId
             });
 

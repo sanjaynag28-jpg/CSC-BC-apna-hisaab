@@ -69,10 +69,10 @@ async function syncSqliteToSqlServer() {
         }
 
         if (newRows.length > 0) {
-            // Get columns in SQL Server
+            // Get columns in SQL Server (excluding computed columns like SNCode)
             const colsRes = await pool.request().query(`
                 SELECT c.name FROM sys.columns c 
-                WHERE c.object_id = OBJECT_ID('[${tbl}]')
+                WHERE c.object_id = OBJECT_ID('[${tbl}]') AND c.is_computed = 0
             `);
             const sqlCols = colsRes.recordset.map(c => c.name);
             const colsToInsert = Object.keys(newRows[0]).filter(c => sqlCols.includes(c));

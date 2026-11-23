@@ -334,13 +334,14 @@ async function verifyAll() {
     // INVARIANT 8: Core API Endpoints 200 OK & Success True
     // -----------------------------------------------------------------
     try {
+        const port = process.env.PORT || ((await testEndpoint('http://localhost:4000/api/accounts')) ? 4000 : 3000);
         const endpoints = [
-            'http://localhost:3000/api/transactions?limit=1',
-            'http://localhost:3000/api/bill-payments?limit=1',
-            'http://localhost:3000/api/csc?limit=1',
-            'http://localhost:3000/api/bc?limit=1',
-            'http://localhost:3000/api/khatabook/summary',
-            'http://localhost:3000/api/accounts'
+            `http://localhost:${port}/api/transactions?limit=1`,
+            `http://localhost:${port}/api/bill-payments?limit=1`,
+            `http://localhost:${port}/api/csc?limit=1`,
+            `http://localhost:${port}/api/bc?limit=1`,
+            `http://localhost:${port}/api/khatabook/summary`,
+            `http://localhost:${port}/api/accounts`
         ];
 
         let failedEndpoints = 0;

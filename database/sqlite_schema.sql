@@ -296,7 +296,9 @@ CREATE TABLE IF NOT EXISTS "Customers" (
     "AadhaarNumber" TEXT,
     "DateOfBirth" TEXT,
     "UserID" INTEGER DEFAULT 1,
-    "ExtraFieldsJson" TEXT
+    "ExtraFieldsJson" TEXT,
+    "TotalTransactions" INTEGER DEFAULT 0,
+    "TotalVolume" NUMERIC DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS "Documents" (
@@ -509,7 +511,8 @@ CREATE TABLE IF NOT EXISTS "SystemSettings" (
     "SettingValue" TEXT,
     "SettingGroup" TEXT DEFAULT 'General',
     "Description" TEXT,
-    "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime'))
+    "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
+    "UserID" INTEGER DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS "Transactions" (
@@ -596,7 +599,7 @@ CREATE TABLE IF NOT EXISTS "UCLUpdates" (
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "ModuleCode" TEXT DEFAULT 'UCL',
-    "GlobalSerialNo" TEXT,
+    "GlobalSerialNo" INTEGER,
     "SNCode" TEXT
 );
 
@@ -742,3 +745,20 @@ CREATE INDEX IF NOT EXISTS "idx_UCLUpdates_IX_UCLUpdates_User_Date" ON "UCLUpdat
 CREATE INDEX IF NOT EXISTS "idx_UniversalTxnRegistry_IX_UniversalTxn_Entity" ON "UniversalTxnRegistry" ("EntityName");
 CREATE INDEX IF NOT EXISTS "idx_UniversalTxnRegistry_IX_UniversalTxn_ModuleCode" ON "UniversalTxnRegistry" ("ModuleCode");
 CREATE INDEX IF NOT EXISTS "idx_UniversalTxnRegistry_IX_UniversalTxn_TransDate" ON "UniversalTxnRegistry" ("TransDate");
+CREATE INDEX IF NOT EXISTS "idx_UniversalTxnRegistry_IX_UniversalTxn_SNCode" ON "UniversalTxnRegistry" ("SNCode");
+CREATE INDEX IF NOT EXISTS "idx_BillPayments_IX_BillPayments_GlobalSerialNo" ON "BillPayments" ("GlobalSerialNo");
+CREATE INDEX IF NOT EXISTS "idx_BillPayments_IX_BillPayments_SNCode" ON "BillPayments" ("SNCode");
+CREATE INDEX IF NOT EXISTS "idx_UCLUpdates_IX_UCLUpdates_GlobalSerialNo" ON "UCLUpdates" ("GlobalSerialNo");
+CREATE INDEX IF NOT EXISTS "idx_UCLUpdates_IX_UCLUpdates_SNCode" ON "UCLUpdates" ("SNCode");
+CREATE INDEX IF NOT EXISTS "idx_Customers_IX_Customers_Aadhaar" ON "Customers" ("AadhaarNumber");
+
+CREATE TRIGGER IF NOT EXISTS "trg_UniversalTxnRegistry_SNCode"
+AFTER INSERT ON "UniversalTxnRegistry"
+FOR EACH ROW
+WHEN NEW.SNCode IS NULL OR NEW.SNCode = '' OR NEW.SNCode LIKE 'TXN-%'
+BEGIN
+    UPDATE "UniversalTxnRegistry" 
+    SET "SNCode" = 'SN-' || CAST(NEW.GlobalSerialNo AS INTEGER) 
+    WHERE "GlobalSerialNo" = NEW.GlobalSerialNo;
+END;
+

@@ -23122,7 +23122,11 @@ function renderUCLTable(rows) {
     let html = '';
     rows.forEach(row => {
         const dateStr = row.UpdateDate ? formatDate(row.UpdateDate) : '-';
-        const snCode = row.SerialNo || `UCL-${row.UCLID}`;
+        const snCode = (row.SNCode && !row.SNCode.startsWith('TXN-'))
+            ? row.SNCode
+            : ((row.SerialNo && !row.SerialNo.startsWith('TXN-'))
+                ? row.SerialNo
+                : (row.GlobalSerialNo ? `SN-${parseInt(row.GlobalSerialNo, 10)}` : `UCL-${row.UCLID}`));
         const custName = escapeHtml(row.CustomerName || '-');
         const phone = row.CustomerPhone ? `<div style="font-size: 12px; color: var(--text-muted);">📞 ${escapeHtml(row.CustomerPhone)}</div>` : '';
         const aadhaar = row.AadhaarLast4 ? `<div style="font-size: 11.5px; color: #0891b2; font-family: monospace;">Aadhaar: XXXX-${escapeHtml(row.AadhaarLast4)}</div>` : '';

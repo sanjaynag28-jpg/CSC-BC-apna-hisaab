@@ -71,6 +71,43 @@ function getDb() {
             return String(val);
         });
 
+        db.function('RIGHT', (str, n) => {
+            if (str === null || str === undefined || n === null || n === undefined) return '';
+            const s = String(str);
+            const len = Number(n);
+            if (len <= 0) return '';
+            return s.slice(-len);
+        });
+
+        db.function('LEFT', (str, n) => {
+            if (str === null || str === undefined || n === null || n === undefined) return '';
+            const s = String(str);
+            const len = Number(n);
+            if (len <= 0) return '';
+            return s.slice(0, len);
+        });
+
+        db.function('LEN', (s) => {
+            if (s === null || s === undefined) return 0;
+            return String(s).length;
+        });
+
+        db.function('ISNULL', (a, b) => {
+            return (a !== null && a !== undefined) ? a : b;
+        });
+
+        db.function('CHARINDEX', (needle, haystack) => {
+            if (!needle || !haystack) return 0;
+            const idx = String(haystack).indexOf(String(needle));
+            return idx >= 0 ? idx + 1 : 0;
+        });
+
+        db.function('TRY_CAST', (val) => {
+            if (val === null || val === undefined) return null;
+            const n = Number(val);
+            return isNaN(n) ? null : n;
+        });
+
         // Auto-heal / Ensure schema & columns are up to date on boot
         try {
             const { setupSQLite } = require('./setup_sqlite');
@@ -275,27 +312,51 @@ async function handleStoredProcedure(execSql, rawParams) {
         const custId = params.CustomerID || params.id || params.custId;
         if (!custId) return { recordset: [], rowsAffected: [0] };
 
+        const cust = d.prepare('SELECT OpeningBalance FROM Customers WHERE CustomerID = @id').get({ id: custId });
+        const opening = Number(cust?.OpeningBalance || 0);
+        const hasOpeningRow = d.prepare("SELECT COUNT(*) as cnt FROM KhataEntries WHERE CustomerID = @id AND ReferenceNo = 'OPENING-BAL'").get({ id: custId });
+        const hasOpening = (hasOpeningRow?.cnt || 0) > 0;
+
         const balRow = d.prepare(`
             SELECT 
-                IFNULL((SELECT SUM(Amount) FROM KhataEntries WHERE CustomerID = @id AND EntryType = 'Gave'), 0) -
-                IFNULL((SELECT SUM(Amount) FROM KhataEntries WHERE CustomerID = @id AND EntryType = 'Got'), 0) AS NetBalance,
+                IFNULL((SELECT SUM(Amount) FROM KhataEntries WHERE CustomerID = @id AND EntryType = 'Gave'), 0) AS TotalGave,
+                IFNULL((SELECT SUM(Amount) FROM KhataEntries WHERE CustomerID = @id AND EntryType = 'Got'), 0) AS TotalGot,
                 IFNULL((SELECT COUNT(*) FROM KhataEntries WHERE CustomerID = @id), 0) AS TxnCount,
                 IFNULL((SELECT SUM(Amount) FROM KhataEntries WHERE CustomerID = @id), 0) AS TotalVol
         `).get({ id: custId });
 
-        const bal = Number(balRow?.NetBalance || 0);
-        d.prepare(`
-            UPDATE Customers 
-            SET CurrentBalance = @bal, TotalTransactions = @cnt, TotalVolume = @vol, UpdatedAt = datetime('now', 'localtime')
-            WHERE CustomerID = @id
-        `).run({ bal, cnt: balRow?.TxnCount || 0, vol: balRow?.TotalVol || 0, id: custId });
-        return { recordset: [{ CurrentBalance: bal }], rowsAffected: [1] };
+        const totalGave = Number(balRow?.TotalGave || 0);
+        const totalGot = Number(balRow?.TotalGot || 0);
+        const bal = hasOpening ? (totalGave - totalGot) : (opening + totalGave - totalGot);
+        const balType = bal > 0 ? 'ToReceive' : (bal < 0 ? 'ToPay' : 'Settled');
+
+        const custCols = d.prepare('PRAGMA table_info(Customers)').all().map(c => c.name);
+        const hasTotalTxn = custCols.includes('TotalTransactions');
+        const hasTotalVol = custCols.includes('TotalVolume');
+
+        if (hasTotalTxn && hasTotalVol) {
+            d.prepare(`
+                UPDATE Customers 
+                SET CurrentBalance = @bal, BalanceType = @type, TotalTransactions = @cnt, TotalVolume = @vol, UpdatedAt = datetime('now', 'localtime')
+                WHERE CustomerID = @id
+            `).run({ bal, type: balType, cnt: balRow?.TxnCount || 0, vol: balRow?.TotalVol || 0, id: custId });
+        } else {
+            d.prepare(`
+                UPDATE Customers 
+                SET CurrentBalance = @bal, BalanceType = @type, UpdatedAt = datetime('now', 'localtime')
+                WHERE CustomerID = @id
+            `).run({ bal, type: balType, id: custId });
+        }
+        return { recordset: [{ CurrentBalance: bal, BalanceType: balType }], rowsAffected: [1] };
     }
 
     // 3. sp_UpdatePartyBalance
     if (/sp_UpdatePartyBalance/i.test(execSql)) {
         const pId = params.PartyID || params.id || params.partyId;
         if (!pId) return { recordset: [], rowsAffected: [0] };
+
+        const party = d.prepare('SELECT OpeningBalance FROM Parties WHERE PartyID = @id').get({ id: pId });
+        const opening = Number(party?.OpeningBalance || 0);
 
         const balRow = d.prepare(`
             SELECT 
@@ -305,7 +366,7 @@ async function handleStoredProcedure(execSql, rawParams) {
                 IFNULL((SELECT SUM(Amount) FROM Transactions WHERE PartyID = @id AND TransType = 'Loan Repay' AND IsDeleted = 0), 0) AS NetBalance
         `).get({ id: pId });
 
-        const bal = Number(balRow?.NetBalance || 0);
+        const bal = opening + Number(balRow?.NetBalance || 0);
         d.prepare("UPDATE Parties SET CurrentBalance = @bal, UpdatedAt = datetime('now', 'localtime') WHERE PartyID = @id").run({ bal, id: pId });
         return { recordset: [{ CurrentBalance: bal }], rowsAffected: [1] };
     }

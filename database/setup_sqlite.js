@@ -100,6 +100,13 @@ function autoRepairSchema(db, schemaSql) {
         while ((im = indexRegex.exec(schemaSql)) !== null) {
             try { db.exec(im[0]); } catch (_) { }
         }
+
+        // 4. Ensure all triggers exist
+        const triggerRegex = /CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS\s+[\s\S]*?END;/gi;
+        let trgM;
+        while ((trgM = triggerRegex.exec(schemaSql)) !== null) {
+            try { db.exec(trgM[0]); } catch (_) { }
+        }
     } catch (err) {
         console.warn('⚠️ [Auto-Repair] Schema validation notice:', err.message);
     }
