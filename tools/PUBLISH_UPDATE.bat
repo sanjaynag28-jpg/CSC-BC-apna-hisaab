@@ -112,5 +112,11 @@ echo.
 echo   Purane PC: agle boot ya raat 2:30 AM par automatic silent update
 echo   (data safe - .env / uploads / backups / database untouched).
 echo ============================================================
+if defined REL_NOTES (
+    exit /b 0
+)
+if "%NONINTERACTIVE%"=="1" (
+    exit /b 0
+)
 pause
 exit /b 0
