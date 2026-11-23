@@ -1,6 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
-title Publish Update to GitHub - CSC & BC Apna Hisaab
+title Publish Update to GitHub - CSC and BC Apna Hisaab
 cd /d "%~dp0.."
 
 set "GIT_EXE=git"
