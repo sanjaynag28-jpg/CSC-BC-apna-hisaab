@@ -35,6 +35,54 @@ if (typeof window.updateTransFlowHelper !== 'function') {
     window.updateTransFlowHelper = function () { };
 }
 
+// Defensive fallback declarations for multi-tenant auth and shop management (auth.js)
+// Prevents ReferenceError if called before auth.js finishes execution or if auth.js was blocked
+var openCreateShopModal = (typeof window !== 'undefined' && window.openCreateShopModal) || function openCreateShopModal() {
+    if (typeof window !== 'undefined' && typeof window.openCreateShopModal === 'function' && window.openCreateShopModal !== openCreateShopModal) {
+        return window.openCreateShopModal.apply(this, arguments);
+    }
+    const m = typeof document !== 'undefined' ? document.getElementById('modal-create-shop') : null;
+    if (m) {
+        m.style.display = 'flex';
+    } else {
+        console.warn('[app.js] openCreateShopModal called before auth.js was ready or modal element was found.');
+    }
+};
+if (typeof window !== 'undefined' && !window.openCreateShopModal) {
+    window.openCreateShopModal = openCreateShopModal;
+}
+
+var closeCreateShopModal = (typeof window !== 'undefined' && window.closeCreateShopModal) || function closeCreateShopModal() {
+    if (typeof window !== 'undefined' && typeof window.closeCreateShopModal === 'function' && window.closeCreateShopModal !== closeCreateShopModal) {
+        return window.closeCreateShopModal.apply(this, arguments);
+    }
+    const m = typeof document !== 'undefined' ? document.getElementById('modal-create-shop') : null;
+    if (m) m.style.display = 'none';
+};
+if (typeof window !== 'undefined' && !window.closeCreateShopModal) {
+    window.closeCreateShopModal = closeCreateShopModal;
+}
+
+var loadTenantShops = (typeof window !== 'undefined' && window.loadTenantShops) || async function loadTenantShops() {
+    if (typeof window !== 'undefined' && typeof window.loadTenantShops === 'function' && window.loadTenantShops !== loadTenantShops) {
+        return window.loadTenantShops.apply(this, arguments);
+    }
+    console.warn('[app.js] loadTenantShops called before auth.js was ready.');
+};
+if (typeof window !== 'undefined' && !window.loadTenantShops) {
+    window.loadTenantShops = loadTenantShops;
+}
+
+var loadClientErrorLogs = (typeof window !== 'undefined' && window.loadClientErrorLogs) || async function loadClientErrorLogs() {
+    if (typeof window !== 'undefined' && typeof window.loadClientErrorLogs === 'function' && window.loadClientErrorLogs !== loadClientErrorLogs) {
+        return window.loadClientErrorLogs.apply(this, arguments);
+    }
+    console.warn('[app.js] loadClientErrorLogs called before auth.js was ready.');
+};
+if (typeof window !== 'undefined' && !window.loadClientErrorLogs) {
+    window.loadClientErrorLogs = loadClientErrorLogs;
+}
+
 let isDatabaseConnected = false;
 let isCheckingDb = false;
 

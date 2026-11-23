@@ -61,6 +61,26 @@
                 window.openModal('pacModal');
             };
 
+            window.openCreateShopModal = function () {
+                if (window._realOpenCreateShopModal) return window._realOpenCreateShopModal();
+                var m = document.getElementById('modal-create-shop');
+                if (m) m.style.display = 'flex';
+            };
+
+            window.closeCreateShopModal = function () {
+                if (window._realCloseCreateShopModal) return window._realCloseCreateShopModal();
+                var m = document.getElementById('modal-create-shop');
+                if (m) m.style.display = 'none';
+            };
+
+            window.loadTenantShops = function () {
+                if (window._realLoadTenantShops) return window._realLoadTenantShops();
+            };
+
+            window.loadClientErrorLogs = function () {
+                if (window._realLoadClientErrorLogs) return window._realLoadClientErrorLogs();
+            };
+
             window.checkForUpdateManual = function () {
                 if (typeof window.checkAppUpdateManual === 'function') {
                     return window.checkAppUpdateManual();
@@ -90,7 +110,7 @@
         })();
     </script>
     <!-- Auto Error Telemetry & Logger (Loads first to capture all startup/runtime errors) -->
-    <script src="error-logger.js?v=1793356350000"></script>
+    <script src="error-logger.js?v=1795445000000"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#10b981">
@@ -12695,10 +12715,11 @@
     </div>
 
     <!-- Scripts -->
-    <script src="universal-doc-uploader.js"></script>
-    <script src="global-dob.js?v=1794031600000"></script>
-    <script src="searchable-select.js?v=1794483800000"></script>
-    <script src="app.js?v=1795444000000"></script>
+    <script src="universal-doc-uploader.js?v=1795445000000"></script>
+    <script src="global-dob.js?v=1795445000000"></script>
+    <script src="searchable-select.js?v=1795445000000"></script>
+    <script src="auth.js?v=1795445000000"></script>
+    <script src="app.js?v=1795445000000"></script>
 </body>
 
 </html>

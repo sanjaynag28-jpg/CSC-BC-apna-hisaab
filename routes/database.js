@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { query, sql } = require('../database/db');
+const fs = require('fs');
+const path = require('path');
+const { query } = require('../database/db');
 const { clampInt } = require('../utils/helpers');
 
 // Security Guard: Database Explorer is restricted to SuperAdmin only
@@ -38,29 +40,36 @@ router.get('/', (req, res) => res.redirect('/api/database/overview'));
 router.get('/overview', async (req, res) => {
     try {
         const result = await query(`
-            SELECT 
-                t.NAME AS TableName,
-                SUM(p.rows) AS RowCounts
-            FROM sys.tables t
-            INNER JOIN sys.partitions p ON t.OBJECT_ID = p.OBJECT_ID
-            WHERE p.index_id IN (0,1)
-            GROUP BY t.NAME
-            ORDER BY t.NAME
+            SELECT name AS TableName 
+            FROM sqlite_master 
+            WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_backup_%' 
+            ORDER BY name;
         `);
 
-        const tables = (result.recordset || []).map(r => ({
-            name: r.TableName,
-            label: TABLE_LABELS[r.TableName] || r.TableName,
-            rowCount: parseInt(r.RowCounts, 10) || 0
-        }));
+        const rawTables = result.recordset || [];
+        const tables = [];
+        let totalRows = 0;
 
-        const totalRows = tables.reduce((sum, t) => sum + t.rowCount, 0);
+        for (const r of rawTables) {
+            const tableName = r.TableName;
+            let rowCount = 0;
+            try {
+                const countRes = await query(`SELECT COUNT(*) AS cnt FROM [${tableName}];`);
+                rowCount = parseInt(countRes.recordset?.[0]?.cnt, 10) || 0;
+            } catch (_) {}
+            totalRows += rowCount;
+            tables.push({
+                name: tableName,
+                label: TABLE_LABELS[tableName] || tableName,
+                rowCount
+            });
+        }
 
         res.json({
             success: true,
-            server: process.env.DB_SERVER || 'SQL Server',
-            database: process.env.DB_NAME || 'CashManagement',
-            engine: 'Microsoft SQL Server (SQLEXPRESS)',
+            server: 'SQLite 3 (Local Embedded)',
+            database: 'cash_management.db',
+            engine: 'SQLite 3 (Zero-Install Edition)',
             status: 'ONLINE',
             totalTables: tables.length,
             totalRows,
@@ -76,97 +85,81 @@ router.get('/table/:tableName', async (req, res) => {
     try {
         const tableName = req.params.tableName;
 
-        // Security: Whitelist check against sys.tables
+        // Security: Whitelist check against sqlite_master
         const checkTable = await query(`
-            SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = @tName
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name = @tName
         `, { tName: tableName });
 
         if (!checkTable.recordset || checkTable.recordset.length === 0) {
             return res.status(404).json({ success: false, error: 'Table nahi mila ya invalid table name!' });
         }
 
-        // Get Columns
-        const colsResult = await query(`
-            SELECT 
-                COLUMN_NAME, 
-                DATA_TYPE, 
-                IS_NULLABLE,
-                CHARACTER_MAXIMUM_LENGTH
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE TABLE_NAME = @tName
-            ORDER BY ORDINAL_POSITION
-        `, { tName: tableName });
-
-        const columns = colsResult.recordset.map(c => ({
-            name: c.COLUMN_NAME,
-            type: c.DATA_TYPE,
-            nullable: c.IS_NULLABLE === 'YES',
-            maxLength: c.CHARACTER_MAXIMUM_LENGTH
+        // Fetch columns via PRAGMA table_info
+        const colsResult = await query(`PRAGMA table_info([${tableName}])`);
+        const columns = (colsResult.recordset || []).map(c => ({
+            name: c.name,
+            type: c.type || 'TEXT',
+            nullable: c.notnull === 0,
+            maxLength: null,
+            isPk: c.pk === 1
         }));
 
-        // Negative limit/page SQL me jaata tha -> FETCH NEXT -5 ROWS ONLY -> 500 error
+        // Identify primary key column or default to first column / rowid
+        const pkCol = columns.find(c => c.isPk)?.name || columns[0]?.name || 'rowid';
+        const orderCol = pkCol;
+
+        // Pagination & Search
         const page = clampInt(req.query.page, 1, 100000, 1);
         const limit = clampInt(req.query.limit, 1, 200, 50);
         const offset = (page - 1) * limit;
         const search = (req.query.search || '').trim();
 
         // Get total count
-        const countQuery = `SELECT COUNT(*) AS TotalCount FROM [${tableName}]`;
-        const countRes = await query(countQuery);
-        const totalRecords = countRes.recordset[0]?.TotalCount || 0;
-
-        // Get Primary Key / Ordering column
-        const pkResult = await query(`
-            SELECT c.COLUMN_NAME
-            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS pk 
-            INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE c 
-                ON pk.TABLE_NAME = c.TABLE_NAME 
-                AND pk.CONSTRAINT_NAME = c.CONSTRAINT_NAME
-            WHERE pk.TABLE_NAME = @tName AND pk.CONSTRAINT_TYPE = 'PRIMARY KEY'
-        `, { tName: tableName });
-
-        const orderCol = pkResult.recordset[0]?.COLUMN_NAME || columns[0]?.name || '1';
+        const countRes = await query(`SELECT COUNT(*) AS TotalCount FROM [${tableName}]`);
+        const totalRecords = countRes.recordset?.[0]?.TotalCount || 0;
 
         // Select Rows
-        let dataQuery;
         if (search) {
-            // Find text columns to search
-            const textCols = columns.filter(c => ['varchar', 'nvarchar', 'text', 'ntext', 'char', 'nchar'].includes(c.type.toLowerCase()));
+            // Find text columns to search or cast to TEXT
+            const textCols = columns.filter(c => ['varchar', 'nvarchar', 'text', 'ntext', 'char', 'nchar'].some(t => (c.type || '').toLowerCase().includes(t)));
             let whereClause = '';
             if (textCols.length > 0) {
                 whereClause = 'WHERE ' + textCols.map(c => `[${c.name}] LIKE @searchVal`).join(' OR ');
             } else {
-                whereClause = `WHERE CAST([${orderCol}] AS NVARCHAR(MAX)) LIKE @searchVal`;
+                whereClause = `WHERE CAST([${orderCol}] AS TEXT) LIKE @searchVal`;
             }
 
-            dataQuery = `
+            const filteredCountRes = await query(`SELECT COUNT(*) AS FilteredCount FROM [${tableName}] ${whereClause}`, { searchVal: `%${search}%` });
+            const filteredRecords = filteredCountRes.recordset?.[0]?.FilteredCount || 0;
+
+            const dataQuery = `
                 SELECT * FROM [${tableName}]
                 ${whereClause}
                 ORDER BY [${orderCol}] DESC
-                OFFSET ${offset} ROWS
-                FETCH NEXT ${limit} ROWS ONLY
+                LIMIT ${limit} OFFSET ${offset}
             `;
             const dataResult = await query(dataQuery, { searchVal: `%${search}%` });
+
             return res.json({
                 success: true,
                 tableName,
                 label: TABLE_LABELS[tableName] || tableName,
                 columns,
                 totalRecords,
-                filteredRecords: dataResult.recordset.length,
+                filteredRecords,
                 page,
                 limit,
-                data: dataResult.recordset
+                data: dataResult.recordset || []
             });
         } else {
-            dataQuery = `
+            const dataQuery = `
                 SELECT * FROM [${tableName}]
                 ORDER BY [${orderCol}] DESC
-                OFFSET ${offset} ROWS
-                FETCH NEXT ${limit} ROWS ONLY
+                LIMIT ${limit} OFFSET ${offset}
             `;
             const dataResult = await query(dataQuery);
+
             return res.json({
                 success: true,
                 tableName,
@@ -175,10 +168,9 @@ router.get('/table/:tableName', async (req, res) => {
                 totalRecords,
                 page,
                 limit,
-                data: dataResult.recordset
+                data: dataResult.recordset || []
             });
         }
-
     } catch (err) {
         console.error('Database Table View Error:', err);
         res.status(500).json({ success: false, error: err.message });
@@ -190,74 +182,60 @@ router.get('/table/:tableName/schema', async (req, res) => {
     try {
         const tableName = req.params.tableName;
 
-        // Security: Check table exists
+        // Check table exists in sqlite_master
         const checkTable = await query(`
-            SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = @tName
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name = @tName
         `, { tName: tableName });
 
         if (!checkTable.recordset || checkTable.recordset.length === 0) {
             return res.status(404).json({ success: false, error: 'Table nahi mila ya invalid table name!' });
         }
 
-        // 1. Column details with Data Types, Nullable, Default, Precision, Scale, Primary Key
-        const cols = await query(`
-            SELECT 
-                c.COLUMN_NAME,
-                c.DATA_TYPE,
-                c.CHARACTER_MAXIMUM_LENGTH,
-                c.NUMERIC_PRECISION,
-                c.NUMERIC_SCALE,
-                c.IS_NULLABLE,
-                c.COLUMN_DEFAULT,
-                CASE WHEN pk.COLUMN_NAME IS NOT NULL THEN 1 ELSE 0 END AS IsPrimaryKey
-            FROM INFORMATION_SCHEMA.COLUMNS c
-            LEFT JOIN (
-                SELECT ku.TABLE_NAME, ku.COLUMN_NAME
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE ku
-                    ON tc.CONSTRAINT_NAME = ku.CONSTRAINT_NAME
-                WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND tc.TABLE_NAME = @tName
-            ) pk ON c.TABLE_NAME = pk.TABLE_NAME AND c.COLUMN_NAME = pk.COLUMN_NAME
-            WHERE c.TABLE_NAME = @tName
-            ORDER BY c.ORDINAL_POSITION
-        `, { tName: tableName });
+        // Fetch columns via PRAGMA table_info
+        const colsResult = await query(`PRAGMA table_info([${tableName}])`);
+        const columns = (colsResult.recordset || []).map(c => ({
+            COLUMN_NAME: c.name,
+            DATA_TYPE: c.type || 'TEXT',
+            CHARACTER_MAXIMUM_LENGTH: null,
+            NUMERIC_PRECISION: null,
+            NUMERIC_SCALE: null,
+            IS_NULLABLE: c.notnull === 0 ? 'YES' : 'NO',
+            COLUMN_DEFAULT: c.dflt_value,
+            IsPrimaryKey: c.pk === 1 ? 1 : 0
+        }));
 
-        // 2. Foreign Keys
-        const fks = await query(`
-            SELECT 
-                fk.name AS ConstraintName,
-                COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS ColumnName,
-                OBJECT_NAME(fkc.referenced_object_id) AS ReferencedTable,
-                COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ReferencedColumn
-            FROM sys.foreign_keys fk
-            INNER JOIN sys.foreign_key_columns fkc 
-                ON fk.object_id = fkc.constraint_object_id
-            WHERE OBJECT_NAME(fkc.parent_object_id) = @tName
-        `, { tName: tableName });
+        // Fetch foreign keys via PRAGMA foreign_key_list
+        const fksResult = await query(`PRAGMA foreign_key_list([${tableName}])`);
+        const foreignKeys = (fksResult.recordset || []).map(f => ({
+            ConstraintName: 'FK_' + tableName + '_' + f.id,
+            ColumnName: f.from,
+            ReferencedTable: f.table,
+            ReferencedColumn: f.to
+        }));
 
-        // 3. Indexes
-        const indexes = await query(`
-            SELECT 
-                i.name AS IndexName,
-                i.type_desc AS IndexType,
-                i.is_unique AS IsUnique,
-                i.is_primary_key AS IsPrimaryKey,
-                STRING_AGG(c.name, ', ') AS Columns
-            FROM sys.indexes i
-            INNER JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-            INNER JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
-            WHERE i.object_id = OBJECT_ID(@tName) AND i.name IS NOT NULL
-            GROUP BY i.name, i.type_desc, i.is_unique, i.is_primary_key
-        `, { tName: tableName });
+        // Fetch indexes via PRAGMA index_list & PRAGMA index_info
+        const idxListResult = await query(`PRAGMA index_list([${tableName}])`);
+        const indexes = [];
+        for (const idx of (idxListResult.recordset || [])) {
+            const infoResult = await query(`PRAGMA index_info([${idx.name}])`);
+            const colNames = (infoResult.recordset || []).map(ci => ci.name).join(', ');
+            indexes.push({
+                IndexName: idx.name,
+                IndexType: 'INDEX',
+                IsUnique: idx.unique === 1 ? 1 : 0,
+                IsPrimaryKey: idx.origin === 'pk' ? 1 : 0,
+                Columns: colNames
+            });
+        }
 
         res.json({
             success: true,
             tableName,
             label: TABLE_LABELS[tableName] || tableName,
-            columns: cols.recordset,
-            foreignKeys: fks.recordset,
-            indexes: indexes.recordset
+            columns,
+            foreignKeys,
+            indexes
         });
     } catch (err) {
         console.error('Database Schema View Error:', err);
@@ -266,7 +244,6 @@ router.get('/table/:tableName/schema', async (req, res) => {
 });
 
 // 4. POST Safe SQL Query Runner for Browser Database Inspector
-// Sirf READ-ONLY SELECT allowed. Koi bhi write/ddl/exec statement reject.
 const BLOCKED_SQL_KEYWORDS = [
     'insert', 'update', 'delete', 'merge', 'drop', 'create', 'alter', 'truncate',
     'exec', 'execute', 'grant', 'revoke', 'deny', 'backup', 'restore', 'dbcc',
@@ -278,20 +255,18 @@ const BLOCKED_SQL_KEYWORDS = [
 
 function isReadOnlySelect(sqlText) {
     const trimmed = sqlText.trim().replace(/;+\s*$/, '');
-    // Sirf ek statement allowed
     if (trimmed.includes(';')) return { ok: false, reason: 'Ek hi SELECT query allowed hai' };
 
     const withoutComments = trimmed
         .replace(/--[^\n]*/g, ' ')
         .replace(/\/\*[\s\S]*?\*\//g, ' ')
-        .replace(/'(?:''|[^'])*'/g, "''"); // String literals strip karo taaki false-positive na ho
+        .replace(/'(?:''|[^'])*'/g, "''");
     const lower = withoutComments.toLowerCase();
 
     if (!/^\s*(select|with)\s/.test(lower)) {
         return { ok: false, reason: 'Sirf SELECT query chal sakti hai' };
     }
     for (const kw of BLOCKED_SQL_KEYWORDS) {
-        // Word-boundary match - 'Intro' jaise column names false-positive na de
         const re = kw.endsWith('_')
             ? new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
             : new RegExp('\\b' + kw + '\\b', 'i');
@@ -335,25 +310,30 @@ router.post('/execute-query', async (req, res) => {
 // 5. GET Database Overall Statistics & Storage Metrics
 router.get('/stats', async (req, res) => {
     try {
-        const filesRes = await query(`
-            SELECT name, size * 8 / 1024 AS SizeMB, type_desc 
-            FROM sys.master_files 
-            WHERE database_id = DB_ID()
-        `);
+        const dbPath = path.join(__dirname, '..', 'database', 'data', 'cash_management.db');
+        let totalSizeMB = 0;
+        if (fs.existsSync(dbPath)) {
+            const stats = fs.statSync(dbPath);
+            totalSizeMB = +(stats.size / (1024 * 1024)).toFixed(2);
+        }
 
-        const versionRes = await query(`SELECT @@VERSION AS VersionString`);
-        const collationRes = await query(`SELECT DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS Collation`);
-
-        const totalSizeMB = (filesRes.recordset || []).reduce((sum, f) => sum + (f.SizeMB || 0), 0);
+        const versionRes = await query(`SELECT sqlite_version() AS version;`);
+        const version = versionRes.recordset?.[0]?.version || '3';
 
         res.json({
             success: true,
-            database: process.env.DB_NAME || 'CashManagement',
-            server: process.env.DB_SERVER || 'SQL Server',
+            database: 'cash_management.db',
+            server: 'SQLite 3 Local File',
             totalSizeMB,
-            files: filesRes.recordset,
-            collation: collationRes.recordset[0]?.Collation || 'SQL_Latin1_General_CP1_CI_AS',
-            version: versionRes.recordset[0]?.VersionString || 'Microsoft SQL Server'
+            files: [
+                {
+                    name: 'cash_management.db',
+                    SizeMB: totalSizeMB,
+                    type_desc: 'SQLITE_MAIN_DB'
+                }
+            ],
+            collation: 'BINARY / NOCASE',
+            version: 'SQLite ' + version + ' (WAL Mode)'
         });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

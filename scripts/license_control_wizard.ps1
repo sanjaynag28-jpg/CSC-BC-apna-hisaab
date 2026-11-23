@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # HisaabBC - Master License & Cloud Control Wizard (PowerShell WPF Edition)
 # Crisp White Theme | Resizable (1080x790+) | Full Cloud & Notification Control
 # Universal Keys • Personal Key Generator • Live Client Broadcast • Remote Blacklist • Admin Contact
