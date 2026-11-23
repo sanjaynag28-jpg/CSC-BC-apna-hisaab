@@ -17630,6 +17630,8 @@ function switchSettingsTab(tabKey) {
             const bkEl = document.getElementById('lastBackupTimeDisplay');
             if (bkEl && lastBk) bkEl.textContent = lastBk;
         } catch (e) { }
+    } else if (tabKey === 'license') {
+        if (typeof loadLicenseSettingsUI === 'function') loadLicenseSettingsUI();
     }
 
     try {
@@ -27803,3 +27805,334 @@ async function refreshAppVersionBadge(showGlow) {
     setInterval(() => checkLiveUpdate(false), 10 * 60 * 1000);
     window.addEventListener('focus', () => checkLiveUpdate(false));
 })();
+
+// ============================================================================
+// HISAABC LICENSE & SUBSCRIPTION CLIENT ENGINE
+// 1. Live License Status & Auto-Provisioning (TEST123)
+// 2. Hardware ID Fingerprint display & 1-click copy
+// 3. Cloud / GitHub Sync & Expiry Extension
+// 4. Expiry Guard (Dashboard warning banner & friendly lock modal)
+// ============================================================================
+let currentLicenseStatus = null;
+
+async function loadLicenseSettingsUI(silent = false) {
+    try {
+        const res = await fetch('/api/license/status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.success && data.license) {
+            currentLicenseStatus = data.license;
+            renderLicenseUI(data.license);
+            renderDashboardLicenseBanner(data.license);
+            if (data.license.isExpired) {
+                showLicenseLockModal(data.license);
+            } else {
+                hideLicenseLockModal();
+            }
+        }
+    } catch (e) {
+        if (!silent) console.warn('[LicenseClient] Status fetch error:', e.message);
+    }
+}
+
+function renderLicenseUI(lic) {
+    if (!lic) return;
+
+    // 1. Settings Tab Badge
+    const badgeTab = document.getElementById('tabBadgeLicense');
+    if (badgeTab) {
+        if (lic.isExpired) {
+            badgeTab.textContent = 'समाप्त';
+            badgeTab.className = 'stb-badge';
+            badgeTab.style.background = 'rgba(239, 68, 68, 0.2)';
+            badgeTab.style.color = '#f87171';
+        } else {
+            badgeTab.textContent = `${lic.daysRemaining} दिन`;
+            badgeTab.className = 'stb-badge live';
+            badgeTab.style.background = 'rgba(16, 185, 129, 0.2)';
+            badgeTab.style.color = '#34d399';
+        }
+    }
+
+    // 2. Hero Card elements
+    const statusBadge = document.getElementById('lhcStatusBadge');
+    if (statusBadge) {
+        statusBadge.textContent = lic.statusHindi || (lic.isLicensed ? '🟢 सक्रिय (Active)' : '🔴 समाप्त (Expired)');
+        statusBadge.className = 'lhc-status-pill ' + (lic.isExpired ? 'expired' : (lic.daysRemaining <= 7 ? 'warning' : 'active'));
+    }
+
+    const keyTag = document.getElementById('lhcKeyTag');
+    if (keyTag) keyTag.textContent = 'की: ' + (lic.licenseKey || 'TEST123');
+
+    const planTitle = document.getElementById('lhcPlanTitle');
+    if (planTitle) planTitle.textContent = lic.plan || '९० दिन फ्री ट्रायल';
+
+    const shopName = document.getElementById('lhcShopName');
+    if (shopName) shopName.textContent = 'दुकान: ' + (lic.shopName || 'Apna CSC / BC Kendra');
+
+    const ownerName = document.getElementById('lhcOwnerName');
+    if (ownerName) ownerName.textContent = 'संचालक: ' + (lic.ownerName || 'Sanchalak');
+
+    const daysRemaining = document.getElementById('lhcDaysRemaining');
+    if (daysRemaining) daysRemaining.textContent = lic.daysRemaining;
+
+    const expiryDate = document.getElementById('lhcExpiryDate');
+    if (expiryDate) expiryDate.textContent = lic.expiryDate || 'N/A';
+
+    // 3. Hardware ID
+    const hwDisplay = document.getElementById('displayHardwareId');
+    if (hwDisplay) hwDisplay.textContent = lic.hardwareId || 'HWID-0000-0000-0000';
+
+    const lockHw = document.getElementById('lockModalHwId');
+    if (lockHw) lockHw.textContent = lic.hardwareId || 'HWID-0000-0000-0000';
+
+    // 4. WhatsApp Links
+    const rawMsg = `नमस्ते संजय जी! मुझे अपने सॉफ़्टवेयर HisaabBC के लिए लाइसेंस की चाहिए।\nदुकान: ${lic.shopName || ''}\nमशीन कोड: ${lic.hardwareId}\nकृपया नया लाइसेंस एक्टिवेट करें।`;
+    const waUrl = `https://wa.me/919616928635?text=${encodeURIComponent(rawMsg)}`;
+
+    const waLink = document.getElementById('linkWhatsappAdmin');
+    if (waLink) waLink.href = waUrl;
+
+    const lockWa = document.getElementById('lockModalWhatsappBtn');
+    if (lockWa) lockWa.href = waUrl;
+
+    try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+}
+
+function renderDashboardLicenseBanner(lic) {
+    const banner = document.getElementById('dashboardLicenseNotificationBanner');
+    if (!banner) return;
+
+    if (!lic || lic.isExpired) {
+        banner.innerHTML = `
+            <div class="license-banner-warning" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="lock" style="width: 20px; height: 20px;"></i>
+                    <span><b>लाइसेंस समाप्त:</b> सॉफ़्टवेयर की वैधता समाप्त हो चुकी है। नया कार्य जारी रखने के लिए रिन्यू कराएं।</span>
+                </div>
+                <button onclick="navigateToSettingsTab('license')" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: #ef4444; border: none; white-space: nowrap;">
+                    ⚡ अभी एक्टिवेट करें
+                </button>
+            </div>
+        `;
+        try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+        return;
+    }
+
+    if (lic.daysRemaining <= 7) {
+        banner.innerHTML = `
+            <div class="license-banner-warning">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i data-lucide="alert-triangle" style="width: 20px; height: 20px;"></i>
+                    <span><b>लाइसेंस शीघ्र समाप्त:</b> आपके सॉफ़्टवेयर की वैधता में केवल <b>${lic.daysRemaining} दिन</b> शेष हैं (समाप्ति: ${lic.expiryDate})।</span>
+                </div>
+                <button onclick="navigateToSettingsTab('license')" class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px; font-weight: 700; white-space: nowrap;">
+                    🔍 रिन्यूअल विवरण देखें
+                </button>
+            </div>
+        `;
+        try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+    } else {
+        banner.innerHTML = '';
+    }
+}
+
+async function copyHardwareId(targetId = 'displayHardwareId') {
+    const el = document.getElementById(targetId);
+    const code = el ? el.textContent.trim() : '';
+    if (!code) return;
+
+    try {
+        await navigator.clipboard.writeText(code);
+        const txt = document.getElementById('txtCopyHw');
+        if (txt) {
+            const old = txt.textContent;
+            txt.textContent = 'कॉपी हो गया!';
+            setTimeout(() => { txt.textContent = old; }, 2000);
+        }
+        if (typeof showToast === 'function') {
+            showToast('✓ मशीन कोड क्लिपबोर्ड पर कॉपी हो गया!', 'success');
+        }
+    } catch (e) {
+        const temp = document.createElement('textarea');
+        temp.value = code;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        if (typeof showToast === 'function') {
+            showToast('✓ मशीन कोड क्लिपबोर्ड पर कॉपी हो गया!', 'success');
+        }
+    }
+}
+
+async function activateLicenseKey() {
+    const input = document.getElementById('inputLicenseKey');
+    const msgEl = document.getElementById('licenseActivationMsg');
+    const btn = document.getElementById('btnActivateKey');
+    const key = input ? input.value.trim().toUpperCase() : '';
+
+    if (!key) {
+        if (msgEl) {
+            msgEl.textContent = '❌ कृपया लाइसेंस की दर्ज करें!';
+            msgEl.style.color = '#f87171';
+            msgEl.style.display = 'block';
+        }
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="spin"></i> एक्टिवेट हो रहा है...';
+    }
+
+    try {
+        const res = await fetch('/api/license/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ licenseKey: key })
+        });
+        const data = await res.json();
+
+        if (data && data.success) {
+            if (msgEl) {
+                msgEl.textContent = '🎉 ' + (data.message || 'सफलतापूर्वक सक्रिय हो गया!');
+                msgEl.style.color = '#34d399';
+                msgEl.style.display = 'block';
+            }
+            if (input) input.value = '';
+            if (typeof showToast === 'function') {
+                showToast('🎉 बधाई! लाइसेंस सक्रिय हो गया है!', 'success');
+            }
+            hideLicenseLockModal();
+            loadLicenseSettingsUI(false);
+        } else {
+            if (msgEl) {
+                msgEl.textContent = '❌ ' + (data.error || 'अमान्य लाइसेंस की');
+                msgEl.style.color = '#f87171';
+                msgEl.style.display = 'block';
+            }
+        }
+    } catch (err) {
+        if (msgEl) {
+            msgEl.textContent = '❌ कनेक्शन त्रुटि: ' + err.message;
+            msgEl.style.color = '#f87171';
+            msgEl.style.display = 'block';
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="zap"></i> <span>एक्टिवेट करें</span>';
+            try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+        }
+    }
+}
+
+async function activateLicenseKeyFromLockModal() {
+    const input = document.getElementById('lockModalKeyInput');
+    const msgEl = document.getElementById('lockModalMsg');
+    const key = input ? input.value.trim().toUpperCase() : '';
+
+    if (!key) {
+        if (msgEl) {
+            msgEl.textContent = '❌ कृपया लाइसेंस की दर्ज करें!';
+            msgEl.style.color = '#f87171';
+            msgEl.style.display = 'block';
+        }
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/license/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ licenseKey: key })
+        });
+        const data = await res.json();
+        if (data && data.success) {
+            hideLicenseLockModal();
+            if (typeof showToast === 'function') {
+                showToast('🎉 बधाई! सॉफ़्टवेयर अनलॉक हो गया है!', 'success');
+            }
+            loadLicenseSettingsUI(false);
+        } else {
+            if (msgEl) {
+                msgEl.textContent = '❌ ' + (data.error || 'अमान्य की!');
+                msgEl.style.color = '#f87171';
+                msgEl.style.display = 'block';
+            }
+        }
+    } catch (e) {
+        if (msgEl) {
+            msgEl.textContent = '❌ त्रुटि: ' + e.message;
+            msgEl.style.color = '#f87171';
+            msgEl.style.display = 'block';
+        }
+    }
+}
+
+async function syncLicenseWithCloud() {
+    const btn = document.getElementById('btnSyncLicense');
+    const icon = document.getElementById('iconSyncLicense');
+    if (icon) icon.classList.add('spin');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/license/sync', { method: 'POST' });
+        const data = await res.json();
+        if (data && data.success) {
+            if (typeof showToast === 'function') {
+                showToast('✓ GitHub क्लाउड लाइसेंस सिंक संपन्न हुआ!', 'success');
+            }
+            loadLicenseSettingsUI(false);
+        } else {
+            if (typeof showToast === 'function') {
+                showToast('⚠️ सिंक विफल: ' + (data.error || 'ऑफलाइन'), 'warning');
+            }
+        }
+    } catch (e) {
+        if (typeof showToast === 'function') {
+            showToast('⚠️ GitHub सिंक नहीं हो सका (ऑफ़लाइन मोड सक्रिय)', 'warning');
+        }
+    } finally {
+        if (icon) icon.classList.remove('spin');
+        if (btn) btn.disabled = false;
+    }
+}
+
+function showLicenseLockModal(lic) {
+    const modal = document.getElementById('licenseLockModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    const hwEl = document.getElementById('lockModalHwId');
+    if (hwEl && lic) hwEl.textContent = lic.hardwareId || '';
+    try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+}
+
+function hideLicenseLockModal() {
+    const modal = document.getElementById('licenseLockModal');
+    if (modal) modal.style.display = 'none';
+}
+
+// Global Interceptor: If backend returns 403 LICENSE_EXPIRED on any transaction, open lock modal!
+(function hookLicenseNetworkInterceptor() {
+    const origFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await origFetch.apply(this, args);
+        if (response && response.status === 403) {
+            try {
+                const clone = response.clone();
+                const json = await clone.json();
+                if (json && json.code === 'LICENSE_EXPIRED') {
+                    showLicenseLockModal(json.license || currentLicenseStatus);
+                }
+            } catch (_) {}
+        }
+        return response;
+    };
+})();
+
+// Auto-check license on startup & periodically
+setTimeout(() => loadLicenseSettingsUI(true), 1200);
+setInterval(() => loadLicenseSettingsUI(true), 15 * 60 * 1000);
+

@@ -1,8 +1,8 @@
 {
-  "version": "1.0.61",
+  "version": "1.0.62",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Auto update: 3 file(s) changed (public, server.js, utils)"
+  "notes": "feat: add license key system with universal TEST123 trial and GitHub central control"
 }

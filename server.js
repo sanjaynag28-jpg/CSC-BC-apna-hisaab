@@ -816,7 +816,32 @@ app.use('/api', createIdempotencyMiddleware(createSqlIdempotencyStore(query, sql
 // Auth & Admin Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/license', require('./routes/license'));
 app.use('/api/idempotency', require('./routes/idempotency'));
+
+// License Enforcement Guard for Mutating Requests (Data is NEVER locked for viewing)
+app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+        return next();
+    }
+    const p = req.path || '';
+    if (p.startsWith('/license') || p.startsWith('/auth') || p.startsWith('/logs') || p.startsWith('/system') || p.startsWith('/settings')) {
+        return next();
+    }
+    try {
+        const lm = require('./utils/licenseManager');
+        const status = lm.getLicenseStatus();
+        if (status && status.isExpired) {
+            return res.status(403).json({
+                success: false,
+                code: 'LICENSE_EXPIRED',
+                error: 'लाइसेंस समाप्त हो चुका है। कृपया सेटिंग्स में जाकर नया लाइसेंस एक्टिवेट करें अथवा संजय जी से संपर्क करें।',
+                license: status
+            });
+        }
+    } catch (_) { }
+    next();
+});
 
 // Authenticated User Trigger for 1-Click Auto-Updater from Dashboard
 app.post('/api/system/apply-update', async (req, res) => {
@@ -1007,6 +1032,14 @@ function startServer() {
 
             // Background mein SQL Server se connect karein bina port 3000 block kiye
             connectDbInBackground();
+
+            // Initialize License Engine & Auto-Provision Community Key (Zero Interruption)
+            try {
+                const licenseManager = require('./utils/licenseManager');
+                licenseManager.initLicense().catch(e => console.warn('⚠️ [License] Init:', e.message));
+            } catch (e) {
+                console.warn('⚠️ [License] Engine error:', e.message);
+            }
 
             // Windows self-heal: PC boot par silent auto-start (task + startup entry)
             // aur Desktop/Start Menu shortcut ensure karo. Purane installs par bhi

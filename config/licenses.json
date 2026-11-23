@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-23T15:35:00Z",
+  "universalKeys": {
+    "TEST123": {
+      "key": "TEST123",
+      "plan": "90 Days Free Trial",
+      "planHindi": "९० दिन फ्री ट्रायल (Universal Offer)",
+      "expiryDate": "2027-02-23",
+      "isActive": true,
+      "maxDevices": 99999,
+      "message": "९० दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है!"
+    }
+  },
+  "blacklistedHardwareIds": []
+}
