@@ -1,8 +1,8 @@
 {
-  "version": "1.0.69",
+  "version": "1.0.70",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "refactor: remove desktop wizard and web admin buttons from settings UI"
+  "notes": "fix: support Windows PowerShell 5.1 UTF-8 BOM and STA in desktop license wizard"
 }
