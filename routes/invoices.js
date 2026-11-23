@@ -10,7 +10,7 @@ const { registerGlobalTransaction, deactivateGlobalTransaction } = require('../d
 // GET all invoices (Billing list)
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { search, status, customerId, startDate, endDate } = req.query;
         let whereClauses = ["i.Status != 'Cancelled'", 'i.UserID = @userId'];
         let params = { userId };
@@ -82,7 +82,7 @@ router.get('/', async (req, res) => {
 // GET next suggested invoice number
 router.get('/next-number', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const qDate = req.query.date || req.query.invoiceDate;
         const qYear = req.query.year ? parseInt(req.query.year, 10) : null;
         const year = qYear || ((qDate && /^\d{4}/.test(String(qDate))) ? parseInt(String(qDate).slice(0, 4), 10) : new Date().getFullYear());
@@ -139,7 +139,7 @@ router.get('/next-number', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const invId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const invResult = await query(`
             SELECT i.*, 
                    c.CustomerName, c.Phone as CustomerPhone, c.AadhaarNumber as CustomerAadhaar, c.Address as CustomerAddress, c.Email as CustomerEmail, c.GSTIN as CustomerGSTIN,
@@ -170,7 +170,7 @@ router.get('/:id', async (req, res) => {
 // POST create invoice
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const {
             CustomerID, InvoiceNumber, InvoiceDate, DueDate,
             Items, DiscountAmount, TaxPercent, PaidAmount,
@@ -557,7 +557,7 @@ router.post('/', async (req, res) => {
 router.put('/:id/pay', async (req, res) => {
     try {
         const invId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { PaidAmount, PaymentMode, AccountID, PaymentDate, Notes } = req.body;
 
         const payAmt = Math.max(0, parseFloat(PaidAmount) || 0);
@@ -756,7 +756,7 @@ router.put('/:id/pay', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const invId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         await withTransaction(async (tQuery) => {
             const invResult = await tQuery(`

@@ -9,6 +9,18 @@ const { createSqlIdempotencyStore } = require('../utils/idempotencyStore');
 const root = path.join(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
+test('authenticated routes never fall back to tenant 1 when identity is missing', () => {
+    const routeFiles = fs.readdirSync(path.join(root, 'routes')).filter(file => file.endsWith('.js'));
+    for (const file of routeFiles) {
+        assert.doesNotMatch(
+            read(path.join('routes', file)),
+            /req\.user\?\.UserID\s*\|\|\s*1/,
+            `${file} must not silently use tenant 1`
+        );
+    }
+    assert.doesNotMatch(read('server.js'), /req\.user\?\.UserID\s*\|\|\s*1/);
+});
+
 function createMemoryIdempotencyStore() {
     const records = new Map();
     const recordKey = (userId, requestKey) => `${userId}:${requestKey}`;

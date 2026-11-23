@@ -51,7 +51,7 @@ router.get(['/', '/applications'], async (req, res) => {
     try {
         const { q, status, serviceType, paymentStatus, customerId, startDate, endDate, page, limit } = req.query;
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let whereClauses = ['a.IsActive = 1', 'a.UserID = @userId'];
         const params = { userId };
 
@@ -160,7 +160,7 @@ router.get(['/', '/applications'], async (req, res) => {
 // ==========================================================================
 router.get('/stats', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const statsSql = `
             SELECT 
                 COUNT(*) as TotalCount,
@@ -287,7 +287,7 @@ async function seedDefaultCSCServices(userId = 1) {
 // GET /api/csc/services - Sabhi services aur unki fees ki list fetch karein
 router.get('/services', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const includeInactive = req.query.all === '1' || req.query.all === 'true';
         let result;
         try {
@@ -367,7 +367,7 @@ router.get('/services', async (req, res) => {
 // POST /api/csc/services - Nayi service add karein
 router.post('/services', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { ServiceName, GovtFee, OperatorFee, DefaultDays, Icon } = req.body || {};
         if (!ServiceName || !ServiceName.trim()) {
             return res.status(400).json({ success: false, error: 'Sewa ka naam (Service Name) zaroori hai.' });
@@ -416,7 +416,7 @@ router.post('/services', async (req, res) => {
 router.put('/services/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { ServiceName, GovtFee, OperatorFee, DefaultDays, Icon, IsActive } = req.body || {};
 
         if (!id) {
@@ -484,7 +484,7 @@ router.put('/services/:id', async (req, res) => {
 router.delete('/services/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const hard = req.query.hard === '1';
 
         const serviceLookup = await query('SELECT ServiceName FROM CSCServices WHERE ServiceID = @id AND UserID = @userId', { id, userId });
@@ -519,7 +519,7 @@ router.delete('/services/:id', async (req, res) => {
 // 2.9 CSC EXCEL EXPORT, TEMPLATE & IMPORT
 // ==========================================================================
 router.get('/export/excel', async (req, res) => {
-    await exportCSCToExcel(req.query, res, req.user?.UserID || 1);
+    await exportCSCToExcel(req.query, res, req.user.UserID);
 });
 
 router.get('/template/excel', async (req, res) => {
@@ -531,7 +531,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file (.xlsx, .xls, .csv) upload karein.' });
         }
-        const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, req.user?.UserID || 1);
+        const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, req.user.UserID);
         res.json(result);
     } catch (err) {
         console.error('Error importing CSC excel:', err);
@@ -545,7 +545,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const sql = `
             SELECT 
                 a.*,
@@ -576,7 +576,7 @@ router.get('/:id', async (req, res) => {
 // ==========================================================================
 router.post(['/', '/applications'], async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const b = req.body || {};
         const customerId = b.CustomerID !== undefined ? b.CustomerID : b.customerId;
         const customerName = b.CustomerName !== undefined ? b.CustomerName : b.customerName;
@@ -982,7 +982,7 @@ router.patch('/:id/status', async (req, res) => {
         }
 
         // Fetch current application
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const curRes = await query('SELECT * FROM CSCApplications WHERE AppID = @id AND IsActive = 1 AND UserID = @userId', { id, userId });
         if (curRes.recordset.length === 0) {
             return res.status(404).json({ success: false, error: 'Application nahi mili' });
@@ -1131,7 +1131,7 @@ router.put('/:id', async (req, res) => {
 
         // Purana record lo - jo field body me nahi aayi wahi DB value rahe,
         // warna partial edit se PaidAmount 0 ho jata tha (paisa record kho deta tha)
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const curRes = await query('SELECT * FROM CSCApplications WHERE AppID = @id AND IsActive = 1 AND UserID = @userId', { id, userId });
         if (!curRes.recordset.length) {
             return res.status(404).json({ success: false, error: 'Application nahi mili' });
@@ -1476,7 +1476,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id || isNaN(id)) {
             return res.status(400).json({ success: false, error: 'Awaidh CSC Application ID' });
         }

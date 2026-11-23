@@ -11,7 +11,7 @@ function parseId(value) {
 // GET all accounts
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT a.*,
                    a.CurrentBalance as CalculatedBalance
@@ -30,7 +30,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Account ID galat hai' });
 
         const result = await query(
@@ -98,7 +98,7 @@ router.get('/:id/passbook', async (req, res) => {
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Account ID galat hai' });
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const accRes = await query('SELECT * FROM Accounts WHERE AccountID = @id AND UserID = @userId', { id, userId });
         if (accRes.recordset.length === 0) {
             return res.status(404).json({ success: false, error: 'Account nahi mila' });
@@ -530,7 +530,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Opening balance galat hai' });
         }
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             INSERT INTO Accounts (AccountName, AccountType, BankName, AccountNumber, OpeningBalance, CurrentBalance, Color, Icon, Currency, UserID)
             OUTPUT INSERTED.*
@@ -553,7 +553,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Account ID galat hai' });
 
         const { AccountName, AccountType, BankName, AccountNumber, OpeningBalance, Color, Icon } = req.body || {};
@@ -625,7 +625,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Account ID galat hai' });
 
         const existing = await query('SELECT AccountName, AccountType FROM Accounts WHERE AccountID = @id AND UserID = @userId', { id, userId });

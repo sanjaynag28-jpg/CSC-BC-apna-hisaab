@@ -19,7 +19,7 @@ router.get('/', async (req, res) => {
         const l = Math.min(200, Math.max(5, parseInt(limit) || 20));
         const offset = (p - 1) * l;
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const whereClauses = ['1=1'];
         const params = {};
 
@@ -147,7 +147,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const logId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const isSuperAdmin = req.user?.Role === 'SuperAdmin';
         const result = await query(`
             SELECT * FROM AuditLogs

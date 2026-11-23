@@ -59,7 +59,7 @@ function displayPortal(row) {
 router.get('/dashboard', async (req, res) => {
     try {
         const today = todayLocal();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         // Current month range (sargable - MONTH()/YEAR() se index use nahi hota tha)
         const { start: monthStart, end: monthEnd } = monthRange(new Date().getMonth() + 1, new Date().getFullYear());
 
@@ -165,7 +165,7 @@ router.get('/dashboard', async (req, res) => {
 router.get(['/', '/transactions'], async (req, res) => {
     try {
         const { startDate, endDate, serviceType, qrProvider, status, search, limit = 100, offset = 0 } = req.query;
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let whereClause = 'WHERE b.UserID = @userId';
         const params = { userId };
 
@@ -259,7 +259,7 @@ router.get('/:id', async (req, res, next) => {
     try {
         const bcId = parseInt(req.params.id, 10);
         if (isNaN(bcId)) return next();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const result = await query(`
             SELECT
@@ -302,7 +302,7 @@ router.get('/:id', async (req, res, next) => {
 router.get('/session/today', async (req, res) => {
     try {
         const today = todayLocal();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let session = await query('SELECT TOP 1 * FROM BCCounterSessions WHERE SessionDate = @today AND UserID = @userId', { today, userId });
 
         if (session.recordset.length === 0) {
@@ -352,7 +352,7 @@ router.post('/session', async (req, res) => {
     try {
         const { SessionDate, OpeningCash, Note500, Note200, Note100, Note50, Note20, Note10, Coins, ExpectedClosingCash, Notes } = req.body;
         const date = SessionDate || todayLocal();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const n500 = parseInt(Note500) || 0;
         const n200 = parseInt(Note200) || 0;
@@ -409,7 +409,7 @@ router.post('/session', async (req, res) => {
 // POST /api/bc & /api/bc/transactions - Create new BC Transaction
 router.post(['/', '/transactions'], async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const {
             ServiceType, CustomerID, CustomerName, CustomerPhone, CustomerAadhaarLast4,
             BankName, AccountNumber, IFSC, BeneficiaryName,
@@ -619,7 +619,7 @@ router.put('/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) return res.status(400).json({ success: false, error: 'BC ID galat hai' });
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const {
             ServiceType, CustomerID, CustomerName, CustomerPhone, CustomerAadhaarLast4,
@@ -860,7 +860,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/bc/:id - Delete BC transaction
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         await withTransaction(async (tQuery) => {
             const trans = await tQuery('SELECT * FROM BCTransactions WHERE BCID = @id AND UserID = @userId', { id: parseInt(req.params.id), userId });
             if (trans.recordset.length === 0) {
@@ -925,7 +925,7 @@ router.delete('/:id', async (req, res) => {
 router.get('/settlements', async (req, res) => {
     try {
         const { limit = 50, offset = 0, type } = req.query;
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let whereClause = "WHERE t.UserID = @userId AND t.TransType = 'Transfer' AND (t.Tags LIKE '%BC Settlement%' OR t.Tags LIKE '%Payout%' OR t.Tags LIKE '%ATM Refill%' OR t.Tags LIKE '%Topup%')";
         const params = { userId };
 
@@ -969,7 +969,7 @@ router.get('/settlements', async (req, res) => {
 // POST /api/bc/settlement - Record Payout to Bank, ATM Refill, or Wallet Topup
 router.post('/settlement', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const {
             TransferType,     // 'Payout to Bank', 'ATM Cash Refill', 'Wallet Top-Up', 'Wallet to Wallet'
             FromAccountID,    // Source
@@ -1097,7 +1097,7 @@ router.post('/settlement', async (req, res) => {
 // POST /api/bc/relink - Purani unlinked BC entries ko strictly verified Phone/Aadhaar se safe tareeqe se jodo
 router.post('/relink', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         // 1. Relink strictly by matching 10-digit Phone numbers within the same UserID
         const r1 = await query(`
@@ -1152,7 +1152,7 @@ router.get('/customer/:customerId', async (req, res) => {
         if (!Number.isInteger(custId) || custId <= 0) {
             return res.status(400).json({ success: false, error: 'Valid customerId zaroori hai' });
         }
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const custInfo = await query(`SELECT CustomerName, Phone FROM Customers WHERE CustomerID = @id AND UserID = @userId`, { id: custId, userId });
         const cPhone = custInfo.recordset.length ? (custInfo.recordset[0].Phone || null) : null;
         const cleanPhoneDigits = (cPhone || '').replace(/\D/g, '').slice(-10);

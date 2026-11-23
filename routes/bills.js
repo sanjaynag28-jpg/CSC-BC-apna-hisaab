@@ -8,7 +8,7 @@ const { registerGlobalTransaction, deactivateGlobalTransaction } = require('../d
 // GET all bills
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT b.*, p.PartyName, c.CategoryName, c.Icon as CategoryIcon, c.Color as CategoryColor, a.AccountName
             FROM Bills b
@@ -30,7 +30,7 @@ router.get('/:id', async (req, res, next) => {
     try {
         const id = parseId(req.params.id);
         if (!id) return next();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const result = await query(`
             SELECT b.*, p.PartyName, c.CategoryName, c.Icon as CategoryIcon, c.Color as CategoryColor, a.AccountName
@@ -54,7 +54,7 @@ router.get('/:id', async (req, res, next) => {
 // Overdue sweep - GET read-only hona chahiye, isliye alag scheduled route
 router.post('/refresh-overdue', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             UPDATE Bills SET Status = 'Overdue'
             WHERE IsPaid = 0 AND DueDate < CAST(GETDATE() AS DATE) AND Status = 'Pending' AND UserID = @userId
@@ -69,7 +69,7 @@ router.post('/refresh-overdue', async (req, res) => {
 // POST create bill
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { BillName, BillType, Amount, DueDate, PartyID, AccountID, CategoryID, Notes, IsRecurring, Frequency } = req.body || {};
 
         if (!BillName || !String(BillName).trim()) {
@@ -136,7 +136,7 @@ router.post('/', async (req, res) => {
 // PUT mark bill as paid
 router.put('/:id/pay', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { PaidDate, AccountID } = req.body || {};
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Bill ID galat hai' });
@@ -224,7 +224,7 @@ router.put('/:id/pay', async (req, res) => {
 // DELETE bill
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Bill ID galat hai' });
 

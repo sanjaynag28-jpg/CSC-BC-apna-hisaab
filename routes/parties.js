@@ -11,7 +11,7 @@ function parseId(value) {
 // GET all parties
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT p.*,
                    COUNT(t.TransactionID) as TransactionCount,
@@ -36,7 +36,7 @@ router.get('/', async (req, res) => {
 // POST create party
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { PartyName, PartyType, Phone, Email, Address, OpeningBalance, Notes } = req.body || {};
         if (!PartyName || !String(PartyName).trim()) {
             return res.status(400).json({ success: false, error: 'Party name zaroori hai' });
@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Party ID galat hai' });
 
         const { PartyName, PartyType, Phone, Email, Address, OpeningBalance, Notes } = req.body || {};
@@ -136,7 +136,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Party ID galat hai' });
 
         const result = await query(
@@ -157,7 +157,7 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id/transactions', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Party ID galat hai' });
 
         const result = await query(`

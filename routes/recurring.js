@@ -19,7 +19,7 @@ function toDateStr(val) {
 // GET all recurring transactions (upcoming + history)
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT r.*, a.AccountName, ta.AccountName as ToAccountName, c.CategoryName, p.PartyName
             FROM RecurringTransactions r
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 // GET one
 router.get('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Recurring ID galat hai' });
 
@@ -56,7 +56,7 @@ router.get('/:id', async (req, res) => {
 // POST create recurring transaction
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { TransType, Amount, AccountID, ToAccountID, CategoryID, PartyID, Description, Frequency, StartDate, EndDate } = req.body || {};
 
         if (!TransType || !VALID_TRANS_TYPES.includes(TransType)) {
@@ -106,7 +106,7 @@ router.post('/', async (req, res) => {
 // PUT update recurring
 router.put('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Recurring ID galat hai' });
 
@@ -219,7 +219,7 @@ router.put('/:id', async (req, res) => {
 // DELETE recurring (soft deactivate — bani hui transactions rehti hain)
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Recurring ID galat hai' });
 
@@ -237,7 +237,7 @@ router.delete('/:id', async (req, res) => {
 // POST manual process — due recurring entries abhi generate karo
 router.post('/process', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await processRecurringTransactions(userId);
         res.json({ success: true, ...result, message: `Recurring process ho gaya: ${result.generated} transaction(s) bane` });
     } catch (err) {

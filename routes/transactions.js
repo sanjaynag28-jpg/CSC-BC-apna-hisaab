@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
         const limit = clampInt(req.query.limit, 1, 500, 100);
         const offset = clampInt(req.query.offset, 0, 1000000, 0);
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let whereClause = 'WHERE t.UserID = @userId AND t.IsDeleted = 0';
         const params = { userId };
 
@@ -79,7 +79,7 @@ router.get('/', async (req, res) => {
 // GET Dashboard Summary
 router.get('/summary/dashboard', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { start, end, m, y } = monthRange(req.query.month, req.query.year);
 
         const summary = await query(`
@@ -153,7 +153,7 @@ router.get('/summary/dashboard', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Transaction ID galat hai' });
 
         const result = await query(`
@@ -179,7 +179,7 @@ router.get('/:id', async (req, res) => {
 // POST create transaction
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { TransDate, TransType, Amount, AccountID, ToAccountID, CategoryID, PartyID, Description, Reference, Tags } = req.body || {};
 
         const amount = parseMoney(Amount, NaN);
@@ -302,7 +302,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Transaction ID galat hai' });
 
         const { TransDate, TransType, Amount, AccountID, ToAccountID, CategoryID, PartyID, Description, Reference, Tags } = req.body || {};
@@ -464,7 +464,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
     try {
         const id = parseId(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!id) return res.status(400).json({ success: false, error: 'Transaction ID galat hai' });
 
         await withTransaction(async (tQuery) => {

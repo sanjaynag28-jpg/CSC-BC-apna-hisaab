@@ -13,7 +13,7 @@ router.get('/', (req, res) => res.redirect('/api/khatabook/summary'));
 // GET overall Khatabook summary
 router.get('/summary', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const stats = await query(`
             SELECT 
                 COUNT(*) as TotalCustomers,
@@ -41,7 +41,7 @@ router.get('/summary', async (req, res) => {
 router.get('/customers', async (req, res) => {
     try {
         const { search, filter } = req.query;
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let whereClauses = ['c.IsActive = 1', 'c.UserID = @userId'];
         let params = { userId };
 
@@ -110,7 +110,7 @@ router.get('/entry/:id', async (req, res, next) => {
     try {
         const khataId = parseInt(req.params.id, 10);
         if (isNaN(khataId)) return next();
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const result = await query(`
             SELECT k.*, 
@@ -138,7 +138,7 @@ router.get('/entry/:id', async (req, res, next) => {
 router.get('/statement/:customerId', async (req, res) => {
     try {
         const custId = parseInt(req.params.customerId);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         // Customer details with family links
         const custResult = await query(`
@@ -220,7 +220,7 @@ router.get('/statement/:customerId', async (req, res) => {
 // POST direct Khata entry (Maine Diya / Mujhe Mila)
 router.post('/entry', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { CustomerID, EntryType, Amount, EntryDate, PaymentMode, AccountID, Description, ReferenceNo, CustomerName, CustomerPhone, CustomerAadhaar } = req.body;
 
         let targetCustId = CustomerID ? parseInt(CustomerID) : null;
@@ -447,7 +447,7 @@ router.post('/entry', async (req, res) => {
 router.delete('/entry/:id', async (req, res) => {
     try {
         const entryId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         await withTransaction(async (tQuery) => {
             const check = await tQuery(`

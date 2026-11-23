@@ -48,7 +48,7 @@ router.get('/check-aadhaar', async (req, res) => {
             });
         }
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let sql = `
             SELECT c.CustomerID, c.CustomerName, c.Phone, c.AadhaarNumber, c.DateOfBirth, c.Address, c.Email, c.FamilyName, c.Relationship, c.IsFamilyHead
             FROM Customers c
@@ -103,7 +103,7 @@ router.post('/auto-register', async (req, res) => {
             customerAadhaar: AadhaarNumber,
             dob: DateOfBirth || null,
             source: source || 'Form Live Auto-Register',
-            userId: req.user?.UserID || 1
+            userId: req.user.UserID
         });
 
         if (!result.customerId) {
@@ -134,7 +134,7 @@ router.get('/check-phone', async (req, res) => {
             return res.json({ success: true, exists: false, members: [] });
         }
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         let sql = `
             SELECT c.CustomerID, c.CustomerName, c.Phone, c.AadhaarNumber, c.DateOfBirth, c.Address, c.Email, c.Relationship,
                    c.IsFamilyHead, c.FamilyID, c.FamilyName, c.KhataMode, c.CurrentBalance,
@@ -199,7 +199,7 @@ router.get('/check-phone', async (req, res) => {
 router.get('/family/:id', async (req, res) => {
     try {
         const custId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         // Find the customer (active pehle dekhein; agar recycle bin/inactive hai to fallback dekhein taaki family view na toote)
         let custRes = await query(`SELECT * FROM Customers WHERE CustomerID = @id AND UserID = @userId AND IsActive = 1`, { id: custId, userId });
@@ -262,7 +262,7 @@ router.get('/family/:id', async (req, res) => {
 router.post('/family/change-head', async (req, res) => {
     try {
         const { currentHeadId, newHeadId, oldHeadRelationship } = req.body;
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!currentHeadId || !newHeadId) {
             return res.status(400).json({ success: false, error: 'currentHeadId aur newHeadId dono zaroori hain' });
         }
@@ -409,7 +409,7 @@ router.post('/family/separate-member', async (req, res) => {
         if (!custId || isNaN(custId)) {
             return res.status(400).json({ success: false, error: 'Customer ID zaroori hai' });
         }
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         const custRes = await query(`
             SELECT c.*, p.CustomerName as ParentName, p.CustomerID as ActualParentID
@@ -492,7 +492,7 @@ router.get('/next-id', async (req, res) => {
 // 2.6 CUSTOMERS EXCEL EXPORT, TEMPLATE & IMPORT
 // --------------------------------------------------------------------------
 router.get('/export/excel', async (req, res) => {
-    await exportCustomersToExcel(res, req.user?.UserID || 1);
+    await exportCustomersToExcel(res, req.user.UserID);
 });
 
 router.get('/template/excel', async (req, res) => {
@@ -504,7 +504,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file (.xlsx, .xls, .csv) upload karein.' });
         }
-        const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, req.user?.UserID || 1);
+        const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, req.user.UserID);
         res.json(result);
     } catch (err) {
         console.error('Error importing customer excel:', err);
@@ -517,7 +517,7 @@ router.post('/import/excel', upload.single('file'), async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
 
         // Lightweight brief mode for Master Data / Dropdowns / Quick lookup
         if (req.query.brief === '1') {
@@ -659,7 +659,7 @@ router.get('/', async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/:id/dues-summary', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const custId = parseInt(req.params.id, 10);
         if (isNaN(custId)) {
             return res.status(400).json({ success: false, error: 'Invalid Customer ID' });
@@ -732,7 +732,7 @@ router.get('/:id/dues-summary', async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT c.*,
                    p.CustomerName as ParentCustomerName,
@@ -770,7 +770,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Customer Name likhna zaroori hai' });
         }
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const trimmedName = CustomerName.trim();
         const cleanPhone = normalizePhone(Phone);
         const cleanAadhaar = normalizeAadhaar(AadhaarNumber);
@@ -994,7 +994,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const custId = parseInt(req.params.id);
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const reqBody = req.body || {};
         const {
             CustomerName, Phone, AadhaarNumber, Email, Address, GSTIN, DateOfBirth, CreditLimit, Notes,
@@ -1188,7 +1188,7 @@ router.delete('/:id', async (req, res) => {
         if (!Number.isInteger(custId) || custId <= 0) {
             return res.status(400).json({ success: false, error: 'Valid Customer ID zaroori hai' });
         }
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const oldCustRes = await query(`SELECT * FROM Customers WHERE CustomerID = @id AND UserID = @userId`, { id: custId, userId });
         if (!oldCustRes.recordset.length) {
             return res.status(404).json({ success: false, error: 'Customer nahi mila' });

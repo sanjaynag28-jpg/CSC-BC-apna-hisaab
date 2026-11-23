@@ -1,8 +1,8 @@
 {
-  "version": "1.0.70",
+  "version": "1.0.71",
   "critical": true,
   "releasedAt": "2026-11-23",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: support Windows PowerShell 5.1 UTF-8 BOM and STA in desktop license wizard"
+  "notes": "fix: tenant isolation, sqlite integrity constraints, foreign keys and audit fixes"
 }

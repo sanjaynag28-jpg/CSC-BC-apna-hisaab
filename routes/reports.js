@@ -33,7 +33,7 @@ router.get('/', (req, res) => res.redirect('/api/reports/kpis'));
 // ============================================================================
 router.get('/kpis', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { startDate, endDate } = req.query;
 
         let dateCondTrans = '';
@@ -295,7 +295,7 @@ router.get('/master', async (req, res) => {
             totalProfit: 0
         };
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const params = {
             limit: maxLimit,
             offset: skip,
@@ -1076,7 +1076,7 @@ router.get('/master', async (req, res) => {
 // ============================================================================
 router.get('/analytics', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         // Sargable range - YEAR(TransDate) = @year se index use nahi hota tha
         const { start: yearStart, end: yearEnd, y: year } = yearRange(req.query.year);
         const yearParams = { year, yearStart, yearEnd, userId };
@@ -1299,7 +1299,7 @@ router.get('/export/excel', async (req, res) => {
 
         // Fetch filtered records - multi-module (Cashbook / CSC / BC / Khata / Invoice)
         let records = [];
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const params = { userId };
         const MODULE_MAP = {
             'all': null,
@@ -1602,7 +1602,7 @@ function csvCell(value) {
 
 router.get('/export/csv', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { startDate, endDate, module = 'all', type, status, search, accountId, categoryId, customerId } = req.query;
 
         let dateCond = '';
@@ -1791,7 +1791,7 @@ router.get('/export/csv', async (req, res) => {
 // ============================================================================
 router.get('/monthly', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         // Sargable month range (MONTH()/YEAR() se index use nahi hota tha)
         const { start: monthStart, end: monthEnd, m: month, y: year } = monthRange(req.query.month, req.query.year);
 
@@ -1868,7 +1868,7 @@ router.get('/monthly', async (req, res) => {
 
 router.get('/yearly', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { start: yearStart, end: yearEnd, y: year } = yearRange(req.query.year);
 
         const monthly = await query(`

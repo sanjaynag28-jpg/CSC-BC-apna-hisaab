@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
 // GET /api/settings - Sabhi settings fetch karein (Tenant aware)
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query('SELECT SettingKey, SettingValue, SettingGroup, Description, UpdatedAt FROM SystemSettings');
         const map = { ...DEFAULT_SETTINGS };
 
@@ -57,7 +57,7 @@ router.get('/', async (req, res) => {
 // POST /api/settings - Dukaan profile aur system settings save / update karein (Tenant aware)
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const payload = req.body || {};
         const entries = Object.entries(payload);
 
@@ -128,7 +128,7 @@ const {
 
 // Customers Excel
 router.get('/customers/export/excel', async (req, res) => {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         await exportCustomersToExcel(res, userId);
 });
 
@@ -141,7 +141,7 @@ router.post('/customers/import/excel', upload.single('file'), async (req, res) =
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file upload karein' });
         }
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await importCustomersFromExcel(req.file.buffer, req.file.originalname, userId);
         res.json(result);
     } catch (err) {
@@ -152,7 +152,7 @@ router.post('/customers/import/excel', upload.single('file'), async (req, res) =
 
 // CSC Work Tracker Excel
 router.get('/csc/export/excel', async (req, res) => {
-    const userId = req.user?.UserID || 1;
+    const userId = req.user.UserID;
     await exportCSCToExcel(req.query, res, userId);
 });
 
@@ -165,7 +165,7 @@ router.post('/csc/import/excel', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ success: false, error: 'Kripya Excel file upload karein' });
         }
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await importCSCFromExcel(req.file.buffer, req.file.originalname, userId);
         res.json(result);
     } catch (err) {

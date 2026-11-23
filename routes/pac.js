@@ -21,7 +21,7 @@ const { escapeLike } = require('../utils/helpers');
 // ============================================================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { search, status } = req.query;
 
         let whereClause = 'WHERE IsDeleted = 0 AND UserID = @userId';
@@ -82,7 +82,7 @@ router.get('/', async (req, res) => {
 // ============================================================================
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const body = req.body;
 
         const pacCode = (body.pacCode || body.PACCode || '').trim();
@@ -153,7 +153,7 @@ router.post('/', async (req, res) => {
 // ============================================================================
 router.put('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseInt(req.params.id);
         const { status, notes, usedForCustomerName, usedForSID } = req.body;
 
@@ -185,7 +185,7 @@ router.put('/:id', async (req, res) => {
 // ============================================================================
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseInt(req.params.id);
 
         await query(`

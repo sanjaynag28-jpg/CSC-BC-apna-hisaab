@@ -5,7 +5,7 @@ const { query } = require('../database/db');
 // GET all categories
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT c.*, 
                    ISNULL(SUM(t.Amount), 0) as TotalAmount,
@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
 // POST create category
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { CategoryName, CategoryType, Icon, Color, ParentID } = req.body;
         const result = await query(`
             INSERT INTO Categories (UserID, CategoryName, CategoryType, Icon, Color, ParentID)
@@ -49,7 +49,7 @@ router.put('/:id', async (req, res) => {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) return res.status(400).json({ success: false, error: 'Category ID galat hai' });
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const oldCatRes = await query('SELECT * FROM Categories WHERE CategoryID = @id AND UserID = @userId AND IsActive = 1', { id, userId });
         if (!oldCatRes.recordset.length) {
             return res.status(404).json({ success: false, error: 'Category nahi mili' });
@@ -78,7 +78,7 @@ router.delete('/:id', async (req, res) => {
         const id = parseInt(req.params.id, 10);
         if (isNaN(id)) return res.status(400).json({ success: false, error: 'Category ID galat hai' });
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query('UPDATE Categories SET IsActive = 0 WHERE CategoryID = @id AND UserID = @userId', { id, userId });
         if (!result.rowsAffected || result.rowsAffected[0] === 0) {
             return res.status(404).json({ success: false, error: 'Category nahi mili' });

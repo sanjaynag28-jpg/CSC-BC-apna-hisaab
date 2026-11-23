@@ -60,7 +60,7 @@ for /f "delims=" %%V in ('node -e "console.log(require('./version.json').version
 :: Step 3: Stage + zero data leak audit
 echo [3/5] Staged files check (Zero Data Leak Audit)...
 "%GIT_EXE%" add -A
-"%GIT_EXE%" diff --cached --name-only | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.db$ \.sqlite$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
+"%GIT_EXE%" diff --cached --name-only | findstr /I /V "\.env\.example" | findstr /I /R "\.env$ \.env\. \.mdf$ \.ldf$ \.bak$ \.db$ \.sqlite$ \.admin-login \.sql-server-credentials \.auto-update-tmp ^backups/ ^logs/ ^public/uploads/ ^database/data/" >nul 2>&1
 if %errorlevel% equ 0 (
     echo.
     echo [ERR] DANGER: Sensitive data file staged - publish aborted.

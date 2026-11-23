@@ -22,7 +22,7 @@ const QUICK_NAV_ITEMS = [
 // --------------------------------------------------------------------------
 router.get(['/', '/universal'], async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const rawQ = (req.query.q || '').trim();
         const type = (req.query.type || 'all').toLowerCase().trim();
 
@@ -265,7 +265,7 @@ router.get(['/', '/universal'], async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/customer-360/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const custId = parseInt(req.params.id);
         if (isNaN(custId)) {
             return res.status(400).json({ success: false, error: 'Invalid Customer ID' });

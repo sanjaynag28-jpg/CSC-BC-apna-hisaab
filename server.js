@@ -883,7 +883,7 @@ app.use('/api/history', require('./routes/history'));
 app.get('/api/badges', async (req, res) => {
     try {
         const { query } = require('./database/db');
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const sql = `
             SELECT 
                 (SELECT COUNT(*) FROM Transactions WHERE UserID = @userId) AS transactions,

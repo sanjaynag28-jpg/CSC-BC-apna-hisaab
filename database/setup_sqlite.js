@@ -39,7 +39,7 @@ function autoRepairSchema(db, schemaSql) {
             const expectedCols = [];
             for (const rawLine of tMeta.body.split('\n')) {
                 const line = rawLine.trim().replace(/,\s*$/, '');
-                if (!line || line.startsWith('--') || line.startsWith('CONSTRAINT') || line.startsWith('PRIMARY KEY')) continue;
+                if (!line || line.startsWith('--') || line.startsWith('CONSTRAINT') || line.startsWith('PRIMARY KEY') || line.startsWith('FOREIGN KEY')) continue;
                 const colM = line.match(/^["`]?([A-Za-z0-9_]+)["`]?\s+([A-Za-z0-9_]+(?:\([^)]+\))?)([\s\S]*)$/);
                 if (colM) {
                     expectedCols.push({
@@ -129,7 +129,25 @@ function setupSQLite(existingDb) {
 
         // 1. Run live schema auto-repair (30 tables & columns)
         const schemaSql = fs.readFileSync(path.join(__dirname, 'sqlite_schema.sql'), 'utf8');
-        autoRepairSchema(db, schemaSql);
+        const hasExistingTables = Boolean(db.prepare(`
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            LIMIT 1
+        `).get());
+        const repairSchemaSql = hasExistingTables
+            ? schemaSql.replace(/^\s*CREATE\s+UNIQUE\s+INDEX\b[^;]*;\s*$/gim, '')
+            : schemaSql;
+        autoRepairSchema(db, repairSchemaSql);
+
+        if (hasExistingTables) {
+            const migrationApplied = db.prepare(`
+                SELECT 1 FROM SchemaMigrations
+                WHERE MigrationName = 'sqlite_integrity_constraints_v1'
+            `).get();
+            if (!migrationApplied) {
+                console.warn('⚠️ [DB Init] Run "npm run migrate:sqlite:integrity -- --apply" to add the verified SQLite integrity constraints.');
+            }
+        }
 
         // 2. Starter SuperAdmin user
         const userCount = db.prepare('SELECT COUNT(*) AS cnt FROM Users').get().cnt;

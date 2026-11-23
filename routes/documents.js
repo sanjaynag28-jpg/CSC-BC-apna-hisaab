@@ -134,7 +134,7 @@ function normalizeEntityType(rawType, customerId = null) {
 // ===========================================================================
 router.post('/upload', upload.array('files', 15), async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ success: false, error: 'Koi file select nahi hui' });
         }
@@ -269,7 +269,7 @@ router.post('/upload', upload.array('files', 15), async (req, res) => {
 // ===========================================================================
 router.get('/by-entity/:entityType/:entityId', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const rawType = req.params.entityType;
         const entityType = normalizeEntityType(rawType);
         const entityId = parseInt(req.params.entityId);
@@ -311,7 +311,7 @@ router.get('/by-entity/:entityType/:entityId', async (req, res) => {
 // ===========================================================================
 router.get('/customer/:customerId', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const custId = parseInt(req.params.customerId);
         if (!custId || isNaN(custId)) {
             return res.status(400).json({ success: false, error: 'Valid Customer ID zaroori hai' });
@@ -381,7 +381,7 @@ router.get('/customer/:customerId', async (req, res) => {
 // GET /api/documents — list
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { customerId, search, type } = req.query;
         const whereClauses = ['d.IsArchived = 0', 'd.UserID = @userId'];
         const params = { userId };
@@ -433,7 +433,7 @@ router.get('/', async (req, res) => {
 // GET /api/documents/stats — counts for badges
 router.get('/stats', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query(`
             SELECT COUNT(*) as TotalDocs,
                    ISNULL(SUM(FileSize), 0) as TotalSize,
@@ -450,7 +450,7 @@ router.get('/stats', async (req, res) => {
 // GET /api/documents/:id/view — browser preview
 router.get('/:id/view', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query('SELECT * FROM Documents WHERE DocumentID = @id AND UserID = @userId', { id: parseInt(req.params.id), userId });
         if (!result.recordset.length) return res.status(404).json({ success: false, error: 'Document nahi mila' });
 
@@ -479,7 +479,7 @@ router.get('/:id/view', async (req, res) => {
 // GET /api/documents/:id/download — file download
 router.get('/:id/download', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const result = await query('SELECT * FROM Documents WHERE DocumentID = @id AND UserID = @userId', { id: parseInt(req.params.id), userId });
         if (!result.recordset.length) return res.status(404).json({ success: false, error: 'Document nahi mila' });
 
@@ -506,7 +506,7 @@ router.get('/:id/download', async (req, res) => {
 // PUT /api/documents/:id/rename
 router.put('/:id/rename', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const docId = parseInt(req.params.id);
         let newName = (req.body.newName || '').trim();
         if (!newName) return res.status(400).json({ success: false, error: 'Naya naam khali nahi ho sakta' });
@@ -532,7 +532,7 @@ router.put('/:id/rename', async (req, res) => {
 // PUT /api/documents/:id/description
 router.put('/:id/description', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const docId = parseInt(req.params.id);
         const desc = (req.body.description || '').trim().substring(0, 500) || null;
         const result = await query(`
@@ -549,7 +549,7 @@ router.put('/:id/description', async (req, res) => {
 // DELETE /api/documents/:id
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const docId = parseInt(req.params.id);
         const result = await query('SELECT * FROM Documents WHERE DocumentID = @id AND UserID = @userId', { id: docId, userId });
         if (!result.recordset.length) return res.status(404).json({ success: false, error: 'Document nahi mila' });

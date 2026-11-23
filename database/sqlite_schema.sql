@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS "Accounts" (
     "Icon" TEXT DEFAULT 'wallet',
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "ApiIdempotencyRequests" (
@@ -82,7 +83,8 @@ CREATE TABLE IF NOT EXISTS "BCCounterSessions" (
     "Status" TEXT DEFAULT 'Open',
     "Notes" TEXT,
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "BCTransactions" (
@@ -118,7 +120,11 @@ CREATE TABLE IF NOT EXISTS "BCTransactions" (
     "GlobalSerialNo" INTEGER,
     "SNCode" TEXT,
     "ModuleCode" TEXT,
-    "PortalName" TEXT
+    "PortalName" TEXT,
+    FOREIGN KEY ("CashAccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("PortalAccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "BillPayments" (
@@ -157,7 +163,8 @@ CREATE TABLE IF NOT EXISTS "BillPayments" (
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "TotalBillAmount" NUMERIC DEFAULT 0,
     "CustomerDue" NUMERIC DEFAULT 0,
-    "ExtraFieldsJson" TEXT
+    "ExtraFieldsJson" TEXT,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Bills" (
@@ -179,7 +186,11 @@ CREATE TABLE IF NOT EXISTS "Bills" (
     "UserID" INTEGER DEFAULT 1,
     "GlobalSerialNo" INTEGER,
     "SNCode" TEXT,
-    "ModuleCode" TEXT
+    "ModuleCode" TEXT,
+    FOREIGN KEY ("AccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CategoryID") REFERENCES "Categories" ("CategoryID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("PartyID") REFERENCES "Parties" ("PartyID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Budgets" (
@@ -192,7 +203,9 @@ CREATE TABLE IF NOT EXISTS "Budgets" (
     "AlertPercent" INTEGER DEFAULT 80,
     "IsActive" INTEGER DEFAULT 1,
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("CategoryID") REFERENCES "Categories" ("CategoryID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Categories" (
@@ -204,7 +217,9 @@ CREATE TABLE IF NOT EXISTS "Categories" (
     "ParentID" INTEGER,
     "IsActive" INTEGER DEFAULT 1,
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("ParentID") REFERENCES "Categories" ("CategoryID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "ClientErrorLogs" (
@@ -217,7 +232,8 @@ CREATE TABLE IF NOT EXISTS "ClientErrorLogs" (
     "UserAgent" TEXT,
     "DeviceInfo" TEXT,
     "Resolved" INTEGER DEFAULT 0,
-    "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime'))
+    "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "CSCApplications" (
@@ -252,7 +268,8 @@ CREATE TABLE IF NOT EXISTS "CSCApplications" (
     "GlobalSerialNo" INTEGER,
     "SNCode" TEXT,
     "ModuleCode" TEXT,
-    "ExtraFieldsJson" TEXT
+    "ExtraFieldsJson" TEXT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "CSCServices" (
@@ -269,7 +286,8 @@ CREATE TABLE IF NOT EXISTS "CSCServices" (
     "UserID" INTEGER DEFAULT 1,
     "CustomFieldsSchema" TEXT,
     "Category" TEXT DEFAULT 'General',
-    "ModuleCode" TEXT DEFAULT 'CSC'
+    "ModuleCode" TEXT DEFAULT 'CSC',
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Customers" (
@@ -298,7 +316,9 @@ CREATE TABLE IF NOT EXISTS "Customers" (
     "UserID" INTEGER DEFAULT 1,
     "ExtraFieldsJson" TEXT,
     "TotalTransactions" INTEGER DEFAULT 0,
-    "TotalVolume" NUMERIC DEFAULT 0
+    "TotalVolume" NUMERIC DEFAULT 0,
+    FOREIGN KEY ("ParentCustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Documents" (
@@ -316,7 +336,9 @@ CREATE TABLE IF NOT EXISTS "Documents" (
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "EntityType" TEXT,
     "EntityID" INTEGER,
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "FieldDefinitions" (
@@ -339,7 +361,9 @@ CREATE TABLE IF NOT EXISTS "FieldDefinitions" (
     "OptionsJson" TEXT,
     "MaxLength" INTEGER,
     "ShowInList" INTEGER DEFAULT 0,
-    "SortOrder" INTEGER DEFAULT 0
+    "SortOrder" INTEGER DEFAULT 0,
+    FOREIGN KEY ("ServiceID") REFERENCES "CSCServices" ("ServiceID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("ModuleCode") REFERENCES "TxnModules" ("ModuleCode") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "InvoiceItems" (
@@ -349,7 +373,8 @@ CREATE TABLE IF NOT EXISTS "InvoiceItems" (
     "Quantity" NUMERIC DEFAULT 1,
     "Unit" TEXT DEFAULT 'Pcs',
     "UnitPrice" NUMERIC DEFAULT 0,
-    "TotalPrice" NUMERIC DEFAULT 0
+    "TotalPrice" NUMERIC DEFAULT 0,
+    FOREIGN KEY ("InvoiceID") REFERENCES "Invoices" ("InvoiceID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Invoices" (
@@ -376,7 +401,10 @@ CREATE TABLE IF NOT EXISTS "Invoices" (
     "UserID" INTEGER DEFAULT 1,
     "GlobalSerialNo" INTEGER,
     "SNCode" TEXT,
-    "ModuleCode" TEXT
+    "ModuleCode" TEXT,
+    FOREIGN KEY ("AccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "KhataEntries" (
@@ -403,7 +431,11 @@ CREATE TABLE IF NOT EXISTS "KhataEntries" (
     "ModuleCode" TEXT,
     "PaymentID" INTEGER,
     "SourceModule" TEXT,
-    "SourceID" INTEGER
+    "SourceID" INTEGER,
+    FOREIGN KEY ("AccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("InvoiceID") REFERENCES "Invoices" ("InvoiceID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "PACEntries" (
@@ -423,7 +455,8 @@ CREATE TABLE IF NOT EXISTS "PACEntries" (
     "IsActive" INTEGER DEFAULT 1,
     "IsDeleted" INTEGER DEFAULT 0,
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime'))
+    "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "Parties" (
@@ -439,7 +472,8 @@ CREATE TABLE IF NOT EXISTS "Parties" (
     "IsActive" INTEGER DEFAULT 1,
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "RecurringTransactions" (
@@ -459,7 +493,12 @@ CREATE TABLE IF NOT EXISTS "RecurringTransactions" (
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "ToAccountID" INTEGER,
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("AccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CategoryID") REFERENCES "Categories" ("CategoryID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("PartyID") REFERENCES "Parties" ("PartyID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("ToAccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "SchemaMigrations" (
@@ -503,7 +542,11 @@ CREATE TABLE IF NOT EXISTS "ServiceRecords" (
     "TotalAmount" NUMERIC DEFAULT 0.00,
     "DueAmount" NUMERIC DEFAULT 0.00,
     "DocCode" TEXT,
-    "IsDeleted" INTEGER DEFAULT 0
+    "IsDeleted" INTEGER DEFAULT 0,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("ServiceID") REFERENCES "CSCServices" ("ServiceID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("ModuleCode") REFERENCES "TxnModules" ("ModuleCode") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "SystemSettings" (
@@ -541,7 +584,12 @@ CREATE TABLE IF NOT EXISTS "Transactions" (
     "ModuleCode" TEXT,
     "SourceModule" TEXT,
     "SourceID" INTEGER,
-    "LineType" TEXT
+    "LineType" TEXT,
+    FOREIGN KEY ("AccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("CategoryID") REFERENCES "Categories" ("CategoryID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("PartyID") REFERENCES "Parties" ("PartyID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("ToAccountID") REFERENCES "Accounts" ("AccountID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "TxnModules" (
@@ -562,7 +610,8 @@ CREATE TABLE IF NOT EXISTS "TxnModules" (
     "Icon" TEXT,
     "Color" TEXT,
     "SortOrder" INTEGER DEFAULT 0,
-    "UserID" INTEGER DEFAULT 1
+    "UserID" INTEGER DEFAULT 1,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "UCLUpdates" (
@@ -599,8 +648,10 @@ CREATE TABLE IF NOT EXISTS "UCLUpdates" (
     "CreatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "UpdatedAt" TEXT DEFAULT (datetime('now', 'localtime')),
     "ModuleCode" TEXT DEFAULT 'UCL',
-    "GlobalSerialNo" INTEGER,
-    "SNCode" TEXT
+    "GlobalSerialNo" TEXT,
+    "SNCode" TEXT,
+    FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID") ON DELETE RESTRICT ON UPDATE RESTRICT,
+    FOREIGN KEY ("UserID") REFERENCES "Users" ("UserID") ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS "UniversalTxnRegistry" (
@@ -737,6 +788,13 @@ CREATE INDEX IF NOT EXISTS "idx_Transactions_IX_Transactions_ToAccountID" ON "Tr
 CREATE INDEX IF NOT EXISTS "idx_Transactions_IX_Transactions_TransDate" ON "Transactions" ("Amount", "TransType", "AccountID", "ToAccountID", "CategoryID", "PartyID", "TransDate", "CreatedAt");
 CREATE INDEX IF NOT EXISTS "idx_Transactions_IX_Transactions_UserID" ON "Transactions" ("UserID");
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_Transactions_UX_Txn_SourceLine" ON "Transactions" ("SourceModule", "SourceID", "LineType");
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_Users_UX_Username" ON "Users" (LOWER(TRIM("Username"))) WHERE "Username" IS NOT NULL AND TRIM("Username") <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_Users_UX_ApiToken" ON "Users" ("ApiToken") WHERE "ApiToken" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_SystemSettings_UX_SettingKey" ON "SystemSettings" ("SettingKey") WHERE "SettingKey" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_TxnModules_UX_ModuleCode" ON "TxnModules" ("ModuleCode");
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_SchemaMigrations_UX_MigrationName" ON "SchemaMigrations" ("MigrationName") WHERE "MigrationName" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_ServiceRecords_UX_Module_DocCode" ON "ServiceRecords" ("ModuleCode", "DocCode") WHERE "DocCode" IS NOT NULL AND "DocCode" <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_UniversalTxnRegistry_UX_SNCode" ON "UniversalTxnRegistry" ("SNCode") WHERE "SNCode" IS NOT NULL AND "SNCode" <> '';
 CREATE INDEX IF NOT EXISTS "idx_TxnModules_IX_TxnModules_UserID" ON "TxnModules" ("UserID");
 CREATE INDEX IF NOT EXISTS "idx_UCLUpdates_IX_UCLUpdates_Customer" ON "UCLUpdates" ("CustomerID");
 CREATE INDEX IF NOT EXISTS "idx_UCLUpdates_IX_UCLUpdates_SID" ON "UCLUpdates" ("SID");

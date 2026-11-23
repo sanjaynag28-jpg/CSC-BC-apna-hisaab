@@ -28,3 +28,13 @@ test('fresh-install and startup schemas do not recreate the conflicting unique c
     assert.doesNotMatch(bootstrapper, /UQ_FieldDefs UNIQUE/);
     assert.match(bootstrapper, /UX_FieldDefinitions_Module_FieldKey/);
 });
+
+test('SQLite UCL serial type matches its source migration', () => {
+    const schema = read('database/sqlite_schema.sql');
+    const migration = read('database/migrations/010_create_ucl_and_pac_tables_v1.sql');
+    const uclTable = schema.match(/CREATE TABLE IF NOT EXISTS "UCLUpdates" \(([\s\S]*?)\n\);/);
+
+    assert.ok(uclTable);
+    assert.match(uclTable[1], /"GlobalSerialNo" TEXT/);
+    assert.match(migration, /GlobalSerialNo NVARCHAR\(50\) NULL/i);
+});

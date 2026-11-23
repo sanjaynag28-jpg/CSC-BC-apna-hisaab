@@ -6,7 +6,7 @@ const { parseId, parseOptionalId, clampInt, parseMoney, monthRange } = require('
 // GET all budgets with spent amount
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const month = clampInt(req.query.month, 1, 12, new Date().getMonth() + 1);
         const year = clampInt(req.query.year, 1970, 2999, new Date().getFullYear());
         // Sargable range - MONTH()/YEAR() likhne se index use nahi hota tha
@@ -39,7 +39,7 @@ router.get('/', async (req, res) => {
 // POST create budget
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { BudgetName, CategoryID, BudgetMonth, BudgetYear, BudgetAmount, AlertPercent } = req.body || {};
 
         if (!BudgetName || !String(BudgetName).trim()) {
@@ -81,7 +81,7 @@ router.post('/', async (req, res) => {
 // PUT update budget
 router.put('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Budget ID galat hai' });
 
@@ -129,7 +129,7 @@ router.put('/:id', async (req, res) => {
 // DELETE budget (soft delete - audit/reporting ke liye record bacha rehta hai)
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseId(req.params.id);
         if (!id) return res.status(400).json({ success: false, error: 'Budget ID galat hai' });
         const result = await query('UPDATE Budgets SET IsActive = 0 WHERE BudgetID = @id AND UserID = @userId', { id, userId });

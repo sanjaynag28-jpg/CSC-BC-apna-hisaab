@@ -24,7 +24,7 @@ const { createServiceRecord, updateServiceRecord, deleteServiceRecord } = requir
 const { logAudit } = require('../utils/auditLogger');
 
 function userIdOf(req) {
-    return req.user?.UserID || 1;
+    return req.user.UserID;
 }
 
 function isAdmin(req) {

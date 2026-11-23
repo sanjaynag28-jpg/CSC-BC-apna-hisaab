@@ -193,7 +193,7 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
             return res.status(400).json({ success: false, error: 'Koi receipt file upload nahi ki gayi' });
         }
 
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const filePath = req.file.path;
         const fileName = req.file.filename;
         const originalName = req.file.originalname;
@@ -409,7 +409,7 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
 // ============================================================================
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { search, status, startDate, endDate, page = 1, limit = 50 } = req.query;
 
         let whereClause = 'WHERE u.IsDeleted = 0 AND u.UserID = @userId';
@@ -508,7 +508,7 @@ router.get('/', async (req, res) => {
 // ============================================================================
 router.post('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const body = req.body;
 
         const customerName = (body.customerName || body.CustomerName || '').trim();
@@ -816,7 +816,7 @@ router.post('/', async (req, res) => {
 // ============================================================================
 router.get('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseInt(req.params.id);
 
         const recRes = await query(`
@@ -846,7 +846,7 @@ router.get('/:id', async (req, res) => {
 // ============================================================================
 router.put('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseInt(req.params.id);
         const body = req.body;
 
@@ -1040,7 +1040,7 @@ router.put('/:id', async (req, res) => {
 // ============================================================================
 router.delete('/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const id = parseInt(req.params.id);
 
         await withTransaction(async (tQuery) => {

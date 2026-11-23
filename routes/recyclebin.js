@@ -66,7 +66,7 @@ function buildDetail(type, row) {
 // GET /api/recyclebin — saare deleted items
 router.get('/', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const entries = Object.entries(TYPES);
         const results = await Promise.all(entries.map(([, t]) => query(t.sql, { userId })));
 
@@ -101,7 +101,7 @@ router.get('/', async (req, res) => {
 // POST /api/recyclebin/restore — { type, id } se wapas lao
 router.post('/restore', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const { type, id } = req.body || {};
         const meta = TYPES[type];
         const numId = parseInt(id);
@@ -119,7 +119,7 @@ router.post('/restore', async (req, res) => {
 // DELETE /api/recyclebin/:type/:id — permanent delete
 router.delete('/:type/:id', async (req, res) => {
     try {
-        const userId = req.user?.UserID || 1;
+        const userId = req.user.UserID;
         const meta = TYPES[req.params.type];
         const numId = parseInt(req.params.id);
         if (!meta || !numId) {

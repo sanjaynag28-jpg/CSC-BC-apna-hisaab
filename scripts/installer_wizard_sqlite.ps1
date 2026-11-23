@@ -673,6 +673,10 @@ $workerBlock = {
 
         # Forcefully ensure .env is correctly set to SQLite and Port 4000
         $envFile = Join-Path $ProjectDir '.env'
+        $jwtBytes = New-Object byte[] 48
+        $jwtRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $jwtRng.GetBytes($jwtBytes) } finally { $jwtRng.Dispose() }
+        $jwtSecret = [Convert]::ToBase64String($jwtBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
         $needsEnvFix = $false
         if (-not (Test-Path $envFile)) {
             $needsEnvFix = $true
@@ -683,8 +687,19 @@ $workerBlock = {
             }
         }
         if ($needsEnvFix) {
-            Set-Content -Path $envFile -Value "PORT=4000`r`nHOST=0.0.0.0`r`nDB_TYPE=sqlite`r`nDB_FILE=database/data/cash_management.db`r`nJWT_SECRET=cash_management_sqlite_edition_secret_key_4000`r`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
+            Set-Content -Path $envFile -Value "PORT=4000`r`nHOST=0.0.0.0`r`nDB_TYPE=sqlite`r`nDB_FILE=database/data/cash_management.db`r`nJWT_SECRET=$jwtSecret`r`nALLOW_LOCAL_AUTO_LOGIN=true`r`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
             Log-Msg "Configuration file .env (Port 4000, SQLite) configure ho gaya." 'OK'
+        } else {
+            $envTxt = Get-Content $envFile -Raw -ErrorAction Stop
+            if ($envTxt -match '(?m)^JWT_SECRET\s*=\s*(?:$|cash_management_sqlite_edition_secret_key_4000\s*$)') {
+                if ($envTxt -match '(?m)^JWT_SECRET\s*=') {
+                    $envTxt = [regex]::Replace($envTxt, '(?m)^JWT_SECRET\s*=.*$', "JWT_SECRET=$jwtSecret")
+                } else {
+                    $envTxt = $envTxt.TrimEnd() + "`r`nJWT_SECRET=$jwtSecret`r`n"
+                }
+                [System.IO.File]::WriteAllText($envFile, $envTxt, (New-Object System.Text.UTF8Encoding($false)))
+                Log-Msg "Legacy/default JWT secret ko unique secret se replace kiya gaya." 'OK'
+            }
         }
 
         $setupScript = Join-Path $ProjectDir 'setup-database.js'
