@@ -616,6 +616,19 @@ app.use('/api', async (req, res, next) => {
 
 const autoUpdater = require('./utils/autoUpdater');
 
+// Broadcast real-time update wizard progress to all connected clients
+if (autoUpdater && autoUpdater.state) {
+    autoUpdater.state.onProgress = (progressData) => {
+        try {
+            broadcastDataChange({
+                module: 'SYSTEM_UPDATE',
+                type: 'UPDATE_PROGRESS',
+                ...progressData
+            });
+        } catch (_) { }
+    };
+}
+
 // Dynamic Application Version Tracking (Updates automatically whenever version.json, app.js or server updates)
 const serverStartTime = Date.now();
 function getAppVersion() {

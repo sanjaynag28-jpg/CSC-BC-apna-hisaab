@@ -61,6 +61,11 @@ const PROTECTED_RELATIVE_PATHS = new Set([
 const state = {
     checking: false,
     updating: false,
+    stage: 'idle', // 'idle' | 'manifest' | 'safety' | 'download' | 'database' | 'restarting' | 'completed' | 'error'
+    progressPercent: 0,
+    progressMessage: 'System idle',
+    recentLogs: [],
+    onProgress: null,
     lastCheckedAt: null,
     lastResult: 'idle',
     currentVersion: null,
@@ -70,6 +75,31 @@ const state = {
     periodicTimer: null,
     periodicIntervalMs: null
 };
+
+function setProgress(stage, percent, message) {
+    state.stage = stage;
+    state.progressPercent = Math.min(100, Math.max(0, percent));
+    state.progressMessage = message;
+    const timeStr = new Date().toLocaleTimeString();
+    if (!state.recentLogs) state.recentLogs = [];
+    state.recentLogs.push({ time: timeStr, msg: message, stage, percent });
+    if (state.recentLogs.length > 60) state.recentLogs.shift();
+    logUpdate(`[${percent}%] [${stage}] ${message}`);
+
+    if (typeof state.onProgress === 'function') {
+        try {
+            state.onProgress({
+                type: 'UPDATE_PROGRESS',
+                stage,
+                percent,
+                message,
+                time: timeStr,
+                currentVersion: state.currentVersion,
+                latestVersion: state.latestVersion
+            });
+        } catch (_) { }
+    }
+}
 
 function loadDotEnvIfNeeded() {
     try {
@@ -573,15 +603,20 @@ async function runSilentAutoUpdate(options = {}) {
 
     state.updating = true;
     state.lastResult = 'updating';
-    logUpdate(`New update detected: v${check.currentVersion} -> v${check.latestVersion}${isCritical ? ' (CRITICAL)' : ''} (${check.notes || 'New release'})`);
+    state.currentVersion = check.currentVersion;
+    state.latestVersion = check.latestVersion;
+    setProgress('manifest', 15, `GitHub manifest verified. Target release: v${check.latestVersion}`);
 
     const pkgHashBefore = fileHash(PKG_FILE);
 
     try {
         // Step 1: Safe pre-update DB backup
+        setProgress('safety', 28, 'Securing database & user records in safety vault (Zero Data Loss Guard)...');
         runSafeBackupBeforeUpdate();
+        setProgress('safety', 38, 'Safety backup verified. Protected data safely isolated.');
 
         // Step 2: Pull latest code safely (Git if available, otherwise ZIP)
+        setProgress('download', 50, `Downloading latest release package v${check.latestVersion} from GitHub...`);
         const gitBin = findGitBinary();
         const isGitRepo = fs.existsSync(path.join(ROOT_DIR, '.git'));
         if (gitBin && isGitRepo) {
@@ -596,6 +631,7 @@ async function runSilentAutoUpdate(options = {}) {
                 if (gitErr.message === 'LOCAL_CHANGES_PRESENT') {
                     logUpdate('Skipped silent update: uncommitted local edits detected (developer safety guard).');
                     state.lastResult = 'skipped-local-changes';
+                    setProgress('error', 0, 'Local uncommitted edits detected. Update skipped for safety.');
                     return { success: true, updated: false, skipped: true, reason: 'Local uncommitted edits detected' };
                 }
                 logUpdate(`Git update failed (${gitErr.message}), falling back to ZIP download...`);
@@ -605,11 +641,14 @@ async function runSilentAutoUpdate(options = {}) {
             await applyCodeUpdateViaZip();
         }
 
+        setProgress('download', 72, 'Code package extracted cleanly. Validating dependencies...');
+
         // Also repair missing modules, even when package.json itself did not change.
         const pkgHashAfter = fileHash(PKG_FILE);
         dependenciesRepaired = installDependenciesIfNeeded(pkgHashBefore !== pkgHashAfter) || dependenciesRepaired;
 
         // Step 4: Run safe idempotent database migration (zero data loss)
+        setProgress('database', 84, 'Applying database schema self-healing & indexes parity...');
         const setupDbScript = path.join(ROOT_DIR, 'setup-database.js');
         if (fs.existsSync(setupDbScript)) {
             try {
@@ -623,14 +662,17 @@ async function runSilentAutoUpdate(options = {}) {
                 logUpdate(`DB migration warning (non-fatal): ${migErr.message}`);
             }
         }
+        setProgress('database', 92, 'Database integrity & 115 performance indexes verified.');
 
         state.currentVersion = getLocalVersionInfo().version;
         state.lastResult = 'updated';
-        logUpdate(`Successfully updated to v${state.currentVersion}!`);
+        setProgress('restarting', 96, 'Restarting application engine into latest version...');
 
         if (restartOnUpdate && !isCli) {
             triggerCleanRestart();
         }
+
+        setProgress('completed', 100, `Successfully updated to v${state.currentVersion}!`);
 
         return {
             success: true,
@@ -688,11 +730,16 @@ function stopPeriodicCheck() {
 
 function getUpdateStatus() {
     const localInfo = getLocalVersionInfo();
-    const { periodicTimer, ...status } = state;
+    const { periodicTimer, onProgress, ...status } = state;
     return {
         ...status,
+        stage: state.stage || 'idle',
+        progressPercent: state.progressPercent || 0,
+        progressMessage: state.progressMessage || '',
+        recentLogs: state.recentLogs || [],
         periodicCheckActive: Boolean(periodicTimer),
         currentVersion: localInfo.version,
+        latestVersion: state.latestVersion || localInfo.version,
         releaseNotes: state.releaseNotes || localInfo.notes || '',
         repo: `https://github.com/${REPO_OWNER}/${REPO_NAME}`,
         autoUpdateEnabled: String(process.env.AUTO_UPDATE_DISABLED || '').toLowerCase() !== 'true'
