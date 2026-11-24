@@ -471,6 +471,20 @@ function getLicenseStatus() {
     const record = getActiveRecord();
 
     const localCfg = getLocalConfig();
+    let keyNoticeMessage = '';
+    if (localCfg.universalKeys && record && record.LicenseKey) {
+        const uKey = localCfg.universalKeys[record.LicenseKey];
+        if (uKey && uKey.message) {
+            keyNoticeMessage = uKey.message.trim();
+        }
+    }
+    if (!keyNoticeMessage && localCfg.universalKeys && localCfg.universalKeys['TEST123'] && localCfg.universalKeys['TEST123'].message) {
+        keyNoticeMessage = localCfg.universalKeys['TEST123'].message.trim();
+    }
+    if (!keyNoticeMessage && localCfg.announcement && localCfg.announcement.message) {
+        keyNoticeMessage = localCfg.announcement.message.trim();
+    }
+
     if (!record) {
         return {
             isLicensed: false,
@@ -480,7 +494,9 @@ function getLicenseStatus() {
             plan: 'लाइसेंस अनुपलब्ध',
             status: 'Inactive',
             expiryDate: null,
-            message: 'कृपया सॉफ्टवेयर एक्टिवेट करें',
+            message: keyNoticeMessage || 'कृपया सॉफ्टवेयर एक्टिवेट करें',
+            keyMessage: keyNoticeMessage,
+            noticeMessage: keyNoticeMessage,
             announcement: localCfg.announcement || null,
             adminContact: localCfg.adminContact || { whatsapp: '919616928635', name: 'Sanjay Nag' }
         };
@@ -518,6 +534,9 @@ function getLicenseStatus() {
         ownerName: record.OwnerName || '',
         mobileNumber: record.MobileNumber || '',
         lastSync: lastSyncTime,
+        message: keyNoticeMessage,
+        keyMessage: keyNoticeMessage,
+        noticeMessage: keyNoticeMessage,
         announcement: localCfg.announcement || null,
         adminContact: localCfg.adminContact || { whatsapp: '919616928635', name: 'Sanjay Nag' }
     };

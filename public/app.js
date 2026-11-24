@@ -28091,6 +28091,19 @@ function renderLicenseUI(lic) {
     const expiryDate = document.getElementById('lhcExpiryDate');
     if (expiryDate) expiryDate.textContent = lic.expiryDate || 'N/A';
 
+    // 2.5 Notice Message Box
+    const noticeBox = document.getElementById('lhcNoticeBox');
+    const noticeText = document.getElementById('lhcNoticeText');
+    const msg = (lic.keyMessage || lic.message || lic.noticeMessage || (lic.announcement && lic.announcement.message) || '').trim();
+    if (noticeBox && noticeText) {
+        if (msg) {
+            noticeText.textContent = msg;
+            noticeBox.style.display = 'flex';
+        } else {
+            noticeBox.style.display = 'none';
+        }
+    }
+
     // 3. Hardware ID
     const hwDisplay = document.getElementById('displayHardwareId');
     if (hwDisplay) hwDisplay.textContent = lic.hardwareId || 'HWID-0000-0000-0000';
