@@ -1,6 +1,6 @@
 {
   "name": "cash-management",
-  "version": "1.0.86",
+  "version": "1.0.87",
   "description": "Aapka Personal Cash Management System - BC ka Hisaab Kitaab",
   "main": "server.js",
   "scripts": {
@@ -32,7 +32,6 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "moment": "^2.31.0",
-    "mssql": "^12.7.4",
     "multer": "^2.4.0",
     "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0"
