@@ -1219,6 +1219,48 @@ $BtnSavePush.Add_Click({
         default { $noticeTypeStr = "info" }
     }
 
+    # Placement mapping
+    $placementStr = "dashboard"
+    switch ($ComboNoticePlacement.SelectedIndex) {
+        1 { $placementStr = "popup" }
+        2 { $placementStr = "ticker" }
+        3 { $placementStr = "settings" }
+        default { $placementStr = "dashboard" }
+    }
+
+    # Target audience mapping
+    $targetAudienceStr = "all"
+    switch ($ComboNoticeTarget.SelectedIndex) {
+        1 { $targetAudienceStr = "trial" }
+        2 { $targetAudienceStr = "expiring" }
+        3 { $targetAudienceStr = "expired" }
+        4 { $targetAudienceStr = "specific_hw" }
+        default { $targetAudienceStr = "all" }
+    }
+
+    # Dismiss duration mapping
+    $dismissDurationStr = "session"
+    switch ($ComboNoticeDismiss.SelectedIndex) {
+        1 { $dismissDurationStr = "24h" }
+        2 { $dismissDurationStr = "permanent" }
+        3 { $dismissDurationStr = "mandatory" }
+        default { $dismissDurationStr = "session" }
+    }
+
+    # Action Type mapping
+    $actionTypeStr = "whatsapp"
+    switch ($ComboNoticeActionType.SelectedIndex) {
+        1 { $actionTypeStr = "update" }
+        2 { $actionTypeStr = "settings" }
+        3 { $actionTypeStr = "custom" }
+        default { $actionTypeStr = "whatsapp" }
+    }
+
+    $validUntilStr = ""
+    if ($DpNoticeExpiry.SelectedDate) {
+        $validUntilStr = $DpNoticeExpiry.SelectedDate.ToString("yyyy-MM-dd")
+    }
+
     $finalConfig = [PSCustomObject]@{
         version = 1
         updatedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -1227,48 +1269,6 @@ $BtnSavePush.Add_Click({
             name = $TxtAdminName.Text.Trim()
             supportHours = $TxtAdminHours.Text.Trim()
         }
-        # Placement mapping
-        $placementStr = "dashboard"
-        switch ($ComboNoticePlacement.SelectedIndex) {
-            1 { $placementStr = "popup" }
-            2 { $placementStr = "ticker" }
-            3 { $placementStr = "settings" }
-            default { $placementStr = "dashboard" }
-        }
-
-        # Target audience mapping
-        $targetAudienceStr = "all"
-        switch ($ComboNoticeTarget.SelectedIndex) {
-            1 { $targetAudienceStr = "trial" }
-            2 { $targetAudienceStr = "expiring" }
-            3 { $targetAudienceStr = "expired" }
-            4 { $targetAudienceStr = "specific_hw" }
-            default { $targetAudienceStr = "all" }
-        }
-
-        # Dismiss duration mapping
-        $dismissDurationStr = "session"
-        switch ($ComboNoticeDismiss.SelectedIndex) {
-            1 { $dismissDurationStr = "24h" }
-            2 { $dismissDurationStr = "permanent" }
-            3 { $dismissDurationStr = "mandatory" }
-            default { $dismissDurationStr = "session" }
-        }
-
-        # Action Type mapping
-        $actionTypeStr = "whatsapp"
-        switch ($ComboNoticeActionType.SelectedIndex) {
-            1 { $actionTypeStr = "update" }
-            2 { $actionTypeStr = "settings" }
-            3 { $actionTypeStr = "custom" }
-            default { $actionTypeStr = "whatsapp" }
-        }
-
-        $validUntilStr = ""
-        if ($DpNoticeExpiry.SelectedDate) {
-            $validUntilStr = $DpNoticeExpiry.SelectedDate.ToString("yyyy-MM-dd")
-        }
-
         announcement = [PSCustomObject]@{
             isActive = ($ChkNoticeActive.IsChecked -eq $true)
             title = $TxtNoticeTitle.Text.Trim()
