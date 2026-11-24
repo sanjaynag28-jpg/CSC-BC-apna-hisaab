@@ -559,6 +559,75 @@
         /* --------------------------------------------------------------------------
    9. FORM CONTROLS FOCUS STATE
    -------------------------------------------------------------------------- */
+        .form-control,
+        input[type="text"],
+        input[type="tel"],
+        input[type="number"],
+        input[type="date"],
+        input[type="password"],
+        input[type="email"],
+        select.form-control,
+        textarea.form-control {
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            min-height: 44px !important;
+            letter-spacing: 0.35px !important;
+            border-radius: 10px !important;
+        }
+
+        [data-theme="light"] .form-control,
+        [data-theme="light"] input[type="text"],
+        [data-theme="light"] input[type="tel"],
+        [data-theme="light"] input[type="number"],
+        [data-theme="light"] input[type="date"],
+        [data-theme="light"] input[type="password"],
+        [data-theme="light"] input[type="email"],
+        [data-theme="light"] select.form-control,
+        [data-theme="light"] textarea.form-control,
+        body.light-theme .form-control,
+        body.light-theme input[type="text"],
+        body.light-theme input[type="tel"],
+        body.light-theme input[type="number"],
+        body.light-theme input[type="date"],
+        body.light-theme input[type="password"],
+        body.light-theme input[type="email"],
+        body.light-theme select.form-control,
+        body.light-theme textarea.form-control {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border: 1.5px solid #94a3b8 !important;
+            font-size: 16px !important;
+            font-weight: 700 !important;
+        }
+
+        [data-theme="light"] .ss-control,
+        body.light-theme .ss-control {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border: 1.5px solid #94a3b8 !important;
+            font-size: 15.5px !important;
+            font-weight: 700 !important;
+            min-height: 44px !important;
+        }
+
+        [data-theme="light"] .ss-label,
+        body.light-theme .ss-label {
+            color: #0f172a !important;
+            font-size: 15.5px !important;
+            font-weight: 700 !important;
+        }
+
+        .f-plain-num,
+        input[type="tel"],
+        input#bcAadhaar,
+        input#bcCustomerPhone,
+        input#bcRRN,
+        input#bcAccountNumber {
+            font-size: 16.5px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.8px !important;
+        }
+
         .form-control:focus {
             border-color: #3b82f6 !important;
             box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3) !important;
@@ -743,9 +812,13 @@
 
         .search-box input::placeholder,
         .form-control::placeholder,
-        .filter-input::placeholder {
-            color: #cbd5e1 !important;
-            opacity: 0.8 !important;
+        .filter-input::placeholder,
+        input::placeholder,
+        textarea::placeholder {
+            color: #64748b !important;
+            font-size: 14.5px !important;
+            font-weight: 600 !important;
+            opacity: 1 !important;
         }
 
 

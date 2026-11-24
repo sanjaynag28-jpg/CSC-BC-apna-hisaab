@@ -1,8 +1,8 @@
 {
-  "version": "1.0.79",
+  "version": "1.0.80",
   "critical": true,
   "releasedAt": "2026-11-24",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "fix: license control wizard push timer loop and UTF-8 BOM json parsing"
+  "notes": "feat: universal large bold pure white inputs and fix document delete path resolution"
 }

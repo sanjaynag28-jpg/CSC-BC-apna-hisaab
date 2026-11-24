@@ -51,12 +51,56 @@ const ALLOWED_EXTENSIONS = new Set([
     '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
 ]);
 
-// Path traversal guard
-function isInsideUploadDir(filePath) {
-    if (!filePath) return false;
-    const resolved = path.resolve(filePath);
-    const root = path.resolve(UPLOAD_DIR);
-    return resolved === root || resolved.startsWith(root + path.sep);
+// Path traversal guard & safe disk path resolver
+function getResolvedDocPath(filePath, fileName) {
+    if (!filePath && !fileName) return null;
+
+    // Check by fileName inside UPLOAD_DIR
+    const base = fileName ? path.basename(fileName) : (filePath ? path.basename(filePath) : null);
+    if (base) {
+        const candidate = path.join(UPLOAD_DIR, base);
+        const resolved = path.resolve(candidate);
+        const root = path.resolve(UPLOAD_DIR);
+        if (resolved.startsWith(root + path.sep) && fs.existsSync(resolved)) {
+            return resolved;
+        }
+    }
+
+    // Check if filePath is already absolute
+    if (filePath && path.isAbsolute(filePath)) {
+        const resolved = path.resolve(filePath);
+        const root = path.resolve(UPLOAD_DIR);
+        if ((resolved === root || resolved.startsWith(root + path.sep)) && fs.existsSync(resolved)) {
+            return resolved;
+        }
+    }
+
+    // Check relative to public directory (e.g. '/uploads/documents/...' or 'uploads/documents/...')
+    if (filePath) {
+        const cleanRel = filePath.replace(/^[/\\]+/, '');
+        const candidate = path.resolve(path.join(__dirname, '..', 'public', cleanRel));
+        const pubRoot = path.resolve(path.join(__dirname, '..', 'public'));
+        if (candidate.startsWith(pubRoot + path.sep) && fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+
+    // Fallback: candidate path inside UPLOAD_DIR even if file doesn't exist yet (for move/delete checks)
+    if (base) {
+        const candidate = path.resolve(path.join(UPLOAD_DIR, base));
+        const root = path.resolve(UPLOAD_DIR);
+        if (candidate.startsWith(root + path.sep)) {
+            return candidate;
+        }
+    }
+
+    return null;
+}
+
+function isInsideUploadDir(filePath, fileName) {
+    if (!filePath && !fileName) return false;
+    const resolved = getResolvedDocPath(filePath, fileName);
+    return Boolean(resolved);
 }
 
 // Google Drive / external link wali documents
@@ -459,18 +503,15 @@ router.get('/:id/view', async (req, res) => {
             res.setHeader('Cache-Control', 'no-store');
             return res.redirect(302, doc.FilePath.trim());
         }
-        if (!isInsideUploadDir(doc.FilePath)) {
-            console.error('🚫 Document path traversal blocked:', doc.FilePath);
-            return res.status(403).json({ success: false, error: 'File path invalid hai' });
-        }
-        if (!fs.existsSync(doc.FilePath)) {
+        const diskPath = getResolvedDocPath(doc.FilePath, doc.FileName);
+        if (!diskPath || !fs.existsSync(diskPath)) {
             return res.status(410).json({ success: false, error: 'File server par maujood nahi hai' });
         }
         const inlineTypes = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.pdf', '.txt'];
         const disp = inlineTypes.includes((doc.FileType || '').toLowerCase()) ? 'inline' : 'attachment';
         res.setHeader('Content-Disposition', `${disp}; filename="${encodeURIComponent(doc.OriginalName)}"`);
         res.setHeader('Cache-Control', 'no-store');
-        res.sendFile(path.resolve(doc.FilePath));
+        res.sendFile(diskPath);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -488,16 +529,13 @@ router.get('/:id/download', async (req, res) => {
             res.setHeader('Cache-Control', 'no-store');
             return res.redirect(302, doc.FilePath.trim());
         }
-        if (!isInsideUploadDir(doc.FilePath)) {
-            console.error('🚫 Document path traversal blocked:', doc.FilePath);
-            return res.status(403).json({ success: false, error: 'File path invalid hai' });
-        }
-        if (!fs.existsSync(doc.FilePath)) {
+        const diskPath = getResolvedDocPath(doc.FilePath, doc.FileName);
+        if (!diskPath || !fs.existsSync(diskPath)) {
             return res.status(410).json({ success: false, error: 'File server par maujood nahi hai' });
         }
         res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.OriginalName)}"`);
         res.setHeader('Cache-Control', 'no-store');
-        res.sendFile(path.resolve(doc.FilePath));
+        res.sendFile(diskPath);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -557,17 +595,16 @@ router.delete('/:id', async (req, res) => {
         const doc = result.recordset[0];
 
         if (!isExternalUrl(doc.FilePath)) {
-            if (!isInsideUploadDir(doc.FilePath)) {
-                console.error('🚫 Document path traversal blocked:', doc.FilePath);
-                return res.status(403).json({ success: false, error: 'File path invalid hai' });
-            }
-            if (fs.existsSync(doc.FilePath)) {
-                const recName = `${Date.now()}_${doc.FileName}`;
+            const diskPath = getResolvedDocPath(doc.FilePath, doc.FileName);
+            if (diskPath && fs.existsSync(diskPath)) {
+                const recName = `${Date.now()}_${doc.FileName || path.basename(diskPath)}`;
                 try {
-                    fs.renameSync(doc.FilePath, path.join(RECYCLE_DIR, recName));
+                    fs.renameSync(diskPath, path.join(RECYCLE_DIR, recName));
                 } catch (moveErr) {
-                    fs.copyFileSync(doc.FilePath, path.join(RECYCLE_DIR, recName));
-                    fs.unlinkSync(doc.FilePath);
+                    try {
+                        fs.copyFileSync(diskPath, path.join(RECYCLE_DIR, recName));
+                        fs.unlinkSync(diskPath);
+                    } catch (_) { }
                 }
             }
         }

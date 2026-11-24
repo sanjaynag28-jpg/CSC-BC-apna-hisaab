@@ -4505,15 +4505,68 @@ select.form-control,
 textarea.form-control {
     width: 100% !important;
     padding: 10px 14px !important;
+    min-height: 44px !important;
     border-radius: 10px !important;
-    border: 1.5px solid var(--border) !important;
-    background: var(--bg-input, #0d1525) !important;
-    color: var(--text-primary) !important;
-    font-size: 13.5px !important;
+    border: 1.5px solid var(--border, #94a3b8) !important;
+    background: var(--bg-input, #ffffff) !important;
+    color: var(--text-primary, #0f172a) !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
     font-family: inherit !important;
     outline: none !important;
     box-sizing: border-box !important;
+    letter-spacing: 0.35px !important;
     transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+[data-theme="light"] .form-control,
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="tel"],
+[data-theme="light"] select.form-control,
+[data-theme="light"] textarea.form-control,
+body.light-theme .form-control,
+body.light-theme input[type="text"],
+body.light-theme input[type="number"],
+body.light-theme input[type="date"],
+body.light-theme input[type="email"],
+body.light-theme input[type="password"],
+body.light-theme input[type="tel"],
+body.light-theme select.form-control,
+body.light-theme textarea.form-control {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #94a3b8 !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="date"],
+[data-theme="dark"] input[type="email"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] input[type="tel"],
+[data-theme="dark"] select.form-control,
+[data-theme="dark"] textarea.form-control,
+body.dark-theme .form-control,
+body.dark-theme input[type="text"],
+body.dark-theme input[type="number"],
+body.dark-theme input[type="date"],
+body.dark-theme input[type="email"],
+body.dark-theme input[type="password"],
+body.dark-theme input[type="tel"],
+body.dark-theme select.form-control,
+body.dark-theme textarea.form-control {
+    background: #0d1525 !important;
+    color: #f8fafc !important;
+    border-color: #334766 !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
 }
 
 .form-control:focus,
@@ -4854,20 +4907,28 @@ select[data-searchable-initialized="true"] {
 
 .ss-control {
     width: 100% !important;
-    min-height: 42px !important;
-    height: 42px !important;
+    min-height: 44px !important;
+    height: 44px !important;
     padding: 0 14px !important;
     border-radius: 10px !important;
-    border: 1.5px solid var(--border) !important;
-    background: var(--bg-input, #0d1525) !important;
-    color: var(--text-primary) !important;
-    font-size: 13.5px !important;
+    border: 1.5px solid var(--border, #94a3b8) !important;
+    background: var(--bg-input, #ffffff) !important;
+    color: var(--text-primary, #0f172a) !important;
+    font-size: 15.5px !important;
+    font-weight: 700 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: space-between !important;
     cursor: pointer !important;
     box-sizing: border-box !important;
     transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+[data-theme="light"] .ss-control,
+body.light-theme .ss-control {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #94a3b8 !important;
 }
 
 .ss-control:hover {
@@ -4886,7 +4947,8 @@ select[data-searchable-initialized="true"] {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
-    font-weight: 500 !important;
+    font-size: 15.5px !important;
+    font-weight: 700 !important;
 }
 
 .ss-label.ss-placeholder {
@@ -5574,7 +5636,9 @@ body.light-theme .ss-option.ss-highlighted {
 .f-plain-num {
     font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
     font-variant-numeric: normal !important;
-    letter-spacing: 0.3px !important;
+    font-size: 16.5px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.8px !important;
 }
 
 /* Financial Section */
