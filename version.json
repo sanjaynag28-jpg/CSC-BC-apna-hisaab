@@ -1,8 +1,8 @@
 {
-  "version": "1.0.82",
+  "version": "1.0.83",
   "critical": true,
   "releasedAt": "2026-11-24",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "feat:"
+  "notes": "chore:"
 }
