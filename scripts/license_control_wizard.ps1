@@ -46,6 +46,11 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 $ConfigPath = Join-Path $ProjectDir 'config\licenses.json'
 $PersonalHistoryPath = Join-Path $ProjectDir 'config\personal_keys_history.json'
 
+# Async Job & Timer State variables
+$script:pushJob = $null
+$script:pushTimer = $null
+$script:pushHandled = $false
+
 # Helper to read JSON
 function Get-CloudConfig {
     if (Test-Path $ConfigPath) {
@@ -845,9 +850,10 @@ $BtnSavePush.Add_Click({
         blacklistedHardwareIds = @($script:config.blacklistedHardwareIds)
     }
 
-    # Save to disk
+    # Save to disk as UTF-8 without BOM so Node.js JSON.parse never crashes
     $json = $finalConfig | ConvertTo-Json -Depth 5
-    Set-Content -Path $ConfigPath -Value $json -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($ConfigPath, $json, $utf8NoBom)
 
     $TxtStatusLog.Text = "2/3 Git Commit तैयार करके GitHub पर पुश किया जा रहा है..."
 
@@ -855,26 +861,47 @@ $BtnSavePush.Add_Click({
     $jobScript = {
         param($dir)
         Set-Location $dir
-        & git add config/licenses.json 2>&1
-        & git commit -m "chore(license): update cloud licenses config via Master License Wizard" 2>&1
-        & git push origin sqlite 2>&1
-        & git push origin sqlite:main 2>&1
-        return $LASTEXITCODE
+        $out = @()
+        $out += (& git add config/licenses.json 2>&1)
+        $out += (& git commit -m "chore(license): update cloud licenses config via Master License Wizard" 2>&1)
+        $out += (& git push origin sqlite 2>&1)
+        $out += (& git push origin sqlite:main 2>&1)
+        return ($out -join "`n")
     }
 
-    $job = Start-Job -ScriptBlock $jobScript -ArgumentList $ProjectDir
+    $script:pushJob = Start-Job -ScriptBlock $jobScript -ArgumentList $ProjectDir
+    $script:pushHandled = $false
 
     # Polling timer
-    $timer = New-Object Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $timer.Add_Tick({
-        if ($job.State -ne 'Running') {
-            $timer.Stop()
+    $script:pushTimer = New-Object Windows.Threading.DispatcherTimer
+    $script:pushTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $script:pushTimer.Add_Tick({
+        # If already handled or job is missing, immediately stop
+        if ($script:pushHandled -or (-not $script:pushJob)) {
+            $this.Stop()
+            if ($script:pushTimer) { $script:pushTimer.Stop() }
+            return
+        }
+
+        if ($script:pushJob.State -ne 'Running') {
+            # Stop timer immediately using $this to prevent re-entrancy
+            $this.Stop()
+            if ($script:pushTimer) { $script:pushTimer.Stop() }
+            $script:pushHandled = $true
+
+            $curJob = $script:pushJob
+            $script:pushJob = $null
+
             $PbPush.Visibility = [Windows.Visibility]::Collapsed
             $BtnSavePush.IsEnabled = $true
 
-            $output = Receive-Job -Job $job
-            Remove-Job -Job $job
+            $output = ""
+            if ($curJob) {
+                try {
+                    $output = (Receive-Job -Job $curJob -ErrorAction SilentlyContinue) -join "`n"
+                    Remove-Job -Job $curJob -Force -ErrorAction SilentlyContinue
+                } catch { }
+            }
 
             $TxtStatusLog.Text = "🎉 बधाई! GitHub पर सफलतापूर्वक अपडेट हो गया! सभी ग्राहकों का सॉफ़्टवेयर नई तारीख पर सक्रिय है।"
             $TxtStatusLog.Foreground = [Windows.Media.Brushes]::Green
@@ -882,7 +909,16 @@ $BtnSavePush.Add_Click({
             [System.Windows.MessageBox]::Show("🎉 बधाई संजय जी!`n`nक्लाउड लाइसेंस कॉन्फ़िग सफलतापूर्वक GitHub पर पुश हो गया है!`nसभी 500+ ग्राहकों के कंप्यूटर पर नई तारीख व नोटिस स्वतः लागू हो गए हैं।", "GitHub Push Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         }
     })
-    $timer.Start()
+    $script:pushTimer.Start()
+})
+
+$window.Add_Closing({
+    if ($script:pushTimer) {
+        try { $script:pushTimer.Stop() } catch { }
+    }
+    if ($script:pushJob) {
+        try { Remove-Job -Job $script:pushJob -Force -ErrorAction SilentlyContinue } catch { }
+    }
 })
 
 # Initialize UI

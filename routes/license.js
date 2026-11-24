@@ -80,7 +80,8 @@ router.get('/admin/cloud-config', (req, res) => {
         if (!fs.existsSync(LOCAL_CONFIG_PATH)) {
             return res.status(404).json({ success: false, error: 'licenses.json file not found' });
         }
-        const data = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'));
+        const raw = fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8').replace(/^\uFEFF/, '');
+        const data = JSON.parse(raw);
         res.json({ success: true, config: data });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -101,7 +102,8 @@ router.post('/admin/cloud-config', (req, res) => {
         let existingConfig = {};
         try {
             if (fs.existsSync(LOCAL_CONFIG_PATH)) {
-                existingConfig = JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'));
+                const raw = fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8').replace(/^\uFEFF/, '');
+                existingConfig = JSON.parse(raw);
             }
         } catch (_) {}
 

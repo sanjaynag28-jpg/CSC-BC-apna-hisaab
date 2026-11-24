@@ -33,7 +33,7 @@ const REPO_NAME = 'CSC-BC-apna-hisaab';
 let BRANCH = 'sqlite';
 let branchFromManifest = false;
 try {
-    const vJson = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
+    const vJson = JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8').replace(/^\uFEFF/, ''));
     if (vJson.branch) {
         BRANCH = vJson.branch;
         branchFromManifest = true;
@@ -173,11 +173,11 @@ function logUpdate(msg) {
 function getLocalVersionInfo() {
     try {
         if (fs.existsSync(VERSION_FILE)) {
-            return JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8'));
+            return JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8').replace(/^\uFEFF/, ''));
         }
     } catch (_) { }
     try {
-        const pkg = JSON.parse(fs.readFileSync(PKG_FILE, 'utf8'));
+        const pkg = JSON.parse(fs.readFileSync(PKG_FILE, 'utf8').replace(/^\uFEFF/, ''));
         return { version: pkg.version || '1.0.0', notes: '' };
     } catch (_) {
         return { version: '1.0.0', notes: '' };

@@ -82,7 +82,8 @@ function getHardwareId() {
 function getLocalConfig() {
     try {
         if (fs.existsSync(LOCAL_CONFIG_PATH)) {
-            return JSON.parse(fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8'));
+            const raw = fs.readFileSync(LOCAL_CONFIG_PATH, 'utf8').replace(/^\uFEFF/, '');
+            return JSON.parse(raw);
         }
     } catch (e) {
         console.warn('[LicenseManager] Could not read local config:', e.message);
@@ -118,7 +119,7 @@ function fetchSingleUrl(u) {
                 res.on('data', chunk => { data += chunk; });
                 res.on('end', () => {
                     try {
-                        const parsed = JSON.parse(data);
+                        const parsed = JSON.parse(data.replace(/^\uFEFF/, ''));
                         resolve(parsed);
                     } catch (err) {
                         resolve(null);
