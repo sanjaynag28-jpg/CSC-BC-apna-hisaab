@@ -1645,6 +1645,7 @@
     <!-- Main Content -->
     <main class="main-content" id="mainContent">
         <!-- Top Bar -->
+        <!-- Top Bar Row 1: Header Breadcrumb & Full Status Controls -->
         <header class="topbar">
             <div class="topbar-left">
                 <button class="menu-btn" onclick="toggleSidebar()" aria-label="Sidebar toggle karein">
@@ -1653,50 +1654,10 @@
                 <div class="breadcrumb" id="breadcrumb">Dashboard</div>
             </div>
 
-            <!-- UNIVERSAL GLOBAL SEARCH BAR (Sab Kuch Search Karein) -->
-            <div class="universal-search-center" id="universalSearchCenter">
-                <div class="uni-search-input-box" id="uniSearchInputBox">
-                    <select id="universalSearchType" class="uni-search-type-select" onclick="event.stopPropagation()"
-                        onchange="onUniversalSearchTypeChange()" title="Search Category Chunein (Kisko dhoondhna hai)">
-                        <option value="all">🌐 All (सब कुछ)</option>
-                        <option value="customers">👤 Grahak (Customer)</option>
-                        <option value="invoices">🧾 Bill / Invoice</option>
-                        <option value="khatabook">📖 Khata Hisaab</option>
-                        <option value="csc">📋 CSC Aavedan</option>
-                        <option value="bc">🏦 BC Banking / UTR</option>
-                        <option value="transactions">💵 Cashbook (Ledger)</option>
-                    </select>
-                    <div class="uni-search-divider"></div>
-                    <i data-lucide="search" class="uni-search-icon" onclick="focusUniversalSearch()"></i>
-                    <input type="text" id="universalSearchInput"
-                        placeholder="🔍 Sabhi modules me khojein (Customer, Aadhaar, Bill, BC, Khata)..."
-                        autocomplete="off" onclick="focusUniversalSearch()">
-                    <span class="uni-shortcut-pill" title="Shortcut">Ctrl + K</span>
-                    <button type="button" class="uni-clear-btn" id="uniSearchClearBtn"
-                        onclick="clearUniversalSearch(event)" style="display:none;" title="Clear Search">
-                        <i data-lucide="x"></i>
-                    </button>
-                </div>
-                <!-- Universal Search Results Popup Dropdown -->
-                <div class="uni-search-dropdown" id="universalSearchDropdown" style="display: none;">
-                    <div class="uni-search-dropdown-header">
-                        <div class="usdh-left">
-                            <span id="uniSearchSummary">Sabhi modules me live search ho raha hai...</span>
-                        </div>
-                        <div class="usdh-right">
-                            <span class="usdh-tip">Esc to close • Enter to open</span>
-                        </div>
-                    </div>
-                    <div class="uni-search-results-list" id="uniSearchResultsList">
-                        <!-- Dynamic Grouped Results Injected Here -->
-                    </div>
-                </div>
-            </div>
-
             <div class="topbar-right">
                 <!-- Check for Update Button in Top Bar -->
                 <div class="topbar-update-check" id="topbarUpdateCheckBtn"
-                    style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius: 20px; font-size: 12px; cursor: pointer; margin-left: 12px;"
+                    style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius: 20px; font-size: 12px; cursor: pointer;"
                     onclick="window.checkForUpdateManual && window.checkForUpdateManual()"
                     title="Naya version check karein aur update karein">
                     <i data-lucide="search" style="width: 14px; height: 14px;"></i>
@@ -1724,6 +1685,48 @@
                 </div>
             </div>
         </header>
+
+        <!-- Top Bar Row 2: 100% Full Patti Dedicated Universal Search Bar -->
+        <div class="universal-search-row" id="universalSearchRow">
+            <div class="universal-search-center" id="universalSearchCenter">
+                <div class="uni-search-input-box" id="uniSearchInputBox">
+                    <select id="universalSearchType" class="uni-search-type-select" onclick="event.stopPropagation()"
+                        onchange="onUniversalSearchTypeChange()" title="Search Category Chunein (Kisko dhoondhna hai)">
+                        <option value="all">🌐 All (सब कुछ)</option>
+                        <option value="customers" selected>👤 Grahak (Customer)</option>
+                        <option value="invoices">🧾 Bill / Invoice</option>
+                        <option value="khatabook">📖 Khata Hisaab</option>
+                        <option value="csc">📋 CSC Aavedan</option>
+                        <option value="bc">🏦 BC Banking / UTR</option>
+                        <option value="transactions">💵 Cashbook (Ledger)</option>
+                    </select>
+                    <div class="uni-search-divider"></div>
+                    <i data-lucide="search" class="uni-search-icon" onclick="focusUniversalSearch()"></i>
+                    <input type="text" id="universalSearchInput"
+                        placeholder="🔍 Sabhi modules me khojein (Customer, Aadhaar, Bill, BC, Khata, UTR)..."
+                        autocomplete="off" onclick="focusUniversalSearch()">
+                    <span class="uni-shortcut-pill" title="Shortcut">Ctrl + K</span>
+                    <button type="button" class="uni-clear-btn" id="uniSearchClearBtn"
+                        onclick="clearUniversalSearch(event)" style="display:none;" title="Clear Search">
+                        <i data-lucide="x"></i>
+                    </button>
+                </div>
+                <!-- Universal Search Results Popup Dropdown -->
+                <div class="uni-search-dropdown" id="universalSearchDropdown" style="display: none;">
+                    <div class="uni-search-dropdown-header">
+                        <div class="usdh-left">
+                            <span id="uniSearchSummary">Sabhi modules me live search ho raha hai...</span>
+                        </div>
+                        <div class="usdh-right">
+                            <span class="usdh-tip">Esc to close • Enter to open</span>
+                        </div>
+                    </div>
+                    <div class="uni-search-results-list" id="uniSearchResultsList">
+                        <!-- Dynamic Grouped Results Injected Here -->
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Pages -->
         <div class="page-content">
