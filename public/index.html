@@ -12826,31 +12826,45 @@
                 </div>
             </div>
 
-            <!-- CARD 3: BROADCAST LIVE NOTIFICATION (DASHBOARD ANNOUNCEMENT) -->
-            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <!-- CARD 3: BROADCAST LIVE NOTIFICATION (FULL CONTROL SUITE) -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1.5px solid rgba(59, 130, 246, 0.35); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+                <!-- Header & Master Toggle -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color);">
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 16px;">📢</span>
-                        <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">डैशबोर्ड लाइव सूचना व नोटिस (Dashboard Broadcast)</span>
+                        <span style="font-size: 18px;">📢</span>
+                        <div>
+                            <div style="font-size: 13.5px; font-weight: 800; color: var(--text-primary);">लाइव सूचना व नोटिस ब्रॉडकास्ट (Broadcast Controls)</div>
+                            <div style="font-size: 11px; color: var(--text-secondary);">सभी या चुनिंदा केंद्रों पर तुरंत अलर्ट, ऑफर या सूचना प्रसारित करें</div>
+                        </div>
                     </div>
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 700;">
-                        <input type="checkbox" id="accAnnounceActive" style="width: 16px; height: 16px; accent-color: #3b82f6;" onchange="updateAccAnnounceLabel()">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; font-weight: 700;">
+                        <input type="checkbox" id="accAnnounceActive" style="width: 17px; height: 17px; accent-color: #3b82f6;" onchange="updateAccAnnounceLabel()">
                         <span id="accAnnounceActiveLabel" style="color: var(--text-secondary);">निष्क्रिय (Off)</span>
                     </label>
                 </div>
 
-                <div style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 12px;">
-                    यह नोटिस केवल तभी ग्राहकों के डैशबोर्ड पर दिखाई देगा जब आप इसे यहाँ से <b>सक्रिय</b> करेंगे। सामान्य समय में यह बंद रहेगा।
+                <!-- 1-Click Quick Presets Bar -->
+                <div style="margin-bottom: 14px;">
+                    <label style="font-size: 11px; font-weight: 700; color: #a78bfa; text-transform: uppercase; display: block; margin-bottom: 6px;">⚡ 1-क्लिक टेम्पलेट्स (तुरंत फ़ॉर्म भरें):</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('update')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: #38bdf8; border-color: rgba(56, 189, 248, 0.3);">🚀 नया अपडेट</button>
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('trial')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: #34d399; border-color: rgba(52, 211, 153, 0.3);">🎁 90-दिन ट्रायल</button>
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('slow')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: #fbbf24; border-color: rgba(251, 191, 36, 0.3);">⚠️ बैंक सर्वर स्लो</button>
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('maint')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: #f87171; border-color: rgba(248, 113, 113, 0.3);">🚨 मेंटेनेंस अलर्ट</button>
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('festive')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: #e879f9; border-color: rgba(232, 121, 249, 0.3);">✨ बधाई संदेश</button>
+                        <button type="button" class="btn btn-secondary" onclick="applyAnnouncePreset('clear')" style="padding: 5px 10px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary);">🧹 साफ़ करें</button>
+                    </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 12px;">
+                <!-- Section 1: Title & Type & Message -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px;">
                     <div>
                         <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">नोटिस शीर्षक (Title):</label>
-                        <input type="text" id="accAnnounceTitle" placeholder="उदा. विशेष सूचना या मेंटेनेंस अलर्ट" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                        <input type="text" id="accAnnounceTitle" placeholder="उदा. विशेष सूचना" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 700;">
                     </div>
                     <div>
                         <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">रंग / प्रकार (Type):</label>
-                        <select id="accAnnounceType" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                        <select id="accAnnounceType" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
                             <option value="info">🔵 Info (नीला)</option>
                             <option value="success">🟢 Success (हरा)</option>
                             <option value="warning">🟡 Warning (पीला)</option>
@@ -12860,18 +12874,99 @@
                 </div>
 
                 <div style="margin-bottom: 12px;">
-                    <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">संदेश विवरण (Message):</label>
-                    <textarea id="accAnnounceMessage" rows="2" placeholder="ग्राहकों को डैशबोर्ड पर दिखाई देने वाला संदेश लिखें..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-family: inherit; resize: vertical;"></textarea>
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">नोटिस का विस्तृत संदेश (Detailed Message):</label>
+                    <textarea id="accAnnounceMessage" rows="2" placeholder="ग्राहकों को स्क्रीन पर दिखाई देने वाला संदेश लिखें..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-family: inherit; resize: vertical;"></textarea>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <!-- Section 2: Placement & Audience Targeting -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                     <div>
-                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">बटन का नाम (Action Text):</label>
-                        <input type="text" id="accAnnounceBtnText" placeholder="उदा. बात करें या अपडेट करें" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">कहाँ प्रदर्शित करें (Placement):</label>
+                        <select id="accAnnouncePlacement" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
+                            <option value="dashboard">📊 डैशबोर्ड टॉप बैनर (Dashboard Banner)</option>
+                            <option value="popup">🚨 पॉपअप अलर्ट डायलॉग (Urgent Modal Dialog)</option>
+                            <option value="ticker">📢 शीर्ष टिकर पट्टी (Scrolling Marquee)</option>
+                            <option value="settings">⚙️ केवल सेटिंग्स पेज (Settings Only)</option>
+                        </select>
                     </div>
                     <div>
-                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">बटन लिंक (Action URL):</label>
-                        <input type="text" id="accAnnounceBtnUrl" placeholder="उदा. https://wa.me/919616928635" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">लक्षित ग्राहक (Target Audience):</label>
+                        <select id="accAnnounceTarget" onchange="updateAccAnnounceTargetHwVisibility()" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
+                            <option value="all">👥 सभी केंद्र (All Centers - Everyone)</option>
+                            <option value="trial">🎁 केवल फ्री ट्रायल यूज़र्स (Trial Users Only)</option>
+                            <option value="expiring">⏳ शीघ्र समाप्त होने वाले (Expiring Soon &lt;= 7 Days)</option>
+                            <option value="expired">🔴 समाप्त लाइसेंस वाले (Expired Licenses Only)</option>
+                            <option value="specific_hw">💻 विशिष्ट मशीन कोड (Specific Hardware ID)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="accTargetHwRow" style="display: none; margin-bottom: 12px;">
+                    <label style="font-size: 11px; font-weight: 700; color: #f87171; text-transform: uppercase; display: block; margin-bottom: 4px;">लक्षित Machine Hardware ID:</label>
+                    <input type="text" id="accAnnounceTargetHwId" placeholder="उदा. HWID-E8D1-DE0E-4925" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-family: monospace; text-transform: uppercase; font-weight: 700;">
+                </div>
+
+                <!-- Section 3: Schedule, Dismiss & Sound -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">स्वतः समाप्ति तारीख (Valid Until):</label>
+                        <input type="date" id="accAnnounceExpiry" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
+                        <span style="font-size: 10px; color: var(--text-secondary); display: block; margin-top: 2px;">इस तारीख के बाद अपने आप बंद होगा</span>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">ग्राहक डिस्मिस कंट्रोल (Dismiss):</label>
+                        <select id="accAnnounceDismiss" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-weight: 600;">
+                            <option value="session">ग्राहक [✕] से बंद कर सकते हैं (सेशन)</option>
+                            <option value="24h">ग्राहक [✕] से 24 घंटे हेतु बंद कर सकते हैं</option>
+                            <option value="permanent">ग्राहक [✕] से हमेशा हेतु बंद कर सकते हैं</option>
+                            <option value="mandatory">अनिवार्य - बंद नहीं कर सकते</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: center;">
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 6px;">ऑडियो साउंड अलर्ट:</label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 700;">
+                            <input type="checkbox" id="accAnnounceSound" style="width: 15px; height: 15px; accent-color: #3b82f6;">
+                            <span>🔔 ऐप खुलने पर साउंड घंटी बजाएं</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Section 4: Action Button Controls -->
+                <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase;">🔘 एक्शन बटन सेटिंग्स (Action Buttons)</span>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">
+                            <input type="checkbox" id="accAnnounceShowBtn" checked style="width: 15px; height: 15px; accent-color: #3b82f6;">
+                            <span>बटन दिखाएं (Show Button)</span>
+                        </label>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px; margin-bottom: 8px;">
+                        <div>
+                            <label style="font-size: 10.5px; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 3px;">बटन नाम:</label>
+                            <input type="text" id="accAnnounceBtnText" placeholder="बात करें" style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 12.5px; font-weight: 600;">
+                        </div>
+                        <div>
+                            <label style="font-size: 10.5px; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 3px;">एक्शन प्रकार:</label>
+                            <select id="accAnnounceActionType" onchange="updateAccAnnounceActionUrlPreset()" style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 12.5px; font-weight: 600;">
+                                <option value="whatsapp">💬 WhatsApp लिंक</option>
+                                <option value="update">🔄 सॉफ्टवेयर अपडेट चेक</option>
+                                <option value="settings">⚙️ सेटिंग्स / लाइसेंस पेज</option>
+                                <option value="custom">🌐 कस्टम वेब लिंक</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 10.5px; font-weight: 700; color: var(--text-secondary); display: block; margin-bottom: 3px;">बटन लिंक (Action URL):</label>
+                            <input type="text" id="accAnnounceBtnUrl" placeholder="https://wa.me/919616928635" style="width: 100%; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 12.5px;">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; font-weight: 700;">
+                            <input type="checkbox" id="accAnnounceSecondary" style="width: 15px; height: 15px; accent-color: #3b82f6;">
+                            <span>दूसरा बटन दिखाएं (Secondary Button):</span>
+                        </label>
+                        <input type="text" id="accAnnounceSecondaryText" placeholder="बाद में याद दिलाएं" style="width: 160px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 12px;">
                     </div>
                 </div>
             </div>
@@ -12905,6 +13000,29 @@
     <script src="searchable-select.js?v=1795452000000"></script>
     <script src="auth.js?v=1795452000000"></script>
     <script src="app.js?v=1795452000000"></script>
+
+    <!-- LIVE BROADCAST POPUP MODAL DIALOG -->
+    <div class="modal-overlay" id="announcementPopupModal" style="display: none; z-index: 9999999; backdrop-filter: blur(10px); background: rgba(0,0,0,0.65);">
+        <div class="modal" onclick="event.stopPropagation()" id="announcementPopupContent"
+            style="width: min(560px, calc(100vw - 32px)); border-radius: 16px; padding: 26px; box-shadow: 0 25px 60px rgba(0,0,0,0.5); text-align: left;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div id="apmIconBox" style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px;"></div>
+                    <div>
+                        <h3 id="apmTitle" style="margin: 0; font-size: 18px; font-weight: 800;">विशेष सूचना</h3>
+                        <div id="apmTime" style="font-size: 11px; opacity: 0.8; margin-top: 2px;">CSC व BC अपना हिसाब लाइव ब्रॉडकास्ट</div>
+                    </div>
+                </div>
+                <button type="button" id="apmBtnCloseX" onclick="dismissCurrentAnnouncement('popup')" style="background: none; border: none; font-size: 20px; color: inherit; opacity: 0.7; cursor: pointer;">✕</button>
+            </div>
+            <div id="apmBody" style="font-size: 14px; line-height: 1.6; margin-bottom: 22px; font-weight: 500;"></div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;" id="apmActions">
+                <button type="button" id="apmBtnSecondary" onclick="dismissCurrentAnnouncement('popup')" class="btn btn-secondary" style="padding: 9px 18px; font-weight: 600; font-size: 13px;">बाद में</button>
+                <a id="apmBtnPrimary" href="#" class="btn btn-primary" style="padding: 9px 22px; font-weight: 800; font-size: 13.5px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">कार्रवाई करें</a>
+            </div>
+        </div>
+    </div>
+    
 </body>
 
 </html>

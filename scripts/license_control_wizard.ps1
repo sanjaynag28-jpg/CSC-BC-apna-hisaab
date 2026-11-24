@@ -345,25 +345,53 @@ function Get-PersonalHistory {
             <TabItem Header="📢 3. लाइव सूचना व नोटिस (Broadcast Control)">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,16">
                     <StackPanel>
-                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="22" Margin="0,0,0,16">
+                        <!-- CARD 1: MASTER BROADCAST TOGGLE & PRESET TEMPLATES -->
+                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
                             <StackPanel>
-                                <TextBlock Text="सभी ग्राहकों के डैशबोर्ड पर लाइव नोटिस प्रसारित करें (Live In-App Announcement):" FontSize="14" FontWeight="Bold" Foreground="#1E3A8A" Margin="0,0,0,4"/>
-                                <TextBlock Text="यह सूचना इंटरनेट कनेक्ट होते ही सभी 500+ ग्राहकों के कंप्यूटर पर शीर्ष पर प्रदर्शित होगी।" FontSize="12" Foreground="#64748B" Margin="0,0,0,16"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="सभी ग्राहकों के लिए लाइव नोटिस ब्रॉडकास्ट (Live In-App Announcement):" FontSize="14" FontWeight="Bold" Foreground="#1E3A8A" Margin="0,0,0,4"/>
+                                        <TextBlock Text="यहाँ से आप सभी या चुनिंदा ग्राहकों के डैशबोर्ड पर महत्वपूर्ण सूचना, मेंटेनेंस अलर्ट या ऑफर प्रसारित कर सकते हैं।" FontSize="12" Foreground="#64748B"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ChkNoticeActive" Grid.Column="1" Content="ग्राहकों के स्क्रीन पर यह नोटिस सक्रिय रखें (Enable Announcement)" IsChecked="False" FontSize="13.5" FontWeight="Bold" Foreground="#2563EB" VerticalAlignment="Center"/>
+                                </Grid>
 
-                                <CheckBox x:Name="ChkNoticeActive" Content="ग्राहकों के डैशबोर्ड पर यह नोटिस सक्रिय रखें (Enable Announcement)" IsChecked="False" FontSize="14" FontWeight="Bold" Foreground="#2563EB" Margin="0,0,0,16"/>
+                                <Separator Background="#E2E8F0" Margin="0,4,0,12"/>
 
-                                <Grid Margin="0,0,0,14">
+                                <!-- QUICK 1-CLICK PRESETS -->
+                                <TextBlock Text="⚡ त्वरित 1-क्लिक टेम्पलेट्स (Quick Presets - एक क्लिक में पूरा फ़ॉर्म भरें):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,8"/>
+                                <WrapPanel Margin="0,0,0,4">
+                                    <Button x:Name="BtnPresetUpdate" Content="🚀 नया अपडेट उपलब्ध" Background="#EFF6FF" Foreground="#1D4ED8" BorderBrush="#93C5FD" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                    <Button x:Name="BtnPresetTrial" Content="🎁 90-दिन फ्री ट्रायल" Background="#F0FDF4" Foreground="#15803D" BorderBrush="#86EFAC" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                    <Button x:Name="BtnPresetSlow" Content="⚠️ बैंक सर्वर स्लो / डाउन" Background="#FFFBEB" Foreground="#B45309" BorderBrush="#FDE68A" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                    <Button x:Name="BtnPresetMaint" Content="🚨 आवश्यक मेंटेनेंस अलर्ट" Background="#FEF2F2" Foreground="#B91C1C" BorderBrush="#FECACA" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                    <Button x:Name="BtnPresetFestive" Content="✨ उत्सव / बधाई संदेश" Background="#FDF4FF" Foreground="#A21CAF" BorderBrush="#F0ABFC" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                    <Button x:Name="BtnPresetClear" Content="🧹 फ़ॉर्म साफ़ करें (Reset)" Background="#F8FAFC" Foreground="#64748B" BorderBrush="#CBD5E1" BorderThickness="1" Padding="10,6" Margin="0,0,8,6" FontWeight="Bold" FontSize="11.5" Cursor="Hand"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- CARD 2: NOTICE CONTENT & STYLE -->
+                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="📝 1. नोटिस संदेश व रंग-रूप (Content &amp; Appearance):" FontSize="13" FontWeight="Bold" Foreground="#334155" Margin="0,0,0,12"/>
+
+                                <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="2*"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                        <TextBlock Text="नोटिस शीर्षक (Notice Title):" FontSize="12" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="TxtNoticeTitle" Height="38" Text="विशेष सूचना (Special Notice)"/>
+                                        <TextBlock Text="नोटिस शीर्षक (Notice Title):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtNoticeTitle" Height="36" Text="विशेष सूचना (Special Notice)"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                        <TextBlock Text="नोटिस रंग व शैली (Type/Color):" FontSize="12" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
-                                        <ComboBox x:Name="ComboNoticeType" Height="38">
+                                        <TextBlock Text="रंग व प्रकार (Notice Type):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="ComboNoticeType" Height="36">
                                             <ComboBoxItem Content="🔵 सामान्य सूचना (Info - Blue)" IsSelected="True"/>
                                             <ComboBoxItem Content="🟢 बधाई व ऑफर (Success - Green)"/>
                                             <ComboBoxItem Content="🟡 चेतावनी (Warning - Yellow)"/>
@@ -372,39 +400,164 @@ function Get-PersonalHistory {
                                     </StackPanel>
                                 </Grid>
 
-                                <StackPanel Margin="0,0,0,14">
-                                    <TextBlock Text="नोटिस संदेश (Detailed Message for Clients):" FontSize="12" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
-                                    <TextBox x:Name="TxtNoticeBody" Height="70" AcceptsReturn="True" TextWrapping="Wrap" Text="सॉफ़्टवेयर का नया अपडेट उपलब्ध है। कृपया सेटिंग्स में जाकर अपडेट करें अथवा संजय जी से संपर्क करें।"/>
+                                <StackPanel Margin="0,0,0,4">
+                                    <TextBlock Text="नोटिस का विस्तृत संदेश (Detailed Message for Clients):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="TxtNoticeBody" Height="68" AcceptsReturn="True" TextWrapping="Wrap" Text="सॉफ़्टवेयर का नया अपडेट उपलब्ध है। कृपया सेटिंग्स में जाकर अपडेट करें अथवा संजय जी से संपर्क करें।"/>
                                 </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                                <Grid Margin="0,0,0,14">
+                        <!-- CARD 3: TARGET AUDIENCE & PLACEMENT -->
+                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="🎯 2. कहाँ दिखाएं व किन ग्राहकों को दिखाएं (Targeting &amp; Placement):" FontSize="13" FontWeight="Bold" Foreground="#334155" Margin="0,0,0,12"/>
+
+                                <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="कहाँ प्रदर्शित करें (Display Placement):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="ComboNoticePlacement" Height="36">
+                                            <ComboBoxItem Content="📊 डैशबोर्ड टॉप बैनर (Dashboard Banner - Default)" IsSelected="True"/>
+                                            <ComboBoxItem Content="🚨 पॉपअप अलर्ट डायलॉग (Urgent Modal Dialog)"/>
+                                            <ComboBoxItem Content="📢 शीर्ष टिकर पट्टी (Header Scrolling Marquee)"/>
+                                            <ComboBoxItem Content="⚙️ केवल सेटिंग्स पेज (Settings Tab Only)"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <TextBlock Text="लक्षित ग्राहक (Target Audience):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="ComboNoticeTarget" Height="36">
+                                            <ComboBoxItem Content="👥 सभी केंद्र (All Centers - Everyone)" IsSelected="True"/>
+                                            <ComboBoxItem Content="🎁 केवल फ्री ट्रायल यूज़र्स (Trial Users Only)"/>
+                                            <ComboBoxItem Content="⏳ केवल समाप्त होने वाले (Expiring Soon &lt;= 7 Days)"/>
+                                            <ComboBoxItem Content="🔴 केवल समाप्त लाइसेंस (Expired Licenses Only)"/>
+                                            <ComboBoxItem Content="💻 विशिष्ट मशीन कोड (Specific Hardware ID)"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid x:Name="GridTargetHw" Margin="0,0,0,4" Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock Text="लक्षित कंप्यूटर का Hardware ID (Target Machine Code):" FontSize="11.5" FontWeight="Bold" Foreground="#DC2626" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtNoticeTargetHwId" Height="36" CharacterCasing="Upper" Text="" FontFamily="Courier New" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- CARD 4: SCHEDULE, DISMISS & AUDIO CONTROLS -->
+                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="⏰ 3. समाप्ति, डिस्मिस व ऑडियो नियंत्रण (Schedule, Dismiss &amp; Audio):" FontSize="13" FontWeight="Bold" Foreground="#334155" Margin="0,0,0,12"/>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="स्वतः समाप्ति तारीख (Auto-Expire Date):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <DatePicker x:Name="DpNoticeExpiry" Height="36"/>
+                                        <TextBlock Text="इस तारीख के बाद नोटिस अपने आप बंद हो जाएगा" FontSize="10.5" Foreground="#94A3B8" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="5,0,5,0">
+                                        <TextBlock Text="ग्राहक डिस्मिस कंट्रोल (Allow Dismiss):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="ComboNoticeDismiss" Height="36">
+                                            <ComboBoxItem Content="ग्राहक [✕] से बंद कर सकते हैं (इस सेशन के लिए)" IsSelected="True"/>
+                                            <ComboBoxItem Content="ग्राहक [✕] से 24 घंटे के लिए बंद कर सकते हैं"/>
+                                            <ComboBoxItem Content="ग्राहक [✕] से हमेशा के लिए बंद कर सकते हैं"/>
+                                            <ComboBoxItem Content="अनिवार्य नोटिस - बंद नहीं कर सकते (Non-Dismissible)"/>
+                                        </ComboBox>
+                                        <TextBlock Text="ग्राहक के बंद करने का व्यवहार" FontSize="10.5" Foreground="#94A3B8" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Margin="10,0,0,0" VerticalAlignment="Top">
+                                        <TextBlock Text="ऑडियो साउंड अलर्ट (Sound Chime):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,8"/>
+                                        <CheckBox x:Name="ChkNoticeSound" Content="🔔 ऐप खुलने पर साउंड बजाएं" FontSize="12" FontWeight="Bold" Foreground="#334155"/>
+                                        <TextBlock Text="ग्राहकों का ध्यान खींचने हेतु सौम्य अलर्ट घंटी" FontSize="10.5" Foreground="#94A3B8" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- CARD 5: BUTTON & ACTION CONTROLS -->
+                        <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,0,0,16">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="🔘 4. बटन व एक्शन लिंक (Action Button Settings):" FontSize="13" FontWeight="Bold" Foreground="#334155"/>
+                                    <CheckBox x:Name="ChkNoticeShowBtn" Grid.Column="1" Content="एक्शन बटन दिखाएं (Show Primary Button)" IsChecked="True" FontSize="12" FontWeight="Bold" Foreground="#2563EB"/>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="2*"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                        <TextBlock Text="बटन का नाम (Button Text):" FontSize="12" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="TxtNoticeBtnText" Height="38" Text="व्हाट्सएप पर संपर्क करें"/>
+                                        <TextBlock Text="बटन का नाम (Button Text):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtNoticeBtnText" Height="36" Text="बात करें"/>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                        <TextBlock Text="बटन लिंक (Action URL):" FontSize="12" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="TxtNoticeBtnUrl" Height="38" Text="https://wa.me/919616928635"/>
+                                    <StackPanel Grid.Column="1" Margin="5,0,5,0">
+                                        <TextBlock Text="बटन एक्शन प्रकार (Action Type):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <ComboBox x:Name="ComboNoticeActionType" Height="36">
+                                            <ComboBoxItem Content="💬 WhatsApp चैट लिंक (wa.me)" IsSelected="True"/>
+                                            <ComboBoxItem Content="🔄 सॉफ्टवेयर अपडेट चेक (Check Update)"/>
+                                            <ComboBoxItem Content="⚙️ सेटिंग्स / लाइसेंस पेज खोलें"/>
+                                            <ComboBoxItem Content="🌐 कस्टम वेब लिंक (Custom URL)"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" Margin="10,0,0,0">
+                                        <TextBlock Text="बटन लिंक या यूआरएल (Action URL / Target):" FontSize="11.5" FontWeight="Bold" Foreground="#475569" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="TxtNoticeBtnUrl" Height="36" Text="https://wa.me/919616928635"/>
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- PREVIEW BOX -->
-                                <TextBlock Text="लाइव प्रीव्यू (ग्राहकों को ऐसा दिखेगा):" FontSize="12" FontWeight="Bold" Foreground="#64748B" Margin="0,6,0,6"/>
-                                <Border x:Name="BorderNoticePreview" Background="#EFF6FF" BorderBrush="#93C5FD" BorderThickness="1.5" CornerRadius="8" Padding="14">
+                                <!-- SECONDARY BUTTON -->
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="ChkNoticeSecondary" Grid.Column="0" Content="द्वितीय बटन दिखाएं (Secondary Button):" IsChecked="False" FontSize="12" FontWeight="Bold" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <TextBox x:Name="TxtNoticeSecondaryText" Grid.Column="1" Height="34" Text="बाद में याद दिलाएं" Width="200" HorizontalAlignment="Left"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- CARD 6: LIVE PREVIEW -->
+                        <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1.5" CornerRadius="12" Padding="20">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="👁️ लाइव प्रीव्यू (ग्राहकों को ऐसा दिखेगा):" FontSize="13" FontWeight="Bold" Foreground="#334155"/>
+                                    <TextBlock x:Name="TbPrevMeta" Grid.Column="1" Text="कहाँ: डैशबोर्ड | लक्ष्य: सभी केंद्र" FontSize="11.5" FontWeight="Bold" Foreground="#64748B"/>
+                                </Grid>
+
+                                <Border x:Name="BorderNoticePreview" Background="#EFF6FF" BorderBrush="#93C5FD" BorderThickness="1.5" CornerRadius="10" Padding="16">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock x:Name="TbPrevTitle" Text="विशेष सूचना (Special Notice)" FontSize="13.5" FontWeight="Bold" Foreground="#1E40AF"/>
-                                            <TextBlock x:Name="TbPrevBody" Text="सॉफ़्टवेयर का नया अपडेट उपलब्ध है। कृपया सेटिंग्स में जाकर अपडेट करें।" FontSize="12.5" Foreground="#1E3A8A" Margin="0,2,0,0"/>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="TbPrevTitle" Text="विशेष सूचना (Special Notice)" FontSize="14" FontWeight="Bold" Foreground="#1E40AF"/>
+                                            <TextBlock x:Name="TbPrevBody" Text="सॉफ़्टवेयर का नया अपडेट उपलब्ध है। कृपया सेटिंग्स में जाकर अपडेट करें।" FontSize="12.5" Foreground="#1E3A8A" TextWrapping="Wrap" Margin="0,3,0,0"/>
                                         </StackPanel>
-                                        <Button x:Name="BtnPrevAction" Grid.Column="1" Content="व्हाट्सएप पर संपर्क करें" Background="#2563EB" Foreground="White" Padding="12,6" FontSize="12" FontWeight="Bold"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                                            <Button x:Name="BtnPrevSecondary" Content="बाद में" Background="Transparent" Foreground="#64748B" BorderBrush="#CBD5E1" BorderThickness="1" Padding="12,7" FontSize="12" FontWeight="Bold" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                            <Button x:Name="BtnPrevAction" Content="बात करें" Background="#2563EB" Foreground="White" BorderThickness="0" Padding="14,7" FontSize="12" FontWeight="Bold" Margin="0,0,10,0"/>
+                                            <Button x:Name="BtnPrevClose" Content="✕" Background="Transparent" Foreground="#64748B" BorderThickness="0" FontSize="16" FontWeight="Bold" Cursor="Hand" Padding="4,0" ToolTip="नोटिस बंद करें"/>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -531,14 +684,41 @@ $BtnCopyKey = $window.FindName("BtnCopyKey")
 $BtnShareWhatsApp = $window.FindName("BtnShareWhatsApp")
 
 $ChkNoticeActive = $window.FindName("ChkNoticeActive")
+$BtnPresetUpdate = $window.FindName("BtnPresetUpdate")
+$BtnPresetTrial = $window.FindName("BtnPresetTrial")
+$BtnPresetSlow = $window.FindName("BtnPresetSlow")
+$BtnPresetMaint = $window.FindName("BtnPresetMaint")
+$BtnPresetFestive = $window.FindName("BtnPresetFestive")
+$BtnPresetClear = $window.FindName("BtnPresetClear")
+
 $TxtNoticeTitle = $window.FindName("TxtNoticeTitle")
 $ComboNoticeType = $window.FindName("ComboNoticeType")
 $TxtNoticeBody = $window.FindName("TxtNoticeBody")
+
+$ComboNoticePlacement = $window.FindName("ComboNoticePlacement")
+$ComboNoticeTarget = $window.FindName("ComboNoticeTarget")
+$GridTargetHw = $window.FindName("GridTargetHw")
+$TxtNoticeTargetHwId = $window.FindName("TxtNoticeTargetHwId")
+
+$DpNoticeExpiry = $window.FindName("DpNoticeExpiry")
+$ComboNoticeDismiss = $window.FindName("ComboNoticeDismiss")
+$ChkNoticeSound = $window.FindName("ChkNoticeSound")
+
+$ChkNoticeShowBtn = $window.FindName("ChkNoticeShowBtn")
 $TxtNoticeBtnText = $window.FindName("TxtNoticeBtnText")
+$ComboNoticeActionType = $window.FindName("ComboNoticeActionType")
 $TxtNoticeBtnUrl = $window.FindName("TxtNoticeBtnUrl")
+
+$ChkNoticeSecondary = $window.FindName("ChkNoticeSecondary")
+$TxtNoticeSecondaryText = $window.FindName("TxtNoticeSecondaryText")
+
+$BorderNoticePreview = $window.FindName("BorderNoticePreview")
 $TbPrevTitle = $window.FindName("TbPrevTitle")
 $TbPrevBody = $window.FindName("TbPrevBody")
 $BtnPrevAction = $window.FindName("BtnPrevAction")
+$BtnPrevSecondary = $window.FindName("BtnPrevSecondary")
+$BtnPrevClose = $window.FindName("BtnPrevClose")
+$TbPrevMeta = $window.FindName("TbPrevMeta")
 
 $ListBlacklist = $window.FindName("ListBlacklist")
 $TxtNewBlacklistHw = $window.FindName("TxtNewBlacklistHw")
@@ -575,7 +755,7 @@ function Load-ConfigIntoUI {
         $ComboKeys.SelectedIndex = 0
     }
 
-    # 2. Announcement
+    # 2. Announcement (Full Controls Suite)
     if ($script:config.announcement) {
         $ann = $script:config.announcement
         $ChkNoticeActive.IsChecked = ($ann.isActive -eq $true)
@@ -590,6 +770,50 @@ function Load-ConfigIntoUI {
             "urgent"  { $ComboNoticeType.SelectedIndex = 3 }
             default   { $ComboNoticeType.SelectedIndex = 0 }
         }
+
+        switch ($ann.placement) {
+            "popup"    { $ComboNoticePlacement.SelectedIndex = 1 }
+            "ticker"   { $ComboNoticePlacement.SelectedIndex = 2 }
+            "settings" { $ComboNoticePlacement.SelectedIndex = 3 }
+            default    { $ComboNoticePlacement.SelectedIndex = 0 }
+        }
+
+        switch ($ann.targetAudience) {
+            "trial"       { $ComboNoticeTarget.SelectedIndex = 1 }
+            "expiring"    { $ComboNoticeTarget.SelectedIndex = 2 }
+            "expired"     { $ComboNoticeTarget.SelectedIndex = 3 }
+            "specific_hw" { $ComboNoticeTarget.SelectedIndex = 4 }
+            default       { $ComboNoticeTarget.SelectedIndex = 0 }
+        }
+
+        if ($ann.targetHardwareId) { $TxtNoticeTargetHwId.Text = $ann.targetHardwareId }
+        if ($GridTargetHw) {
+            $GridTargetHw.Visibility = if ($ComboNoticeTarget.SelectedIndex -eq 4) { "Visible" } else { "Collapsed" }
+        }
+
+        switch ($ann.dismissDuration) {
+            "24h"       { $ComboNoticeDismiss.SelectedIndex = 1 }
+            "permanent" { $ComboNoticeDismiss.SelectedIndex = 2 }
+            "mandatory" { $ComboNoticeDismiss.SelectedIndex = 3 }
+            default     { $ComboNoticeDismiss.SelectedIndex = 0 }
+        }
+
+        if ($ann.validUntil) {
+            try { $DpNoticeExpiry.SelectedDate = [DateTime]::Parse($ann.validUntil) } catch {}
+        }
+
+        $ChkNoticeSound.IsChecked = ($ann.playSound -eq $true)
+        $ChkNoticeShowBtn.IsChecked = ($ann.showButton -ne $false)
+
+        switch ($ann.actionType) {
+            "update"   { $ComboNoticeActionType.SelectedIndex = 1 }
+            "settings" { $ComboNoticeActionType.SelectedIndex = 2 }
+            "custom"   { $ComboNoticeActionType.SelectedIndex = 3 }
+            default    { $ComboNoticeActionType.SelectedIndex = 0 }
+        }
+
+        $ChkNoticeSecondary.IsChecked = ($ann.showSecondaryButton -eq $true)
+        if ($ann.secondaryButtonText) { $TxtNoticeSecondaryText.Text = $ann.secondaryButtonText }
     }
 
     # 3. Admin Contact
@@ -682,16 +906,181 @@ $BtnDeleteKey.Add_Click({
     }
 })
 
-# Update Notice Preview
+# Update Notice Preview (Comprehensive Real-Time Renderer)
 function Update-NoticePreview {
-    $TbPrevTitle.Text = $TxtNoticeTitle.Text
-    $TbPrevBody.Text = $TxtNoticeBody.Text
-    $BtnPrevAction.Content = $TxtNoticeBtnText.Text
+    if (-not $TbPrevTitle) { return }
+    $TbPrevTitle.Text = if ($TxtNoticeTitle.Text) { $TxtNoticeTitle.Text } else { "शीर्षक..." }
+    $TbPrevBody.Text = if ($TxtNoticeBody.Text) { $TxtNoticeBody.Text } else { "संदेश..." }
+    $BtnPrevAction.Content = if ($TxtNoticeBtnText.Text) { $TxtNoticeBtnText.Text } else { "क्लिक करें" }
+
+    # Button Visibilities
+    $BtnPrevAction.Visibility = if ($ChkNoticeShowBtn.IsChecked -ne $false) { "Visible" } else { "Collapsed" }
+    $BtnPrevSecondary.Visibility = if ($ChkNoticeSecondary.IsChecked -eq $true) { "Visible" } else { "Collapsed" }
+    $BtnPrevSecondary.Content = if ($TxtNoticeSecondaryText.Text) { $TxtNoticeSecondaryText.Text } else { "बाद में" }
+    $BtnPrevClose.Visibility = if ($ComboNoticeDismiss.SelectedIndex -eq 3) { "Collapsed" } else { "Visible" }
+
+    # Meta text
+    $plc = "डैशबोर्ड"
+    if ($ComboNoticePlacement.SelectedIndex -eq 1) { $plc = "पॉपअप अलर्ट" }
+    elseif ($ComboNoticePlacement.SelectedIndex -eq 2) { $plc = "शीर्ष टिकर" }
+    elseif ($ComboNoticePlacement.SelectedIndex -eq 3) { $plc = "सेटिंग्स" }
+
+    $aud = "सभी केंद्र"
+    if ($ComboNoticeTarget.SelectedIndex -eq 1) { $aud = "फ्री ट्रायल" }
+    elseif ($ComboNoticeTarget.SelectedIndex -eq 2) { $aud = "समाप्त होने वाले" }
+    elseif ($ComboNoticeTarget.SelectedIndex -eq 3) { $aud = "समाप्त" }
+    elseif ($ComboNoticeTarget.SelectedIndex -eq 4) { $aud = "विशिष्ट मशीन" }
+
+    $TbPrevMeta.Text = "कहाँ: $plc | लक्ष्य: $aud"
+
+    # Color Styling
+    switch ($ComboNoticeType.SelectedIndex) {
+        1 { # Success (Green)
+            $BorderNoticePreview.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#F0FDF4")
+            $BorderNoticePreview.BorderBrush = [Windows.Media.BrushConverter]::new().ConvertFromString("#86EFAC")
+            $TbPrevTitle.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#15803D")
+            $TbPrevBody.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#166534")
+            $BtnPrevAction.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#16A34A")
+        }
+        2 { # Warning (Yellow/Amber)
+            $BorderNoticePreview.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#FFFBEB")
+            $BorderNoticePreview.BorderBrush = [Windows.Media.BrushConverter]::new().ConvertFromString("#FDE68A")
+            $TbPrevTitle.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#B45309")
+            $TbPrevBody.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#92400E")
+            $BtnPrevAction.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#D97706")
+        }
+        3 { # Urgent (Red)
+            $BorderNoticePreview.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#FEF2F2")
+            $BorderNoticePreview.BorderBrush = [Windows.Media.BrushConverter]::new().ConvertFromString("#FECACA")
+            $TbPrevTitle.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#B91C1C")
+            $TbPrevBody.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#991B1B")
+            $BtnPrevAction.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#DC2626")
+        }
+        default { # Info (Blue)
+            $BorderNoticePreview.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#EFF6FF")
+            $BorderNoticePreview.BorderBrush = [Windows.Media.BrushConverter]::new().ConvertFromString("#93C5FD")
+            $TbPrevTitle.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#1D4ED8")
+            $TbPrevBody.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString("#1E40AF")
+            $BtnPrevAction.Background = [Windows.Media.BrushConverter]::new().ConvertFromString("#2563EB")
+        }
+    }
 }
 
 $TxtNoticeTitle.Add_TextChanged({ Update-NoticePreview })
 $TxtNoticeBody.Add_TextChanged({ Update-NoticePreview })
 $TxtNoticeBtnText.Add_TextChanged({ Update-NoticePreview })
+$TxtNoticeSecondaryText.Add_TextChanged({ Update-NoticePreview })
+$ComboNoticeType.Add_SelectionChanged({ Update-NoticePreview })
+$ComboNoticePlacement.Add_SelectionChanged({ Update-NoticePreview })
+$ComboNoticeDismiss.Add_SelectionChanged({ Update-NoticePreview })
+$ChkNoticeShowBtn.Add_Checked({ Update-NoticePreview })
+$ChkNoticeShowBtn.Add_Unchecked({ Update-NoticePreview })
+$ChkNoticeSecondary.Add_Checked({ Update-NoticePreview })
+$ChkNoticeSecondary.Add_Unchecked({ Update-NoticePreview })
+
+$ComboNoticeTarget.Add_SelectionChanged({
+    if ($GridTargetHw) {
+        $GridTargetHw.Visibility = if ($ComboNoticeTarget.SelectedIndex -eq 4) { "Visible" } else { "Collapsed" }
+    }
+    Update-NoticePreview
+})
+
+$ComboNoticeActionType.Add_SelectionChanged({
+    switch ($ComboNoticeActionType.SelectedIndex) {
+        0 { $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635" }
+        1 { $TxtNoticeBtnUrl.Text = "#update" }
+        2 { $TxtNoticeBtnUrl.Text = "#settings/license" }
+    }
+})
+
+# Quick 1-Click Preset Handlers
+$BtnPresetUpdate.Add_Click({
+    $TxtNoticeTitle.Text = "🚀 नया अपडेट उपलब्ध है!"
+    $TxtNoticeBody.Text = "सॉफ़्टवेयर का नया वर्ज़न लाइव हो चुका है। कृपया सेटिंग्स में जाकर 'Check Update' बटन दबाएं अथवा नया वर्ज़न इंस्टॉल करें।"
+    $ComboNoticeType.SelectedIndex = 0
+    $ComboNoticePlacement.SelectedIndex = 0
+    $ComboNoticeTarget.SelectedIndex = 0
+    $ComboNoticeDismiss.SelectedIndex = 0
+    $TxtNoticeBtnText.Text = "अपडेट चेक करें"
+    $ComboNoticeActionType.SelectedIndex = 1
+    $TxtNoticeBtnUrl.Text = "#update"
+    $ChkNoticeActive.IsChecked = $true
+    Update-NoticePreview
+})
+
+$BtnPresetTrial.Add_Click({
+    $TxtNoticeTitle.Text = "🎁 90 दिन का विशेष फ्री ट्रायल ऑफर"
+    $TxtNoticeBody.Text = "सभी केंद्रों के लिए 90 दिन फ्री ट्रायल ऑफर सक्रिय है! पूरी तरह फ्री है डेट ऑटोमेटिक आगे बढ़ती रहेगी।"
+    $ComboNoticeType.SelectedIndex = 1
+    $ComboNoticePlacement.SelectedIndex = 0
+    $ComboNoticeTarget.SelectedIndex = 1
+    $ComboNoticeDismiss.SelectedIndex = 0
+    $TxtNoticeBtnText.Text = "बात करें"
+    $ComboNoticeActionType.SelectedIndex = 0
+    $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635"
+    $ChkNoticeActive.IsChecked = $true
+    Update-NoticePreview
+})
+
+$BtnPresetSlow.Add_Click({
+    $TxtNoticeTitle.Text = "⚠️ बैंक सर्वर / CSP नेटवर्क डाउन"
+    $TxtNoticeBody.Text = "प्रमुख बैंकों (SBI / PNB / BOB) का सर्वर स्लो चल रहा है अथवा बायोमेट्रिक प्रमाणीकरण में देरी हो रही है। कृपया ग्राहकों को पहले ही सूचित करें।"
+    $ComboNoticeType.SelectedIndex = 2
+    $ComboNoticePlacement.SelectedIndex = 0
+    $ComboNoticeTarget.SelectedIndex = 0
+    $ComboNoticeDismiss.SelectedIndex = 0
+    $TxtNoticeBtnText.Text = "व्हाट्सएप ग्रुप"
+    $ComboNoticeActionType.SelectedIndex = 0
+    $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635"
+    $ChkNoticeActive.IsChecked = $true
+    Update-NoticePreview
+})
+
+$BtnPresetMaint.Add_Click({
+    $TxtNoticeTitle.Text = "🚨 आवश्यक सिस्टम मेंटेनेंस अलर्ट"
+    $TxtNoticeBody.Text = "आज रात 11:00 PM से 11:30 PM तक आवश्यक सर्वर मेंटेनेंस रहेगा। कृपया अपने कार्य समय पर सेव कर लें।"
+    $ComboNoticeType.SelectedIndex = 3
+    $ComboNoticePlacement.SelectedIndex = 1
+    $ComboNoticeTarget.SelectedIndex = 0
+    $ComboNoticeDismiss.SelectedIndex = 3
+    $ChkNoticeSound.IsChecked = $true
+    $TxtNoticeBtnText.Text = "संजय जी से संपर्क"
+    $ComboNoticeActionType.SelectedIndex = 0
+    $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635"
+    $ChkNoticeActive.IsChecked = $true
+    Update-NoticePreview
+})
+
+$BtnPresetFestive.Add_Click({
+    $TxtNoticeTitle.Text = "✨ हार्दिक शुभकामनाएं"
+    $TxtNoticeBody.Text = "CSC व BC अपना हिसाब परिवार की ओर से आप सभी संचालक बंधुओं को बहुत-बहुत बधाई व हार्दिक शुभकामनाएं!"
+    $ComboNoticeType.SelectedIndex = 1
+    $ComboNoticePlacement.SelectedIndex = 0
+    $ComboNoticeTarget.SelectedIndex = 0
+    $ComboNoticeDismiss.SelectedIndex = 1
+    $TxtNoticeBtnText.Text = "बात करें"
+    $ComboNoticeActionType.SelectedIndex = 0
+    $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635"
+    $ChkNoticeActive.IsChecked = $true
+    Update-NoticePreview
+})
+
+$BtnPresetClear.Add_Click({
+    $TxtNoticeTitle.Text = "विशेष सूचना"
+    $TxtNoticeBody.Text = ""
+    $ComboNoticeType.SelectedIndex = 0
+    $ComboNoticePlacement.SelectedIndex = 0
+    $ComboNoticeTarget.SelectedIndex = 0
+    $ComboNoticeDismiss.SelectedIndex = 0
+    $TxtNoticeTargetHwId.Text = ""
+    $DpNoticeExpiry.SelectedDate = $null
+    $ChkNoticeSound.IsChecked = $false
+    $ChkNoticeActive.IsChecked = $false
+    $TxtNoticeBtnText.Text = "बात करें"
+    $TxtNoticeBtnUrl.Text = "https://wa.me/919616928635"
+    $ChkNoticeSecondary.IsChecked = $false
+    Update-NoticePreview
+})
 
 # Personal Key Generator
 $BtnGenerateKey.Add_Click({
@@ -838,13 +1227,67 @@ $BtnSavePush.Add_Click({
             name = $TxtAdminName.Text.Trim()
             supportHours = $TxtAdminHours.Text.Trim()
         }
+        # Placement mapping
+        $placementStr = "dashboard"
+        switch ($ComboNoticePlacement.SelectedIndex) {
+            1 { $placementStr = "popup" }
+            2 { $placementStr = "ticker" }
+            3 { $placementStr = "settings" }
+            default { $placementStr = "dashboard" }
+        }
+
+        # Target audience mapping
+        $targetAudienceStr = "all"
+        switch ($ComboNoticeTarget.SelectedIndex) {
+            1 { $targetAudienceStr = "trial" }
+            2 { $targetAudienceStr = "expiring" }
+            3 { $targetAudienceStr = "expired" }
+            4 { $targetAudienceStr = "specific_hw" }
+            default { $targetAudienceStr = "all" }
+        }
+
+        # Dismiss duration mapping
+        $dismissDurationStr = "session"
+        switch ($ComboNoticeDismiss.SelectedIndex) {
+            1 { $dismissDurationStr = "24h" }
+            2 { $dismissDurationStr = "permanent" }
+            3 { $dismissDurationStr = "mandatory" }
+            default { $dismissDurationStr = "session" }
+        }
+
+        # Action Type mapping
+        $actionTypeStr = "whatsapp"
+        switch ($ComboNoticeActionType.SelectedIndex) {
+            1 { $actionTypeStr = "update" }
+            2 { $actionTypeStr = "settings" }
+            3 { $actionTypeStr = "custom" }
+            default { $actionTypeStr = "whatsapp" }
+        }
+
+        $validUntilStr = ""
+        if ($DpNoticeExpiry.SelectedDate) {
+            $validUntilStr = $DpNoticeExpiry.SelectedDate.ToString("yyyy-MM-dd")
+        }
+
         announcement = [PSCustomObject]@{
             isActive = ($ChkNoticeActive.IsChecked -eq $true)
             title = $TxtNoticeTitle.Text.Trim()
             message = $TxtNoticeBody.Text.Trim()
             type = $noticeTypeStr
+            placement = $placementStr
+            targetAudience = $targetAudienceStr
+            targetHardwareId = $TxtNoticeTargetHwId.Text.Trim().ToUpper()
+            allowDismiss = ($ComboNoticeDismiss.SelectedIndex -ne 3)
+            dismissDuration = $dismissDurationStr
+            validUntil = $validUntilStr
+            playSound = ($ChkNoticeSound.IsChecked -eq $true)
+            showButton = ($ChkNoticeShowBtn.IsChecked -ne $false)
+            actionType = $actionTypeStr
             actionText = $TxtNoticeBtnText.Text.Trim()
             actionUrl = $TxtNoticeBtnUrl.Text.Trim()
+            showSecondaryButton = ($ChkNoticeSecondary.IsChecked -eq $true)
+            secondaryButtonText = $TxtNoticeSecondaryText.Text.Trim()
+            updatedAt = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
         }
         universalKeys = $script:keysDict
         blacklistedHardwareIds = @($script:config.blacklistedHardwareIds)

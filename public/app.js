@@ -28130,7 +28130,192 @@ function renderLicenseUI(lic) {
     try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
 }
 
+function playNotificationChime() {
+    try {
+        if (sessionStorage.getItem('ann_chime_played')) return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        const now = ctx.currentTime;
+        osc.frequency.setValueAtTime(587.33, now); // D5
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        osc.start(now);
+        osc.stop(now + 0.6);
+        sessionStorage.setItem('ann_chime_played', '1');
+    } catch (_) {}
+}
+
+function shouldShowAnnouncementToClient(ann, lic) {
+    if (!ann || !ann.isActive) return false;
+
+    // 1. Auto-expiry date check
+    if (ann.validUntil) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        if (todayStr > ann.validUntil) return false;
+    }
+
+    // 2. Target audience filtering
+    const audience = ann.targetAudience || 'all';
+    if (audience === 'trial') {
+        const isTrial = /trial|ट्रायल/i.test(lic?.plan || '') || (lic?.licenseKey === 'TEST123');
+        if (!isTrial) return false;
+    } else if (audience === 'expiring') {
+        if (!lic || lic.daysRemaining > 7 || lic.daysRemaining < 0) return false;
+    } else if (audience === 'expired') {
+        if (!lic || (!lic.isExpired && lic.daysRemaining >= 0)) return false;
+    } else if (audience === 'specific_hw') {
+        if (!ann.targetHardwareId || (lic?.hardwareId || '').trim().toUpperCase() !== ann.targetHardwareId.trim().toUpperCase()) {
+            return false;
+        }
+    }
+
+    // 3. User dismiss state check
+    const dismissKey = 'ann_dismissed_' + (ann.updatedAt || ann.title || 'active');
+    const duration = ann.dismissDuration || 'session';
+    if (duration === 'session') {
+        if (sessionStorage.getItem(dismissKey)) return false;
+    } else if (duration === '24h') {
+        const ts = localStorage.getItem(dismissKey);
+        if (ts && (Date.now() - parseInt(ts, 10) < 24 * 60 * 60 * 1000)) return false;
+    } else if (duration === 'permanent') {
+        if (localStorage.getItem(dismissKey)) return false;
+    }
+    // 'mandatory' cannot be dismissed
+
+    return true;
+}
+
+function dismissCurrentAnnouncement(source) {
+    const ann = currentLicenseStatus?.announcement;
+    if (ann) {
+        const dismissKey = 'ann_dismissed_' + (ann.updatedAt || ann.title || 'active');
+        const duration = ann.dismissDuration || 'session';
+        if (duration === '24h') {
+            localStorage.setItem(dismissKey, Date.now().toString());
+        } else if (duration === 'permanent') {
+            localStorage.setItem(dismissKey, '1');
+        } else {
+            sessionStorage.setItem(dismissKey, '1');
+        }
+    }
+
+    // Close Popup modal if open
+    const modal = document.getElementById('announcementPopupModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+
+    // Clear Dashboard banner
+    const banner = document.getElementById('dashboardAnnouncementBanner');
+    if (banner) banner.innerHTML = '';
+}
+window.dismissCurrentAnnouncement = dismissCurrentAnnouncement;
+
+function executeAnnouncementAction(ann) {
+    if (!ann) return;
+    const actionType = ann.actionType || 'whatsapp';
+    if (actionType === 'update') {
+        if (typeof checkForUpdates === 'function') {
+            checkForUpdates(false);
+        } else {
+            showToast('🔄 अपडेट की जांच की जा रही है...', 'info');
+        }
+    } else if (actionType === 'settings') {
+        if (typeof navigateToSettingsTab === 'function') {
+            navigateToSettingsTab('license');
+        }
+    } else {
+        const url = ann.actionUrl || 'https://wa.me/919616928635';
+        window.open(url, '_blank');
+    }
+}
+window.executeAnnouncementAction = executeAnnouncementAction;
+
 function renderAnnouncementBanner(ann) {
+    const lic = currentLicenseStatus;
+
+    // Check all criteria: active, expiry date, audience targeting, dismiss state
+    if (!shouldShowAnnouncementToClient(ann, lic)) {
+        const existingBanner = document.getElementById('dashboardAnnouncementBanner');
+        if (existingBanner) existingBanner.innerHTML = '';
+        const modal = document.getElementById('announcementPopupModal');
+        if (modal) modal.style.display = 'none';
+        return;
+    }
+
+    // Play gentle chime sound if enabled
+    if (ann.playSound) {
+        playNotificationChime();
+    }
+
+    const typeThemes = {
+        info: { bg: 'rgba(56, 189, 248, 0.15)', border: 'rgba(56, 189, 248, 0.4)', text: '#38bdf8', icon: 'info', modalBg: '#0f172a' },
+        success: { bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.4)', text: '#34d399', icon: 'sparkles', modalBg: '#064e3b' },
+        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.4)', text: '#fbbf24', icon: 'alert-triangle', modalBg: '#78350f' },
+        urgent: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', text: '#f87171', icon: 'alert-octagon', modalBg: '#7f1d1d' }
+    };
+    const t = typeThemes[ann.type] || typeThemes.info;
+    const placement = ann.placement || 'dashboard';
+
+    // 1. POPUP MODAL DIALOG PLACEMENT
+    if (placement === 'popup') {
+        const modal = document.getElementById('announcementPopupModal');
+        const titleEl = document.getElementById('apmTitle');
+        const bodyEl = document.getElementById('apmBody');
+        const iconBox = document.getElementById('apmIconBox');
+        const primaryBtn = document.getElementById('apmBtnPrimary');
+        const secondaryBtn = document.getElementById('apmBtnSecondary');
+        const closeX = document.getElementById('apmBtnCloseX');
+
+        if (modal && titleEl && bodyEl) {
+            titleEl.textContent = ann.title || 'विशेष सूचना';
+            titleEl.style.color = t.text;
+            bodyEl.textContent = ann.message || '';
+            if (iconBox) {
+                iconBox.style.background = t.bg;
+                iconBox.style.color = t.text;
+                iconBox.innerHTML = `<i data-lucide="${t.icon}"></i>`;
+            }
+            if (primaryBtn) {
+                if (ann.showButton !== false && ann.actionText) {
+                    primaryBtn.textContent = ann.actionText;
+                    primaryBtn.style.display = 'inline-flex';
+                    primaryBtn.style.background = t.text;
+                    primaryBtn.style.color = '#0f172a';
+                    primaryBtn.onclick = (e) => { e.preventDefault(); executeAnnouncementAction(ann); };
+                } else {
+                    primaryBtn.style.display = 'none';
+                }
+            }
+            if (secondaryBtn) {
+                if (ann.showSecondaryButton && ann.secondaryButtonText) {
+                    secondaryBtn.textContent = ann.secondaryButtonText;
+                    secondaryBtn.style.display = 'inline-block';
+                } else {
+                    secondaryBtn.style.display = 'none';
+                }
+            }
+            if (closeX) {
+                closeX.style.display = (ann.dismissDuration === 'mandatory') ? 'none' : 'block';
+            }
+
+            modal.classList.add('active');
+            modal.style.display = 'flex';
+            try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
+            return;
+        }
+    }
+
+    // 2. DASHBOARD / DEFAULT BANNER PLACEMENT
     let banner = document.getElementById('dashboardAnnouncementBanner');
     if (!banner) {
         const licBanner = document.getElementById('dashboardLicenseNotificationBanner');
@@ -28143,22 +28328,19 @@ function renderAnnouncementBanner(ann) {
     }
     if (!banner) return;
 
-    if (!ann || !ann.isActive) {
-        banner.innerHTML = '';
-        return;
+    let primaryBtnHtml = '';
+    if (ann.showButton !== false && ann.actionText) {
+        primaryBtnHtml = `<button type="button" class="btn" onclick="executeAnnouncementAction(currentLicenseStatus?.announcement)" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: ${t.text}; color: #0f172a; border: none; border-radius: 6px; white-space: nowrap; cursor: pointer;">${ann.actionText}</button>`;
     }
 
-    const typeThemes = {
-        info: { bg: 'rgba(56, 189, 248, 0.15)', border: 'rgba(56, 189, 248, 0.4)', text: '#38bdf8', icon: 'info' },
-        success: { bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.4)', text: '#34d399', icon: 'sparkles' },
-        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.4)', text: '#fbbf24', icon: 'alert-triangle' },
-        urgent: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', text: '#f87171', icon: 'alert-octagon' }
-    };
-    const t = typeThemes[ann.type] || typeThemes.info;
+    let secondaryBtnHtml = '';
+    if (ann.showSecondaryButton && ann.secondaryButtonText) {
+        secondaryBtnHtml = `<button type="button" class="btn btn-secondary" onclick="dismissCurrentAnnouncement('dashboard')" style="padding: 6px 12px; font-size: 11.5px; font-weight: 600; color: ${t.text}; border-color: ${t.border}; background: transparent; white-space: nowrap;">${ann.secondaryButtonText}</button>`;
+    }
 
-    let actionBtnHtml = '';
-    if (ann.actionText && ann.actionUrl) {
-        actionBtnHtml = `<a href="${ann.actionUrl}" target="_blank" class="btn" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: ${t.text}; color: #0f172a; border: none; border-radius: 6px; text-decoration: none; white-space: nowrap;">${ann.actionText}</a>`;
+    let closeBtnHtml = '';
+    if (ann.dismissDuration !== 'mandatory') {
+        closeBtnHtml = `<button type="button" onclick="dismissCurrentAnnouncement('dashboard')" style="background: none; border: none; font-size: 18px; color: ${t.text}; cursor: pointer; padding: 2px 6px; opacity: 0.8; line-height: 1;" title="नोटिस बंद करें">✕</button>`;
     }
 
     banner.innerHTML = `
@@ -28170,7 +28352,11 @@ function renderAnnouncementBanner(ann) {
                     <div style="font-size: 12.5px; font-weight: 500; opacity: 0.95; margin-top: 2px;">${ann.message || ''}</div>
                 </div>
             </div>
-            ${actionBtnHtml}
+            <div style="display: flex; align-items: center; gap: 8px;">
+                ${secondaryBtnHtml}
+                ${primaryBtnHtml}
+                ${closeBtnHtml}
+            </div>
         </div>
     `;
     try { if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons(); } catch (e) {}
@@ -28476,7 +28662,7 @@ async function openAdminCloudControlModal() {
                 updateAccActiveLabel();
             }
 
-            // Populate Broadcast Announcement controls
+            // Populate Broadcast Announcement controls (Full Suite)
             const ann = data.config.announcement || {};
             const chkAnn = document.getElementById('accAnnounceActive');
             if (chkAnn) {
@@ -28489,10 +28675,43 @@ async function openAdminCloudControlModal() {
             if (mAnn) mAnn.value = ann.message || '';
             const typeAnn = document.getElementById('accAnnounceType');
             if (typeAnn) typeAnn.value = ann.type || 'info';
+
+            const plcAnn = document.getElementById('accAnnouncePlacement');
+            if (plcAnn) plcAnn.value = ann.placement || 'dashboard';
+
+            const tgtAnn = document.getElementById('accAnnounceTarget');
+            if (tgtAnn) tgtAnn.value = ann.targetAudience || 'all';
+
+            const hwAnn = document.getElementById('accAnnounceTargetHwId');
+            if (hwAnn) hwAnn.value = ann.targetHardwareId || '';
+            updateAccAnnounceTargetHwVisibility();
+
+            const expAnn = document.getElementById('accAnnounceExpiry');
+            if (expAnn) expAnn.value = ann.validUntil || '';
+
+            const disAnn = document.getElementById('accAnnounceDismiss');
+            if (disAnn) disAnn.value = ann.dismissDuration || 'session';
+
+            const sndAnn = document.getElementById('accAnnounceSound');
+            if (sndAnn) sndAnn.checked = ann.playSound === true;
+
+            const shwBtn = document.getElementById('accAnnounceShowBtn');
+            if (shwBtn) shwBtn.checked = ann.showButton !== false;
+
             const btnTextAnn = document.getElementById('accAnnounceBtnText');
             if (btnTextAnn) btnTextAnn.value = ann.actionText || 'बात करें';
+
+            const actTypeAnn = document.getElementById('accAnnounceActionType');
+            if (actTypeAnn) actTypeAnn.value = ann.actionType || 'whatsapp';
+
             const btnUrlAnn = document.getElementById('accAnnounceBtnUrl');
             if (btnUrlAnn) btnUrlAnn.value = ann.actionUrl || 'https://wa.me/919616928635';
+
+            const secChk = document.getElementById('accAnnounceSecondary');
+            if (secChk) secChk.checked = ann.showSecondaryButton === true;
+
+            const secTxt = document.getElementById('accAnnounceSecondaryText');
+            if (secTxt) secTxt.value = ann.secondaryButtonText || 'बाद में';
 
             adminBlacklistHwIds = Array.isArray(data.config.blacklistedHardwareIds) ? [...data.config.blacklistedHardwareIds] : [];
             renderAccBlacklist();
@@ -28520,6 +28739,121 @@ function closeAdminCloudControlModal(e) {
         }
     }
 }
+
+
+function updateAccAnnounceTargetHwVisibility() {
+    const tgt = document.getElementById('accAnnounceTarget')?.value;
+    const row = document.getElementById('accTargetHwRow');
+    if (row) {
+        row.style.display = (tgt === 'specific_hw') ? 'block' : 'none';
+    }
+}
+window.updateAccAnnounceTargetHwVisibility = updateAccAnnounceTargetHwVisibility;
+
+function updateAccAnnounceActionUrlPreset() {
+    const type = document.getElementById('accAnnounceActionType')?.value;
+    const urlInput = document.getElementById('accAnnounceBtnUrl');
+    if (!urlInput) return;
+    if (type === 'whatsapp') urlInput.value = 'https://wa.me/919616928635';
+    else if (type === 'update') urlInput.value = '#update';
+    else if (type === 'settings') urlInput.value = '#settings/license';
+}
+window.updateAccAnnounceActionUrlPreset = updateAccAnnounceActionUrlPreset;
+
+function applyAnnouncePreset(presetKey) {
+    const titleInput = document.getElementById('accAnnounceTitle');
+    const msgInput = document.getElementById('accAnnounceMessage');
+    const typeSelect = document.getElementById('accAnnounceType');
+    const plcSelect = document.getElementById('accAnnouncePlacement');
+    const tgtSelect = document.getElementById('accAnnounceTarget');
+    const disSelect = document.getElementById('accAnnounceDismiss');
+    const btnTextInput = document.getElementById('accAnnounceBtnText');
+    const actTypeSelect = document.getElementById('accAnnounceActionType');
+    const btnUrlInput = document.getElementById('accAnnounceBtnUrl');
+    const activeCheck = document.getElementById('accAnnounceActive');
+
+    if (presetKey === 'update') {
+        if (titleInput) titleInput.value = '🚀 नया अपडेट उपलब्ध है!';
+        if (msgInput) msgInput.value = 'सॉफ़्टवेयर का नया वर्ज़न लाइव हो चुका है। कृपया सेटिंग्स में जाकर Check Update बटन दबाएं अथवा नया वर्ज़न इंस्टॉल करें।';
+        if (typeSelect) typeSelect.value = 'info';
+        if (plcSelect) plcSelect.value = 'dashboard';
+        if (tgtSelect) tgtSelect.value = 'all';
+        if (disSelect) disSelect.value = 'session';
+        if (btnTextInput) btnTextInput.value = 'अपडेट चेक करें';
+        if (actTypeSelect) actTypeSelect.value = 'update';
+        if (btnUrlInput) btnUrlInput.value = '#update';
+        if (activeCheck) activeCheck.checked = true;
+    } else if (presetKey === 'trial') {
+        if (titleInput) titleInput.value = '🎁 90 दिन का विशेष फ्री ट्रायल ऑफर';
+        if (msgInput) msgInput.value = 'सभी केंद्रों के लिए 90 दिन फ्री ट्रायल ऑफर सक्रिय है! पूरी तरह फ्री है डेट ऑटोमेटिक आगे बढ़ती रहेगी।';
+        if (typeSelect) typeSelect.value = 'success';
+        if (plcSelect) plcSelect.value = 'dashboard';
+        if (tgtSelect) tgtSelect.value = 'trial';
+        if (disSelect) disSelect.value = 'session';
+        if (btnTextInput) btnTextInput.value = 'बात करें';
+        if (actTypeSelect) actTypeSelect.value = 'whatsapp';
+        if (btnUrlInput) btnUrlInput.value = 'https://wa.me/919616928635';
+        if (activeCheck) activeCheck.checked = true;
+    } else if (presetKey === 'slow') {
+        if (titleInput) titleInput.value = '⚠️ बैंक सर्वर / CSP नेटवर्क डाउन';
+        if (msgInput) msgInput.value = 'प्रमुख बैंकों (SBI / PNB / BOB) का सर्वर स्लो चल रहा है अथवा बायोमेट्रिक प्रमाणीकरण में देरी हो रही है। कृपया ग्राहकों को पहले ही सूचित करें।';
+        if (typeSelect) typeSelect.value = 'warning';
+        if (plcSelect) plcSelect.value = 'dashboard';
+        if (tgtSelect) tgtSelect.value = 'all';
+        if (disSelect) disSelect.value = 'session';
+        if (btnTextInput) btnTextInput.value = 'व्हाट्सएप ग्रुप';
+        if (actTypeSelect) actTypeSelect.value = 'whatsapp';
+        if (btnUrlInput) btnUrlInput.value = 'https://wa.me/919616928635';
+        if (activeCheck) activeCheck.checked = true;
+    } else if (presetKey === 'maint') {
+        if (titleInput) titleInput.value = '🚨 आवश्यक सिस्टम मेंटेनेंस अलर्ट';
+        if (msgInput) msgInput.value = 'आज रात 11:00 PM से 11:30 PM तक आवश्यक सर्वर मेंटेनेंस रहेगा। कृपया अपने कार्य समय पर सेव कर लें।';
+        if (typeSelect) typeSelect.value = 'urgent';
+        if (plcSelect) plcSelect.value = 'popup';
+        if (tgtSelect) tgtSelect.value = 'all';
+        if (disSelect) disSelect.value = 'mandatory';
+        const snd = document.getElementById('accAnnounceSound');
+        if (snd) snd.checked = true;
+        if (btnTextInput) btnTextInput.value = 'संजय जी से संपर्क';
+        if (actTypeSelect) actTypeSelect.value = 'whatsapp';
+        if (btnUrlInput) btnUrlInput.value = 'https://wa.me/919616928635';
+        if (activeCheck) activeCheck.checked = true;
+    } else if (presetKey === 'festive') {
+        if (titleInput) titleInput.value = '✨ हार्दिक शुभकामनाएं';
+        if (msgInput) msgInput.value = 'CSC व BC अपना हिसाब परिवार की ओर से आप सभी संचालक बंधुओं को बहुत-बहुत बधाई व हार्दिक शुभकामनाएं!';
+        if (typeSelect) typeSelect.value = 'success';
+        if (plcSelect) plcSelect.value = 'dashboard';
+        if (tgtSelect) tgtSelect.value = 'all';
+        if (disSelect) disSelect.value = '24h';
+        if (btnTextInput) btnTextInput.value = 'बात करें';
+        if (actTypeSelect) actTypeSelect.value = 'whatsapp';
+        if (btnUrlInput) btnUrlInput.value = 'https://wa.me/919616928635';
+        if (activeCheck) activeCheck.checked = true;
+    } else if (presetKey === 'clear') {
+        if (titleInput) titleInput.value = 'विशेष सूचना';
+        if (msgInput) msgInput.value = '';
+        if (typeSelect) typeSelect.value = 'info';
+        if (plcSelect) plcSelect.value = 'dashboard';
+        if (tgtSelect) tgtSelect.value = 'all';
+        if (disSelect) disSelect.value = 'session';
+        const hw = document.getElementById('accAnnounceTargetHwId');
+        if (hw) hw.value = '';
+        const exp = document.getElementById('accAnnounceExpiry');
+        if (exp) exp.value = '';
+        const snd = document.getElementById('accAnnounceSound');
+        if (snd) snd.checked = false;
+        if (btnTextInput) btnTextInput.value = 'बात करें';
+        if (btnUrlInput) btnUrlInput.value = 'https://wa.me/919616928635';
+        if (activeCheck) activeCheck.checked = false;
+    }
+
+    updateAccAnnounceLabel();
+    updateAccAnnounceTargetHwVisibility();
+    if (typeof showToast === 'function') {
+        showToast('✓ टेम्पलेट लागू हुआ: ' + (titleInput ? titleInput.value : ''), 'info');
+    }
+}
+window.applyAnnouncePreset = applyAnnouncePreset;
 
 function updateAccAnnounceLabel() {
     const chk = document.getElementById('accAnnounceActive');
@@ -28654,11 +28988,23 @@ async function saveAndPushCloudLicenses() {
         },
         announcement: {
             isActive: document.getElementById('accAnnounceActive')?.checked === true,
-            title: document.getElementById('accAnnounceTitle')?.value || 'विशेष सूचना',
-            message: document.getElementById('accAnnounceMessage')?.value || '',
+            title: document.getElementById('accAnnounceTitle')?.value?.trim() || 'विशेष सूचना',
+            message: document.getElementById('accAnnounceMessage')?.value?.trim() || '',
             type: document.getElementById('accAnnounceType')?.value || 'info',
-            actionText: document.getElementById('accAnnounceBtnText')?.value || 'बात करें',
-            actionUrl: document.getElementById('accAnnounceBtnUrl')?.value || 'https://wa.me/919616928635'
+            placement: document.getElementById('accAnnouncePlacement')?.value || 'dashboard',
+            targetAudience: document.getElementById('accAnnounceTarget')?.value || 'all',
+            targetHardwareId: document.getElementById('accAnnounceTargetHwId')?.value?.trim().toUpperCase() || '',
+            validUntil: document.getElementById('accAnnounceExpiry')?.value || '',
+            allowDismiss: document.getElementById('accAnnounceDismiss')?.value !== 'mandatory',
+            dismissDuration: document.getElementById('accAnnounceDismiss')?.value || 'session',
+            playSound: document.getElementById('accAnnounceSound')?.checked === true,
+            showButton: document.getElementById('accAnnounceShowBtn')?.checked !== false,
+            actionType: document.getElementById('accAnnounceActionType')?.value || 'whatsapp',
+            actionText: document.getElementById('accAnnounceBtnText')?.value?.trim() || 'बात करें',
+            actionUrl: document.getElementById('accAnnounceBtnUrl')?.value?.trim() || 'https://wa.me/919616928635',
+            showSecondaryButton: document.getElementById('accAnnounceSecondary')?.checked === true,
+            secondaryButtonText: document.getElementById('accAnnounceSecondaryText')?.value?.trim() || 'बाद में',
+            updatedAt: new Date().toISOString()
         },
         blacklistedHardwareIds: adminBlacklistHwIds
     };
