@@ -28476,6 +28476,24 @@ async function openAdminCloudControlModal() {
                 updateAccActiveLabel();
             }
 
+            // Populate Broadcast Announcement controls
+            const ann = data.config.announcement || {};
+            const chkAnn = document.getElementById('accAnnounceActive');
+            if (chkAnn) {
+                chkAnn.checked = ann.isActive === true;
+                updateAccAnnounceLabel();
+            }
+            const tAnn = document.getElementById('accAnnounceTitle');
+            if (tAnn) tAnn.value = ann.title || 'विशेष सूचना';
+            const mAnn = document.getElementById('accAnnounceMessage');
+            if (mAnn) mAnn.value = ann.message || '';
+            const typeAnn = document.getElementById('accAnnounceType');
+            if (typeAnn) typeAnn.value = ann.type || 'info';
+            const btnTextAnn = document.getElementById('accAnnounceBtnText');
+            if (btnTextAnn) btnTextAnn.value = ann.actionText || 'बात करें';
+            const btnUrlAnn = document.getElementById('accAnnounceBtnUrl');
+            if (btnUrlAnn) btnUrlAnn.value = ann.actionUrl || 'https://wa.me/919616928635';
+
             adminBlacklistHwIds = Array.isArray(data.config.blacklistedHardwareIds) ? [...data.config.blacklistedHardwareIds] : [];
             renderAccBlacklist();
 
@@ -28502,6 +28520,21 @@ function closeAdminCloudControlModal(e) {
         }
     }
 }
+
+function updateAccAnnounceLabel() {
+    const chk = document.getElementById('accAnnounceActive');
+    const lbl = document.getElementById('accAnnounceActiveLabel');
+    if (chk && lbl) {
+        if (chk.checked) {
+            lbl.textContent = 'सक्रिय (Live on Dashboard)';
+            lbl.style.color = '#38bdf8';
+        } else {
+            lbl.textContent = 'निष्क्रिय (Off)';
+            lbl.style.color = 'var(--text-secondary)';
+        }
+    }
+}
+window.updateAccAnnounceLabel = updateAccAnnounceLabel;
 
 function updateAccActiveLabel() {
     const chk = document.getElementById('accKeyActive');
@@ -28618,6 +28651,14 @@ async function saveAndPushCloudLicenses() {
                 maxDevices: 99999,
                 message: message || '९० दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है!'
             }
+        },
+        announcement: {
+            isActive: document.getElementById('accAnnounceActive')?.checked === true,
+            title: document.getElementById('accAnnounceTitle')?.value || 'विशेष सूचना',
+            message: document.getElementById('accAnnounceMessage')?.value || '',
+            type: document.getElementById('accAnnounceType')?.value || 'info',
+            actionText: document.getElementById('accAnnounceBtnText')?.value || 'बात करें',
+            actionUrl: document.getElementById('accAnnounceBtnUrl')?.value || 'https://wa.me/919616928635'
         },
         blacklistedHardwareIds: adminBlacklistHwIds
     };

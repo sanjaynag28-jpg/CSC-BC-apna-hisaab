@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-24T05:53:38.765Z",
+  "updatedAt": "2026-11-24T07:42:00.000Z",
   "adminContact": {
     "whatsapp": "919616928635",
     "name": "Sanjay Nag",
     "supportHours": "10:00 AM - 8:00 PM"
   },
   "announcement": {
-    "isActive": true,
-    "title": "90 दिन का विशेष फ्री ट्रायल ऑफर",
-    "message": "90 दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है! पूरी तरह फ्री है डेट ऑटोमेटिक आगे बढ़ती रहेगी",
-    "type": "success",
+    "isActive": false,
+    "title": "विशेष सूचना",
+    "message": "",
+    "type": "info",
     "actionText": "बात करें",
     "actionUrl": "https://wa.me/919616928635"
   },

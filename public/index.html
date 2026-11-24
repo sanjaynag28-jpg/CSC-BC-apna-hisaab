@@ -12826,6 +12826,56 @@
                 </div>
             </div>
 
+            <!-- CARD 3: BROADCAST LIVE NOTIFICATION (DASHBOARD ANNOUNCEMENT) -->
+            <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 16px;">📢</span>
+                        <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">डैशबोर्ड लाइव सूचना व नोटिस (Dashboard Broadcast)</span>
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 700;">
+                        <input type="checkbox" id="accAnnounceActive" style="width: 16px; height: 16px; accent-color: #3b82f6;" onchange="updateAccAnnounceLabel()">
+                        <span id="accAnnounceActiveLabel" style="color: var(--text-secondary);">निष्क्रिय (Off)</span>
+                    </label>
+                </div>
+
+                <div style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 12px;">
+                    यह नोटिस केवल तभी ग्राहकों के डैशबोर्ड पर दिखाई देगा जब आप इसे यहाँ से <b>सक्रिय</b> करेंगे। सामान्य समय में यह बंद रहेगा।
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 12px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">नोटिस शीर्षक (Title):</label>
+                        <input type="text" id="accAnnounceTitle" placeholder="उदा. विशेष सूचना या मेंटेनेंस अलर्ट" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">रंग / प्रकार (Type):</label>
+                        <select id="accAnnounceType" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                            <option value="info">🔵 Info (नीला)</option>
+                            <option value="success">🟢 Success (हरा)</option>
+                            <option value="warning">🟡 Warning (पीला)</option>
+                            <option value="urgent">🔴 Urgent (लाल)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px;">
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">संदेश विवरण (Message):</label>
+                    <textarea id="accAnnounceMessage" rows="2" placeholder="ग्राहकों को डैशबोर्ड पर दिखाई देने वाला संदेश लिखें..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px; font-family: inherit; resize: vertical;"></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">बटन का नाम (Action Text):</label>
+                        <input type="text" id="accAnnounceBtnText" placeholder="उदा. बात करें या अपडेट करें" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; display: block; margin-bottom: 4px;">बटन लिंक (Action URL):</label>
+                        <input type="text" id="accAnnounceBtnUrl" placeholder="उदा. https://wa.me/919616928635" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.25); color: var(--text-primary); font-size: 13px;">
+                    </div>
+                </div>
+            </div>
+
             <!-- PROGRESS & LOG NOTIFICATION AREA -->
             <div id="accProgressArea" style="display: none; background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; margin-bottom: 18px;">
                 <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700;" id="accProgressText">
