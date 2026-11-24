@@ -1,29 +1,43 @@
 {
-  "version": 1,
-  "updatedAt": "2026-11-24T07:42:00.000Z",
-  "adminContact": {
-    "whatsapp": "919616928635",
-    "name": "Sanjay Nag",
-    "supportHours": "10:00 AM - 8:00 PM"
-  },
-  "announcement": {
-    "isActive": false,
-    "title": "विशेष सूचना",
-    "message": "",
-    "type": "info",
-    "actionText": "बात करें",
-    "actionUrl": "https://wa.me/919616928635"
-  },
-  "universalKeys": {
-    "TEST123": {
-      "key": "TEST123",
-      "plan": "90 दिन फ्री ट्रायल (Universal Offer)",
-      "planHindi": "90 दिन फ्री ट्रायल (Universal Offer)",
-      "expiryDate": "2027-02-28",
-      "isActive": true,
-      "maxDevices": 99999,
-      "message": "90 दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है! पूरी तरह फ्री है डेट ऑटोमेटिक आगे बढ़ती रहेगी"
-    }
-  },
-  "blacklistedHardwareIds": []
+    "version":  1,
+    "updatedAt":  "2026-11-24T17:32:31Z",
+    "adminContact":  {
+                         "whatsapp":  "919616928635",
+                         "name":  "Sanjay Nag",
+                         "supportHours":  "10:00 AM - 8:00 PM"
+                     },
+    "announcement":  {
+                         "isActive":  true,
+                         "title":  "🚨 आवश्यक सिस्टम मेंटेनेंस अलर्ट",
+                         "message":  "आज रात 11:00 PM से 11:30 PM तक आवश्यक सर्वर मेंटेनेंस रहेगा। कृपया अपने कार्य समय पर सेव कर लें।",
+                         "type":  "urgent",
+                         "placement":  "ticker",
+                         "targetAudience":  "all",
+                         "targetHardwareId":  "",
+                         "allowDismiss":  false,
+                         "dismissDuration":  "mandatory",
+                         "validUntil":  "",
+                         "playSound":  true,
+                         "showButton":  false,
+                         "actionType":  "whatsapp",
+                         "actionText":  "संजय जी से संपर्क",
+                         "actionUrl":  "https://wa.me/919616928635",
+                         "showSecondaryButton":  false,
+                         "secondaryButtonText":  "बाद में याद दिलाएं",
+                         "updatedAt":  "2026-11-24T17:32:31Z"
+                     },
+    "universalKeys":  {
+                          "TEST123":  {
+                                          "key":  "TEST123",
+                                          "plan":  "90 दिन फ्री ट्रायल (Universal Offer)",
+                                          "planHindi":  "90 दिन फ्री ट्रायल (Universal Offer)",
+                                          "expiryDate":  "2027-02-28",
+                                          "isActive":  true,
+                                          "maxDevices":  99999,
+                                          "message":  "90 दिन का विशेष फ्री ट्रायल ऑफर सभी केंद्रों के लिए सक्रिय है! पूरी तरह फ्री है डेट ऑटोमेटिक आगे बढ़ती रहेगी"
+                                      }
+                      },
+    "blacklistedHardwareIds":  [
+
+                               ]
 }
