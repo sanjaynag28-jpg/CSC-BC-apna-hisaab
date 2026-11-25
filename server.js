@@ -907,10 +907,10 @@ app.get('/api/badges', async (req, res) => {
         const result = await query(sql, { userId });
         const base = result.recordset[0] || {};
 
-        // UCL/PAC counts: alag se try karo taaki purane PCs par (jahan migration 010 abhi nahi chali)
-        // UCLUpdates/PACEntries table missing hone par poora API fail na ho.
+        // UCL/PAC/BillPay counts: alag se try karo taaki purane PCs par error na aaye.
         let ucl = 0;
         let pac = 0;
+        let billpayments = 0;
         try {
             const uclRes = await query('SELECT COUNT(*) AS c FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId', { userId });
             ucl = uclRes.recordset?.[0]?.c || 0;
@@ -919,8 +919,12 @@ app.get('/api/badges', async (req, res) => {
             const pacRes = await query("SELECT COUNT(*) AS c FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId", { userId });
             pac = pacRes.recordset?.[0]?.c || 0;
         } catch (_) { pac = 0; }
+        try {
+            const bpRes = await query('SELECT COUNT(*) AS c FROM BillPayments WHERE ISNULL(IsDeleted, 0) = 0 AND UserID = @userId', { userId });
+            billpayments = bpRes.recordset?.[0]?.c || 0;
+        } catch (_) { billpayments = 0; }
 
-        res.json({ success: true, data: { ...base, ucl, pac } });
+        res.json({ success: true, data: { ...base, ucl, pac, billpayments } });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }

@@ -154,6 +154,33 @@ async function ensureDocumentsTable() {
 }
 ensureDocumentsTable();
 
+// Helper to derive normalized document category SQL expression (supports extensions & MIME types)
+function docCategoryCaseSql(alias = 'd') {
+    const col = alias ? `${alias}.FileType` : 'FileType';
+    const nameCol = alias ? `${alias}.OriginalName` : 'OriginalName';
+    return `CASE
+        WHEN LOWER(IFNULL(${col}, '')) IN ('.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg')
+          OR LOWER(IFNULL(${col}, '')) LIKE 'image/%'
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.jpg'
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.jpeg'
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.png'
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.gif'
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.webp' THEN 'image'
+        WHEN LOWER(IFNULL(${col}, '')) IN ('.pdf', 'application/pdf')
+          OR LOWER(IFNULL(${nameCol}, '')) LIKE '%.pdf' THEN 'pdf'
+        WHEN LOWER(IFNULL(${col}, '')) IN ('.doc','.docx','.txt','.rtf','.csv')
+          OR LOWER(IFNULL(${col}, '')) LIKE '%word%'
+          OR LOWER(IFNULL(${col}, '')) LIKE 'text/%' THEN 'document'
+        WHEN LOWER(IFNULL(${col}, '')) IN ('.xls','.xlsx')
+          OR LOWER(IFNULL(${col}, '')) LIKE '%excel%'
+          OR LOWER(IFNULL(${col}, '')) LIKE '%spreadsheet%' THEN 'excel'
+        WHEN LOWER(IFNULL(${col}, '')) IN ('.ppt','.pptx')
+          OR LOWER(IFNULL(${col}, '')) LIKE '%powerpoint%'
+          OR LOWER(IFNULL(${col}, '')) LIKE '%presentation%' THEN 'presentation'
+        ELSE 'other'
+    END`;
+}
+
 // Helper to standardize EntityType casing and values across all uploads and modules
 function normalizeEntityType(rawType, customerId = null) {
     if (!rawType) return customerId ? 'Customer' : 'Shop';
@@ -329,14 +356,7 @@ router.get('/by-entity/:entityType/:entityId', async (req, res) => {
             SELECT d.*,
                    c.CustomerName,
                    CAST(CASE WHEN d.FilePath LIKE 'http://%' OR d.FilePath LIKE 'https://%' THEN 1 ELSE 0 END AS BIT) as IsExternal,
-                   CASE
-                    WHEN d.FileType IN ('.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg') THEN 'image'
-                    WHEN d.FileType = '.pdf' THEN 'pdf'
-                    WHEN d.FileType IN ('.doc','.docx','.txt','.rtf','.csv') THEN 'document'
-                    WHEN d.FileType IN ('.xls','.xlsx') THEN 'excel'
-                    WHEN d.FileType IN ('.ppt','.pptx') THEN 'presentation'
-                    ELSE 'other'
-                   END AS Category
+                   ${docCategoryCaseSql('d')} AS Category
             FROM Documents d
             LEFT JOIN Customers c ON c.CustomerID = d.CustomerID AND c.UserID = @userId
             WHERE ${whereClause}
@@ -376,20 +396,14 @@ router.get('/customer/:customerId', async (req, res) => {
             SELECT d.*,
                    COALESCE(c.CustomerName, @custName) as CustomerName,
                    CAST(CASE WHEN d.FilePath LIKE 'http://%' OR d.FilePath LIKE 'https://%' THEN 1 ELSE 0 END AS BIT) as IsExternal,
+                   ${docCategoryCaseSql('d')} AS Category,
                    CASE
-                    WHEN d.FileType IN ('.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg') THEN 'image'
-                    WHEN d.FileType = '.pdf' THEN 'pdf'
-                    WHEN d.FileType IN ('.doc','.docx','.txt','.rtf','.csv') THEN 'document'
-                    WHEN d.FileType IN ('.xls','.xlsx') THEN 'excel'
-                    WHEN d.FileType IN ('.ppt','.pptx') THEN 'presentation'
-                    ELSE 'other'
-                   END AS Category,
-                   CASE
-                    WHEN d.EntityType IN ('CSC', 'csc') THEN 'CSC Aavedan #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType IN ('Invoice', 'invoice') THEN 'Bill / Invoice #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType IN ('Khata', 'khata') THEN 'Khata Parchi #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType IN ('BC', 'bc', 'transaction') THEN 'BC Banking Txn #' + CAST(d.EntityID AS NVARCHAR(20))
-                    WHEN d.EntityType IN ('BillPay', 'BillPayment', 'billpay') THEN 'Bill Payment #' + CAST(d.EntityID AS NVARCHAR(20))
+                    WHEN LOWER(IFNULL(d.EntityType, '')) = 'csc' THEN 'CSC Aavedan #' || CAST(d.EntityID AS TEXT)
+                    WHEN LOWER(IFNULL(d.EntityType, '')) = 'invoice' THEN 'Bill / Invoice #' || CAST(d.EntityID AS TEXT)
+                    WHEN LOWER(IFNULL(d.EntityType, '')) = 'khata' THEN 'Khata Parchi #' || CAST(d.EntityID AS TEXT)
+                    WHEN LOWER(IFNULL(d.EntityType, '')) IN ('bc', 'transaction') THEN 'BC Banking Txn #' || CAST(d.EntityID AS TEXT)
+                    WHEN LOWER(IFNULL(d.EntityType, '')) IN ('billpay', 'billpayment') THEN 'Bill Payment #' || CAST(d.EntityID AS TEXT)
+                    WHEN LOWER(IFNULL(d.EntityType, '')) = 'ucl' THEN 'Aadhaar UCL #' || CAST(d.EntityID AS TEXT)
                     ELSE 'Customer Profile'
                    END AS SourceLabel
             FROM Documents d
@@ -453,14 +467,7 @@ router.get('/', async (req, res) => {
         const result = await query(`
             SELECT d.*, c.CustomerName,
                    CAST(CASE WHEN d.FilePath LIKE 'http://%' OR d.FilePath LIKE 'https://%' THEN 1 ELSE 0 END AS BIT) as IsExternal,
-                   CASE
-                    WHEN d.FileType IN ('.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg') THEN 'image'
-                    WHEN d.FileType = '.pdf' THEN 'pdf'
-                    WHEN d.FileType IN ('.doc','.docx','.txt','.rtf','.csv') THEN 'document'
-                    WHEN d.FileType IN ('.xls','.xlsx') THEN 'excel'
-                    WHEN d.FileType IN ('.ppt','.pptx') THEN 'presentation'
-                    ELSE 'other'
-                   END AS Category
+                   ${docCategoryCaseSql('d')} AS Category
             FROM Documents d
             LEFT JOIN Customers c ON c.CustomerID = d.CustomerID AND c.UserID = @userId
             WHERE ${whereClauses.join(' AND ')}
@@ -474,16 +481,22 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/documents/stats — counts for badges
+// GET /api/documents/stats — counts for badges & category breakdown
 router.get('/stats', async (req, res) => {
     try {
         const userId = req.user.UserID;
+        const catExpr = docCategoryCaseSql('d');
         const result = await query(`
             SELECT COUNT(*) as TotalDocs,
-                   ISNULL(SUM(FileSize), 0) as TotalSize,
-                   SUM(CASE WHEN CustomerID IS NOT NULL THEN 1 ELSE 0 END) as CustomerDocs,
-                   SUM(CASE WHEN CustomerID IS NULL THEN 1 ELSE 0 END) as ShopDocs
-            FROM Documents WHERE IsArchived = 0 AND UserID = @userId
+                   ISNULL(SUM(d.FileSize), 0) as TotalSize,
+                   SUM(CASE WHEN d.CustomerID IS NOT NULL THEN 1 ELSE 0 END) as CustomerDocs,
+                   SUM(CASE WHEN d.CustomerID IS NULL THEN 1 ELSE 0 END) as ShopDocs,
+                   SUM(CASE WHEN (${catExpr}) = 'image' THEN 1 ELSE 0 END) as ImageDocs,
+                   SUM(CASE WHEN (${catExpr}) = 'pdf' THEN 1 ELSE 0 END) as PdfDocs,
+                   SUM(CASE WHEN (${catExpr}) = 'document' THEN 1 ELSE 0 END) as DocDocs,
+                   SUM(CASE WHEN (${catExpr}) = 'excel' THEN 1 ELSE 0 END) as ExcelDocs,
+                   SUM(CASE WHEN (${catExpr}) IN ('presentation', 'other') THEN 1 ELSE 0 END) as OtherDocs
+            FROM Documents d WHERE d.IsArchived = 0 AND d.UserID = @userId
         `, { userId });
         res.json({ success: true, data: result.recordset[0] });
     } catch (err) {
@@ -507,8 +520,11 @@ router.get('/:id/view', async (req, res) => {
         if (!diskPath || !fs.existsSync(diskPath)) {
             return res.status(410).json({ success: false, error: 'File server par maujood nahi hai' });
         }
+        const rawFt = (doc.FileType || '').toLowerCase();
+        const nameExt = path.extname(doc.OriginalName || doc.FileName || '').toLowerCase();
         const inlineTypes = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.pdf', '.txt'];
-        const disp = inlineTypes.includes((doc.FileType || '').toLowerCase()) ? 'inline' : 'attachment';
+        const isInline = inlineTypes.includes(rawFt) || inlineTypes.includes(nameExt) || rawFt.startsWith('image/') || rawFt === 'application/pdf' || rawFt === 'text/plain';
+        const disp = isInline ? 'inline' : 'attachment';
         res.setHeader('Content-Disposition', `${disp}; filename="${encodeURIComponent(doc.OriginalName)}"`);
         res.setHeader('Cache-Control', 'no-store');
         res.sendFile(diskPath);

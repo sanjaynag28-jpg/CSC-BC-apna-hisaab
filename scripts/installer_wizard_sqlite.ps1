@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - SQLite Edition Master Setup & Health Wizard
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # Super-Fast Zero SQL Server Install | 100% Free AI Live Self-Healing & Diagnostics
@@ -70,6 +70,7 @@ $RequiredFiles = @{
     'database\db.js'                        = 5000
     'public\index.html'                     = 50000
     'public\app.js'                         = 50000
+    'public\style.css'                      = 20000
     'routes\auth.js'                        = 500
     'routes\bc.js'                          = 2000
     'routes\customers.js'                   = 2000
@@ -77,7 +78,13 @@ $RequiredFiles = @{
     'routes\accounts.js'                    = 2000
     'routes\csc.js'                         = 2000
     'routes\invoices.js'                    = 2000
+    'routes\reports.js'                     = 5000
+    'routes\documents.js'                   = 2000
+    'routes\billpayments.js'                = 2000
     'routes\ucl.js'                         = 2000
+    'routes\pac.js'                         = 1000
+    'routes\search.js'                      = 1000
+    'database\globalTxnRegistry.js'         = 1000
     'middleware\auth.js'                    = 500
     'utils\autoUpdater.js'                  = 1000
     'START.bat'                             = 200
@@ -187,7 +194,8 @@ $workerBlock = {
         foreach ($h in $hosts) {
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses($h)
-                if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
+                $valid = $ips | Where-Object { "$_" -ne '127.0.0.1' -and "$_" -ne '0.0.0.0' -and "$_" -ne '::1' }
+                if ($valid -and $valid.Count -gt 0) { $dnsOk = $true; break }
             } catch { }
         }
         if ($dnsOk) {
@@ -195,32 +203,38 @@ $workerBlock = {
             return $true
         }
 
-        Log-Msg "DNS resolution issue detect hua. Auto-healing chal raha hai..." 'FIX'
+        Log-Msg "DNS / ISP resolution issue detect hua. Auto-healing chal raha hai..." 'FIX'
         try {
             ipconfig /flushdns | Out-Null
             Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
                 Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8', '1.1.1.1', '8.8.4.4') -ErrorAction SilentlyContinue
             }
-            Start-Sleep -Milliseconds 600
+            Start-Sleep -Milliseconds 700
         } catch { }
 
         foreach ($h in $hosts) {
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses($h)
-                if ($ips -and $ips.Count -gt 0) { $dnsOk = $true; break }
+                $valid = $ips | Where-Object { "$_" -ne '127.0.0.1' -and "$_" -ne '0.0.0.0' -and "$_" -ne '::1' }
+                if ($valid -and $valid.Count -gt 0) { $dnsOk = $true; break }
             } catch { }
         }
         if ($dnsOk) {
             Log-Msg "DNS auto-fix safal: Google (8.8.8.8) & Cloudflare (1.1.1.1) configure ho gaye." 'OK'
             return $true
         }
-        Log-Msg "CDN mirrors mode me bypass kiya jayega." 'WARN'
+        Log-Msg "Direct DNS blocked hai - CDN mirrors + DoH bypass mode chalu kiya jayega." 'WARN'
         return $false
     }
 
     function Repair-TlsAndCrypto {
         try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072 -bor 12288
+            } catch {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+            }
+            try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials } catch { }
             $keys = @(
                 "HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319",
                 "HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319"
@@ -376,6 +390,27 @@ $workerBlock = {
                 Start-Sleep -Milliseconds 400
             }
             if ($round -lt 3) { Start-Sleep -Seconds 2 }
+        }
+
+        # Fallback: curl.exe with Cloudflare DNS-over-HTTPS (DoH) bypass if ISP blocks .NET WebRequest
+        $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($curlCmd) {
+            foreach ($u in $Urls) {
+                try {
+                    if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
+                    Log-Msg "$Label DoH network bypass attempt: $([Uri]$u).Host" 'FIX'
+                    & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
+                    if (-not ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes))) {
+                        & $curlCmd.Source -fSL --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
+                    }
+                    if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes)) {
+                        $mb = [Math]::Round((Get-Item $OutFile).Length / 1MB, 2)
+                        Log-Msg "$Label DoH bypass se safal ($mb MB)!" 'OK'
+                        $sync.BytesText = "$mb MB done"
+                        return $true
+                    }
+                } catch { }
+            }
         }
         return $false
     }
@@ -598,6 +633,7 @@ $workerBlock = {
                             Remove-Item $dbBackup -Force -ErrorAction SilentlyContinue
                         }
 
+                        try { Get-ChildItem -Path $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
                         Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
                     } catch {
                         Log-Msg "File copy error: $($_.Exception.Message)" 'WARN'
@@ -706,10 +742,11 @@ $workerBlock = {
         $node = Find-Node
         if (-not $node) { $node = 'node' }
 
-        # Test if better-sqlite3 loads cleanly
+        # Test if all core packages (express, better-sqlite3, exceljs, multer) load cleanly
+        $depTestJs = "try{require('express');require('better-sqlite3');require('exceljs');require('multer');console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}"
         $sqliteWorking = $false
         try {
-            $testCmd = & $node -e "try{require('better-sqlite3');console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}" 2>&1
+            $testCmd = & $node -e $depTestJs 2>&1
             if ($testCmd -like "*SQLITE_OK*") {
                 $sqliteWorking = $true
             }
@@ -721,41 +758,61 @@ $workerBlock = {
             return $true
         }
 
-        Log-Msg "npm install chal raha hai (--omit=dev)..." 'WARN'
+        Log-Msg "npm install chal raha hai (--omit=dev, IPv4-first)..." 'WARN'
         Update-Step 4 'RUNNING' 40 "npm install..." "Fast npm install chal raha hai..."
         $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
         $npmExe = if ($cmd) { $cmd.Source } else { "C:\Program Files\nodejs\npm.cmd" }
+        $prevNodeOpts = $env:NODE_OPTIONS
+        $env:NODE_OPTIONS = "--dns-result-order=ipv4first"
 
-        # Run primary npm install
-        $p = Start-Process -FilePath $npmExe -ArgumentList "install --omit=dev --no-audit --no-fund" -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+        # Run primary npm install with network-resilient retry flags
+        $npmArgs = "install --omit=dev --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=4000 --fetch-retry-maxtimeout=25000 --maxsockets=4 --no-audit --no-fund"
+        $p = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
         $rc = Wait-ProcAlive -Proc $p -Step 4 -Label "npm install" -StartPct 40 -MaxPct 92
 
         # Check again
         try {
-            $testCmd = & $node -e "try{require('better-sqlite3');console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}" 2>&1
+            $testCmd = & $node -e $depTestJs 2>&1
             if ($testCmd -like "*SQLITE_OK*") {
-                Log-Msg "npm install safalta se complete ho gaya. better-sqlite3 native driver OK." 'OK'
+                $env:NODE_OPTIONS = $prevNodeOpts
+                Log-Msg "npm install safalta se complete ho gaya. Saare core packages OK." 'OK'
                 Update-Step 4 'SUCCESS' 100 "NPM Ready" "Step 4 : NPM Packages Installed"
                 return $true
             }
         } catch { }
 
-        # AI Self-Healing Fallback: Switch registry to npmmirror
-        Log-Msg "npm mirror fallback active kiya ja raha hai..." 'FIX'
+        # AI Self-Healing Fallback 1: Switch registry to npmmirror for FULL install
+        Log-Msg "Network / ISP slow detect hua — npmmirror fallback active kiya ja raha hai..." 'FIX'
         Update-Step 4 'HEALING' 60 "AI Fixing NPM..." "Mirror registry se dependencies install ho rahi hain..."
-        & $npmExe config set registry https://registry.npmmirror.com
-        $p2 = Start-Process -FilePath $npmExe -ArgumentList "install better-sqlite3 --omit=dev --no-audit --no-fund" -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+        & $npmExe config set registry https://registry.npmmirror.com 2>$null
+        $p2 = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
         $rc2 = Wait-ProcAlive -Proc $p2 -Step 4 -Label "NPM Mirror Install" -StartPct 60 -MaxPct 95
-        & $npmExe config set registry https://registry.npmjs.org
 
+        $okMirror = $false
         try {
-            $testCmd2 = & $node -e "try{require('better-sqlite3');console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}" 2>&1
-            if ($testCmd2 -like "*SQLITE_OK*") {
-                Log-Msg "better-sqlite3 mirror se safalta se ready ho gaya." 'OK'
-                Update-Step 4 'REPAIRED' 100 "Packages Repaired" "Step 4 : NPM Repaired by AI"
-                return $true
-            }
+            $testCmd2 = & $node -e $depTestJs 2>&1
+            if ($testCmd2 -like "*SQLITE_OK*") { $okMirror = $true }
         } catch { }
+
+        if (-not $okMirror) {
+            # AI Self-Healing Fallback 2: Corporate/College proxy SSL inspection fallback
+            Log-Msg "SSL proxy bypass fallback try ho raha hai..." 'FIX'
+            $p3 = Start-Process -FilePath $npmExe -ArgumentList ($npmArgs + " --strict-ssl=false") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+            $rc3 = Wait-ProcAlive -Proc $p3 -Step 4 -Label "NPM Proxy Bypass" -StartPct 75 -MaxPct 97
+            try {
+                $testCmd3 = & $node -e $depTestJs 2>&1
+                if ($testCmd3 -like "*SQLITE_OK*") { $okMirror = $true }
+            } catch { }
+        }
+
+        & $npmExe config set registry https://registry.npmjs.org 2>$null
+        $env:NODE_OPTIONS = $prevNodeOpts
+
+        if ($okMirror) {
+            Log-Msg "Saare packages mirror/bypass se safalta se ready ho gaye." 'OK'
+            Update-Step 4 'REPAIRED' 100 "Packages Repaired" "Step 4 : NPM Repaired by AI"
+            return $true
+        }
 
         return $false
     }
@@ -848,24 +905,68 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 6: Windows Firewall (Port 4000)
+    # STEP 6: Windows Firewall & Defender Unblock (Port 4000 + node.exe)
     # ========================================================================
     function Exec-Step6 {
-        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall Port 4000..." "Local Wi-Fi / LAN connection rules configure ho rahe hain..."
-        Log-Msg "Windows Firewall me Port 4000 rule verify ho raha hai..." 'NETWORK'
+        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall & Security..." "Local Wi-Fi / LAN & node.exe firewall rules configure ho rahe hain..."
+        Log-Msg "Windows Firewall rules (Port 4000 + node.exe) aur SmartScreen unblock verify ho raha hai..." 'NETWORK'
+        $node = Find-Node
+        if (-not $node) { $node = 'C:\Program Files\nodejs\node.exe' }
+
+        try {
+            # Clear Zone.Identifier / SmartScreen blocks on all project files
+            Get-ChildItem -Path $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
+        } catch { }
+
+        try {
+            # Remove any stale Windows-auto-created Block rules for node.exe (Public Wi-Fi Cancel bug)
+            $blockRules = Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue
+            foreach ($br in $blockRules) {
+                try {
+                    $appF = $br | Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue
+                    if ($appF -and ($appF.Program -like '*node.exe*')) {
+                        Remove-NetFirewallRule -Name $br.Name -ErrorAction SilentlyContinue
+                        Log-Msg "Old blocking firewall rule hataya gaya: $($br.DisplayName)" 'FIX'
+                    }
+                } catch { }
+            }
+        } catch { }
+
         try {
             $ruleName = "CSC BC Apna Hisaab SQLite (Port 4000)"
-            $existing = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
-            if (-not $existing) {
+            if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
                 New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
-                Log-Msg "Firewall rule 'CSC BC Apna Hisaab SQLite (Port 4000)' add ho gaya." 'OK'
-            } else {
-                Log-Msg "Firewall rule pehle se mojood hai." 'OK'
             }
+            $ruleOut = "CSC BC Apna Hisaab SQLite Out (Port 4000)"
+            if (-not (Get-NetFirewallRule -DisplayName $ruleOut -ErrorAction SilentlyContinue)) {
+                New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+            }
+            if ($node -and (Test-Path $node)) {
+                $nodeRule = "CSC BC Apna Hisaab Node.js Runtime"
+                if (-not (Get-NetFirewallRule -DisplayName $nodeRule -ErrorAction SilentlyContinue)) {
+                    New-NetFirewallRule -DisplayName $nodeRule -Program $node -Direction Inbound -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                    New-NetFirewallRule -DisplayName "$nodeRule Out" -Program $node -Direction Outbound -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                }
+            }
+            # Backup netsh command (works even if NetSecurity module is restricted on Windows 7/10 Home)
+            & netsh advfirewall firewall show rule name="$ruleName" >$null 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                & netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=4000 profile=any >$null 2>&1
+            }
+            Log-Msg "Firewall Port 4000 + Node.js allow rules (Private + Public LAN) OK." 'OK'
         } catch {
             Log-Msg "Firewall rule notice: $($_.Exception.Message)" 'WARN'
         }
-        Update-Step 6 'SUCCESS' 100 "Port 4000 Allowed" "Step 6 : Firewall Configured"
+
+        try {
+            # Prevent Windows Defender from locking SQLite DB/WAL or .node native modules
+            Add-MpPreference -ExclusionPath $ProjectDir -ErrorAction SilentlyContinue
+            if ($node -and (Test-Path $node)) {
+                Add-MpPreference -ExclusionProcess $node -ErrorAction SilentlyContinue
+            }
+        } catch { }
+
+        Update-Step 6 'SUCCESS' 100 "Firewall & LAN Open" "Step 6 : Firewall & Security Configured"
         return $true
     }
 

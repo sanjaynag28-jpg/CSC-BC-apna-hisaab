@@ -210,6 +210,25 @@ router.get('/kpis', async (req, res) => {
             WHERE bp.IsDeleted = 0 AND bp.UserID = @userId ${dateCondBP}
         `, params);
 
+        // Aadhaar UCL KPIs
+        let dateCondUCL = '';
+        if (startDate && endDate) {
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) >= @startDate AND CAST(u.UpdateDate AS DATE) <= @endDate';
+        } else if (startDate) {
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) >= @startDate';
+        } else if (endDate) {
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) <= @endDate';
+        }
+        const uclQuery = await query(`
+            SELECT
+                COUNT(*) as UCLCount,
+                ISNULL(SUM(u.TotalAmount), 0) as UCLTotalAmount,
+                ISNULL(SUM(u.PaidAmount), 0) as UCLPaidAmount,
+                ISNULL(SUM(u.BalanceAmount), 0) as UCLDueAmount
+            FROM UCLUpdates u
+            WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId ${dateCondUCL}
+        `, params);
+
         const t = transQuery.recordset[0] || {};
         const c = cscQuery.recordset[0] || {};
         const cs = cscSettleQuery.recordset[0] || {};
@@ -254,7 +273,8 @@ router.get('/kpis', async (req, res) => {
                 accounts: acc,
                 marketUdhaar: mkt,
                 parties: pty,
-                billPayments: bp
+                billPayments: bp,
+            ucl: uclQuery.recordset[0] || {}
             }
         });
     } catch (err) {
@@ -308,6 +328,8 @@ router.get('/master', async (req, res) => {
         let dateCondBC = '';
         let dateCondKhata = '';
         let dateCondInvoices = '';
+        let dateCondBP = '';
+        let dateCondUCL = '';
 
         if (startDate && endDate) {
             dateCondTrans = ' AND t.TransDate >= @startDate AND t.TransDate <= @endDate';
@@ -315,6 +337,8 @@ router.get('/master', async (req, res) => {
             dateCondBC = ' AND b.TransDate >= @startDate AND b.TransDate <= @endDate';
             dateCondKhata = ' AND k.EntryDate >= @startDate AND k.EntryDate <= @endDate';
             dateCondInvoices = ' AND i.InvoiceDate >= @startDate AND i.InvoiceDate <= @endDate';
+            dateCondBP = ' AND bp.PaymentDate >= @startDate AND bp.PaymentDate <= @endDate';
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) >= @startDate AND CAST(u.UpdateDate AS DATE) <= @endDate';
             params.startDate = startDate;
             params.endDate = endDate;
         } else if (startDate) {
@@ -323,6 +347,8 @@ router.get('/master', async (req, res) => {
             dateCondBC = ' AND b.TransDate >= @startDate';
             dateCondKhata = ' AND k.EntryDate >= @startDate';
             dateCondInvoices = ' AND i.InvoiceDate >= @startDate';
+            dateCondBP = ' AND bp.PaymentDate >= @startDate';
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) >= @startDate';
             params.startDate = startDate;
         } else if (endDate) {
             dateCondTrans = ' AND t.TransDate <= @endDate';
@@ -330,6 +356,8 @@ router.get('/master', async (req, res) => {
             dateCondBC = ' AND b.TransDate <= @endDate';
             dateCondKhata = ' AND k.EntryDate <= @endDate';
             dateCondInvoices = ' AND i.InvoiceDate <= @endDate';
+            dateCondBP = ' AND bp.PaymentDate <= @endDate';
+            dateCondUCL = ' AND CAST(u.UpdateDate AS DATE) <= @endDate';
             params.endDate = endDate;
         }
 
@@ -353,6 +381,10 @@ router.get('/master', async (req, res) => {
                     whereClause += ` AND SourceModule = 'CSC'`;
                 } else if (type === 'BC' || type === 'BC Banking') {
                     whereClause += ` AND SourceModule = 'BC Banking'`;
+                } else if (type === 'BillPay') {
+                    whereClause += ` AND SourceModule = 'BillPay'`;
+                } else if (type === 'UCL') {
+                    whereClause += ` AND SourceModule = 'UCL'`;
                 } else if (type === 'Cashbook') {
                     whereClause += ` AND SourceModule = 'Cashbook'`;
                 } else {
@@ -418,6 +450,7 @@ router.get('/master', async (req, res) => {
                     LEFT JOIN Parties p ON t.PartyID = p.PartyID
                     WHERE t.UserID = @userId AND t.IsDeleted = 0
                       AND NOT (${invoiceMirrorHasPaymentHistory('t')})
+                      AND (t.SourceModule IS NULL OR t.SourceModule NOT IN ('CSC', 'BillPay', 'UCL'))
                       AND (t.Tags IS NULL OR (t.Tags NOT LIKE '%CSC_FEE_IN%' AND t.Tags NOT LIKE '%CSC_GOVT_FEE_OUT%')) ${dateCondTrans}
 
                     UNION ALL
@@ -516,7 +549,7 @@ router.get('/master', async (req, res) => {
                         i.ModuleCode as ModuleCode,
                         i.InvoiceDate as RecordDate,
                         CAST(CAST(ISNULL(i.CreatedAt, CAST(i.InvoiceDate AS DATETIME)) AS TIME) AS VARCHAR(8)) as RecordTime,
-                        'Bill #' + i.InvoiceNumber as Title,
+                        'Bill #' || i.InvoiceNumber as Title,
                         ISNULL(cust.CustomerName, 'Walk-in') as EntityName,
                         'Sale Invoice' as CategoryOrService,
                         i.InvoiceNumber as RefNumber,
@@ -530,6 +563,56 @@ router.get('/master', async (req, res) => {
                     FROM Invoices i
                     LEFT JOIN Customers cust ON i.CustomerID = cust.CustomerID
                     WHERE i.Status != 'Cancelled' AND i.UserID = @userId ${dateCondInvoices}
+
+                    UNION ALL
+
+                    -- 6. Bill & EMI Payments
+                    SELECT
+                        'BillPay' as SourceModule,
+                        bp.PaymentID as RecordID,
+                        bp.GlobalSerialNo as GlobalSerialNo,
+                        bp.SNCode as SNCode,
+                        bp.ModuleCode as ModuleCode,
+                        bp.PaymentDate as RecordDate,
+                        CAST(ISNULL(bp.PaymentTime, CAST(bp.CreatedAt AS TIME)) AS VARCHAR(8)) as RecordTime,
+                        ISNULL(bp.BillCategory, 'Bill Pay') || CASE WHEN bp.ProviderName IS NOT NULL AND bp.ProviderName != '' THEN ' - ' || bp.ProviderName ELSE '' END as Title,
+                        COALESCE(bp.CustomerName, bp.CustomerPhone, 'Customer') as EntityName,
+                        ISNULL(bp.BillCategory, 'BillPay') as CategoryOrService,
+                        ISNULL(bp.ConsumerNumber, bp.TxnReference) as RefNumber,
+                        ISNULL(bp.PaymentMode, 'Cash') as AccountName,
+                        ISNULL(bp.BillCategory, 'BillPay') as EntryType,
+                        bp.TotalCollected as Amount,
+                        ISNULL(bp.NetProfit, 0) as ProfitOrNet,
+                        bp.CustomerID as CustomerID,
+                        bp.Status as Status,
+                        ISNULL(bp.CreatedAt, CAST(bp.PaymentDate AS DATETIME)) as SortDate
+                    FROM BillPayments bp
+                    WHERE ISNULL(bp.IsDeleted, 0) = 0 AND bp.UserID = @userId ${dateCondBP}
+
+                    UNION ALL
+
+                    -- 7. Aadhaar UCL Updates
+                    SELECT
+                        'UCL' as SourceModule,
+                        u.UCLID as RecordID,
+                        u.GlobalSerialNo as GlobalSerialNo,
+                        u.SNCode as SNCode,
+                        u.ModuleCode as ModuleCode,
+                        CAST(u.UpdateDate AS DATE) as RecordDate,
+                        CAST(ISNULL(CAST(u.CreatedAt AS TIME), CAST(u.UpdateDate AS TIME)) AS VARCHAR(8)) as RecordTime,
+                        ISNULL(u.UpdateType, 'UCL Update') as Title,
+                        COALESCE(u.CustomerName, u.CustomerPhone, 'Resident') as EntityName,
+                        'Aadhaar UCL' as CategoryOrService,
+                        ISNULL(u.SID, u.PACCode) as RefNumber,
+                        ISNULL(u.PaymentMode, 'Cash') as AccountName,
+                        ISNULL(u.UpdateType, 'UCL') as EntryType,
+                        u.TotalAmount as Amount,
+                        u.TotalAmount as ProfitOrNet,
+                        u.CustomerID as CustomerID,
+                        u.Status as Status,
+                        ISNULL(u.CreatedAt, u.UpdateDate) as SortDate
+                    FROM UCLUpdates u
+                    WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId ${dateCondUCL}
                 )
                 SELECT 
                     *,
@@ -686,7 +769,7 @@ router.get('/master', async (req, res) => {
                 )`;
             }
             if (type && type !== 'all') {
-                whereClause += ` AND (c.ServiceType = @type OR c.ServiceType LIKE @typePattern OR @type LIKE '%' + c.ServiceType + '%')`;
+                whereClause += ` AND (c.ServiceType = @type OR c.ServiceType LIKE @typePattern OR @type LIKE '%' || c.ServiceType || '%')`;
                 params.type = type;
                 params.typePattern = '%' + type + '%';
             }
@@ -770,7 +853,7 @@ router.get('/master', async (req, res) => {
                 )`;
             }
             if (type && type !== 'all') {
-                whereClause += ` AND (b.ServiceType = @type OR b.ServiceType LIKE @typePattern OR @type LIKE '%' + b.ServiceType + '%')`;
+                whereClause += ` AND (b.ServiceType = @type OR b.ServiceType LIKE @typePattern OR @type LIKE '%' || b.ServiceType || '%')`;
                 params.type = type;
                 params.typePattern = '%' + type + '%';
             }
@@ -800,7 +883,7 @@ router.get('/master', async (req, res) => {
                     b.ModuleCode as ModuleCode,
                     b.TransDate as RecordDate,
                     CAST(ISNULL(b.TransTime, CAST(b.CreatedAt AS TIME)) AS VARCHAR(8)) as RecordTime,
-                    b.ServiceType + CASE WHEN b.BankName IS NOT NULL AND b.BankName != '' THEN ' - ' + b.BankName ELSE '' END as Title,
+                    b.ServiceType || CASE WHEN b.BankName IS NOT NULL AND b.BankName != '' THEN ' - ' || b.BankName ELSE '' END as Title,
                     COALESCE(b.CustomerName, b.CustomerPhone, 'Customer') as EntityName,
                     b.CustomerPhone as Phone,
                     b.ServiceType as CategoryOrService,
@@ -909,7 +992,7 @@ router.get('/master', async (req, res) => {
 
         // ======================== MODULE: LOANS (PARTIES) ========================
         else if (module === 'loans') {
-            let whereClause = `WHERE t.UserID = @userId AND t.IsDeleted = 0 AND t.TransType IN ('Loan Given', 'Loan Received', 'Loan Repay') ` + dateCondTrans;
+            let whereClause = `WHERE t.UserID = @userId AND t.IsDeleted = 0 AND t.TransType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery') ` + dateCondTrans;
             if (search) {
                 whereClause += ` AND (
                     p.PartyName LIKE @search ESCAPE '\\' OR
@@ -946,7 +1029,7 @@ router.get('/master', async (req, res) => {
                     COUNT(*) OVER() as TotalRows,
                     SUM(t.Amount) OVER() as AggAmount,
                     SUM(CASE WHEN t.TransType = 'Loan Given' THEN t.Amount ELSE 0 END) OVER() as AggGiven,
-                    SUM(CASE WHEN t.TransType IN ('Loan Received', 'Loan Repay') THEN t.Amount ELSE 0 END) OVER() as AggRecovered
+                    SUM(CASE WHEN t.TransType IN ('Loan Received', 'Loan Repay', 'Loan Recovery') THEN t.Amount ELSE 0 END) OVER() as AggRecovered
                 FROM Transactions t
                 JOIN Parties p ON t.PartyID = p.PartyID
                 LEFT JOIN Accounts a ON t.AccountID = a.AccountID
@@ -994,8 +1077,8 @@ router.get('/master', async (req, res) => {
                     i.SNCode as SNCode,
                     i.ModuleCode as ModuleCode,
                     i.InvoiceDate as RecordDate,
-                    CAST(CAST(ISNULL(i.CreatedAt, CAST(i.InvoiceDate AS DATETIME)) AS TIME) AS VARCHAR(8)) as RecordTime,
-                    'Bill #' + i.InvoiceNumber as Title,
+                    CAST(ISNULL(CAST(i.CreatedAt AS TIME), CAST(i.InvoiceDate AS TIME)) AS VARCHAR(8)) as RecordTime,
+                    'Bill #' || i.InvoiceNumber as Title,
                     cust.CustomerName as EntityName,
                     cust.Phone as Phone,
                     'Sale Invoice' as CategoryOrService,
@@ -1026,6 +1109,150 @@ router.get('/master', async (req, res) => {
                 summary.totalAmount = records[0].AggAmount || 0;
                 summary.totalIncome = records[0].AggPaid || 0;
                 summary.totalExpense = records[0].AggBalance || 0;
+            }
+        }
+
+        // ======================== MODULE: BILLPAY (BILL & EMI PAYMENTS) ========================
+        else if (module === 'billpay') {
+            let whereClause = 'WHERE ISNULL(bp.IsDeleted, 0) = 0 AND bp.UserID = @userId ' + dateCondBP;
+            if (search) {
+                whereClause += ` AND (
+                    bp.CustomerName LIKE @search ESCAPE '\\' OR
+                    bp.CustomerPhone LIKE @search ESCAPE '\\' OR
+                    bp.ConsumerNumber LIKE @search ESCAPE '\\' OR
+                    bp.ProviderName LIKE @search ESCAPE '\\' OR
+                    bp.TxnReference LIKE @search ESCAPE '\\' OR
+                    bp.SNCode LIKE @search ESCAPE '\\'
+                )`;
+            }
+            if (type && type !== 'all') {
+                whereClause += ` AND bp.BillCategory LIKE @typePattern`;
+                params.typePattern = '%' + type + '%';
+            }
+            if (customerId && customerId !== 'all') {
+                whereClause += ` AND bp.CustomerID = @customerId`;
+                params.customerId = parseInt(customerId, 10) || 0;
+            }
+            if (status && status !== 'all') {
+                if (status === 'Completed' || status === 'Success' || status === 'Paid') {
+                    whereClause += ` AND bp.Status = 'Paid'`;
+                } else if (status === 'Pending' || status === 'Partial') {
+                    whereClause += ` AND (bp.Status IN ('Partial', 'Pending') OR bp.CustomerDue > 0)`;
+                } else {
+                    whereClause += ` AND bp.Status = @status`;
+                    params.status = status;
+                }
+            }
+
+            const sql = `
+                SELECT
+                    'BillPay' as SourceModule,
+                    bp.PaymentID as RecordID,
+                    bp.GlobalSerialNo,
+                    bp.SNCode,
+                    bp.ModuleCode,
+                    bp.PaymentDate as RecordDate,
+                    CAST(ISNULL(bp.PaymentTime, CAST(bp.CreatedAt AS TIME)) AS VARCHAR(8)) as RecordTime,
+                    ISNULL(bp.BillCategory, 'Bill Pay') || CASE WHEN bp.ProviderName IS NOT NULL AND bp.ProviderName != '' THEN ' - ' || bp.ProviderName ELSE '' END as Title,
+                    COALESCE(bp.CustomerName, bp.CustomerPhone, 'Customer') as EntityName,
+                    bp.CustomerPhone as Phone,
+                    bp.BillCategory as CategoryOrService,
+                    ISNULL(bp.ConsumerNumber, bp.TxnReference) as RefNumber,
+                    ISNULL(bp.PaymentMode, 'Cash') as AccountName,
+                    ISNULL(bp.BillCategory, 'BillPay') as EntryType,
+                    bp.TotalCollected as Amount,
+                    ISNULL(bp.NetProfit, 0) as ProfitOrNet,
+                    bp.CustomerID,
+                    bp.Status,
+                    bp.CreatedAt,
+                    COUNT(*) OVER() as TotalRows,
+                    SUM(bp.TotalCollected) OVER() as AggAmount,
+                    SUM(ISNULL(bp.NetProfit, 0)) OVER() as AggProfit
+                FROM BillPayments bp
+                ${whereClause}
+                ORDER BY bp.PaymentDate DESC, bp.PaymentID DESC
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY;
+            `;
+
+            const result = await query(sql, params);
+            records = result.recordset || [];
+            if (records.length > 0) {
+                totalCount = records[0].TotalRows || records.length;
+                summary.totalAmount = records[0].AggAmount || 0;
+                summary.totalProfit = records[0].AggProfit || 0;
+            }
+        }
+
+        // ======================== MODULE: AADHAAR UCL ========================
+        else if (module === 'ucl') {
+            let whereClause = 'WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId ' + dateCondUCL;
+            if (search) {
+                whereClause += ` AND (
+                    u.CustomerName LIKE @search ESCAPE '\\' OR
+                    u.CustomerPhone LIKE @search ESCAPE '\\' OR
+                    u.SID LIKE @search ESCAPE '\\' OR
+                    u.PACCode LIKE @search ESCAPE '\\' OR
+                    u.UpdateType LIKE @search ESCAPE '\\' OR
+                    u.SNCode LIKE @search ESCAPE '\\'
+                )`;
+            }
+            if (type && type !== 'all') {
+                whereClause += ` AND u.UpdateType LIKE @typePattern`;
+                params.typePattern = '%' + type + '%';
+            }
+            if (customerId && customerId !== 'all') {
+                whereClause += ` AND u.CustomerID = @customerId`;
+                params.customerId = parseInt(customerId, 10) || 0;
+            }
+            if (status && status !== 'all') {
+                if (status === 'Completed' || status === 'Success') {
+                    whereClause += ` AND u.Status IN ('Completed', 'Generated', 'Success')`;
+                } else if (status === 'Pending') {
+                    whereClause += ` AND (u.Status IN ('Pending', 'In Progress') OR u.BalanceAmount > 0)`;
+                } else {
+                    whereClause += ` AND u.Status = @status`;
+                    params.status = status;
+                }
+            }
+
+            const sql = `
+                SELECT
+                    'UCL' as SourceModule,
+                    u.UCLID as RecordID,
+                    u.GlobalSerialNo,
+                    u.SNCode,
+                    u.ModuleCode,
+                    CAST(u.UpdateDate AS DATE) as RecordDate,
+                    CAST(ISNULL(CAST(u.CreatedAt AS TIME), CAST(u.UpdateDate AS TIME)) AS VARCHAR(8)) as RecordTime,
+                    ISNULL(u.UpdateType, 'UCL Update') as Title,
+                    COALESCE(u.CustomerName, u.CustomerPhone, 'Resident') as EntityName,
+                    u.CustomerPhone as Phone,
+                    'Aadhaar UCL' as CategoryOrService,
+                    ISNULL(u.SID, u.PACCode) as RefNumber,
+                    ISNULL(u.PaymentMode, 'Cash') as AccountName,
+                    ISNULL(u.UpdateType, 'UCL') as EntryType,
+                    u.TotalAmount as Amount,
+                    u.TotalAmount as ProfitOrNet,
+                    u.CustomerID,
+                    u.Status,
+                    u.CreatedAt,
+                    COUNT(*) OVER() as TotalRows,
+                    SUM(u.TotalAmount) OVER() as AggAmount,
+                    SUM(u.TotalAmount) OVER() as AggProfit
+                FROM UCLUpdates u
+                ${whereClause}
+                ORDER BY u.UpdateDate DESC, u.UCLID DESC
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY;
+            `;
+
+            const result = await query(sql, params);
+            records = result.recordset || [];
+            if (records.length > 0) {
+                totalCount = records[0].TotalRows || records.length;
+                summary.totalAmount = records[0].AggAmount || 0;
+                summary.totalProfit = records[0].AggProfit || 0;
             }
         }
 
@@ -1081,7 +1308,7 @@ router.get('/analytics', async (req, res) => {
         const { start: yearStart, end: yearEnd, y: year } = yearRange(req.query.year);
         const yearParams = { year, yearStart, yearEnd, userId };
 
-        // 1. Monthly Trends (Income vs Expense vs CSC Profit vs BC Profit)
+        // 1. Monthly Trends (Income vs Expense vs CSC Profit vs BC Profit vs BillPay vs UCL)
         const monthlyTrends = await query(`
             SELECT 
                 m.MonthNumber,
@@ -1090,9 +1317,10 @@ router.get('/analytics', async (req, res) => {
                 ISNULL(c.CSCProfit, 0) as CSCProfit,
                 ISNULL(b.BCCommission, 0) as BCCommission,
                 ISNULL(bp.BPCommission, 0) as BPCommission,
-                (ISNULL(t.Income, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0)) as TotalIncome,
+                ISNULL(ucl.UCLProfit, 0) as UCLProfit,
+                (ISNULL(t.Income, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0) + ISNULL(ucl.UCLProfit, 0)) as TotalIncome,
                 ISNULL(t.Expense, 0) as TotalExpense,
-                (ISNULL(t.Income, 0) - ISNULL(t.Expense, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0)) as NetProfit
+                (ISNULL(t.Income, 0) - ISNULL(t.Expense, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0) + ISNULL(ucl.UCLProfit, 0)) as NetProfit
             FROM (
                 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12)
             ) as m(MonthNumber)
@@ -1159,6 +1387,14 @@ router.get('/analytics', async (req, res) => {
                 WHERE PaymentDate >= @yearStart AND PaymentDate <= @yearEnd AND IsDeleted = 0 AND UserID = @userId
                 GROUP BY MONTH(PaymentDate)
             ) bp ON m.MonthNumber = bp.BPMonth
+            LEFT JOIN (
+                SELECT 
+                    MONTH(UpdateDate) as UCLMonth,
+                    SUM(TotalAmount) as UCLProfit
+                FROM UCLUpdates
+                WHERE UpdateDate >= @yearStart AND UpdateDate <= @yearEnd AND ISNULL(IsDeleted, 0) = 0 AND UserID = @userId
+                GROUP BY MONTH(UpdateDate)
+            ) ucl ON m.MonthNumber = ucl.UCLMonth
             ORDER BY m.MonthNumber
         `, yearParams);
 
@@ -1309,7 +1545,13 @@ router.get('/export/excel', async (req, res) => {
             'bc': 'BC Banking',
             'khata': 'Khata',
             'invoice': 'Invoice',
-            'invoices': 'Invoice'
+            'invoices': 'Invoice',
+            'billpay': 'BillPay',
+            'ucl': 'UCL',
+            'loans': 'Loans',
+            'loan': 'Loans',
+            'accounts': null,
+            'charts': null
         };
         const selectedModule = MODULE_MAP[String(module || 'all').toLowerCase()];
         if (selectedModule === undefined) {
@@ -1357,8 +1599,10 @@ router.get('/export/excel', async (req, res) => {
             params.search = `%${escapeLike(search)}%`;
         }
 
-        const moduleFilter = selectedModule ? ' AND t.SourceModule = @srcModule' : '';
-        if (selectedModule) params.srcModule = selectedModule;
+        const moduleFilter = selectedModule === 'Loans'
+            ? " AND t.SourceModule = 'Cashbook' AND t.EntryType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery')"
+            : (selectedModule ? ' AND t.SourceModule = @srcModule' : '');
+        if (selectedModule && selectedModule !== 'Loans') params.srcModule = selectedModule;
         // Customer filter (Grahak ka saara data ek saath export karne ke liye)
         let exportFilterCond = '';
         if (customerId && customerId !== 'all') {
@@ -1379,7 +1623,7 @@ router.get('/export/excel', async (req, res) => {
         }
 
         const dataRes = await query(`
-            SELECT TOP 2001
+            SELECT
                 t.RecordDate,
                 t.RecordTime,
                 t.SourceModule,
@@ -1414,6 +1658,8 @@ router.get('/export/excel', async (req, res) => {
                 LEFT JOIN Parties p ON t.PartyID = p.PartyID
                 WHERE t.UserID = @userId AND t.IsDeleted = 0
                   AND NOT (${invoiceMirrorHasPaymentHistory('t')})
+                  AND (t.SourceModule IS NULL OR t.SourceModule NOT IN ('CSC', 'BillPay', 'UCL'))
+                  AND (t.Tags IS NULL OR (t.Tags NOT LIKE '%CSC_FEE_IN%' AND t.Tags NOT LIKE '%CSC_GOVT_FEE_OUT%'))
 
                 UNION ALL
 
@@ -1421,7 +1667,7 @@ router.get('/export/excel', async (req, res) => {
                     CAST(c.ApplyDate AS DATE),
                     ISNULL(NULLIF(CAST(CAST(c.ApplyDate AS TIME) AS VARCHAR(8)), ''), ''),
                     'CSC',
-                    ISNULL(c.ServiceType, 'CSC Service') + ISNULL(' - ' + c.ServiceSubtype, ''),
+                    ISNULL(c.ServiceType, 'CSC Service') || CASE WHEN c.ServiceSubtype IS NOT NULL AND c.ServiceSubtype != '' THEN ' - ' || c.ServiceSubtype ELSE '' END,
                     c.CustomerName,
                     ISNULL(c.PortalName, 'CSC'),
                     c.AckNumber,
@@ -1487,7 +1733,7 @@ router.get('/export/excel', async (req, res) => {
                     i.InvoiceDate,
                     CAST(CAST(i.CreatedAt AS TIME) AS VARCHAR(8)),
                     'Invoice',
-                    'Bill #' + i.InvoiceNumber,
+                    'Bill #' || i.InvoiceNumber,
                     cust.CustomerName,
                     ISNULL(i.PaymentMode, 'Bill'),
                     i.InvoiceNumber,
@@ -1501,6 +1747,44 @@ router.get('/export/excel', async (req, res) => {
                 LEFT JOIN Customers cust ON i.CustomerID = cust.CustomerID
                 LEFT JOIN Accounts a ON i.AccountID = a.AccountID
                 WHERE i.Status != 'Cancelled' AND i.UserID = @userId
+
+                UNION ALL
+
+                SELECT
+                    bp.PaymentDate,
+                    CAST(ISNULL(bp.PaymentTime, CAST(bp.CreatedAt AS TIME)) AS VARCHAR(8)),
+                    'BillPay',
+                    ISNULL(bp.BillCategory, 'Bill Pay') || CASE WHEN bp.ProviderName IS NOT NULL AND bp.ProviderName != '' THEN ' - ' || bp.ProviderName ELSE '' END,
+                    COALESCE(bp.CustomerName, bp.CustomerPhone, 'Customer'),
+                    ISNULL(bp.BillCategory, 'BillPay'),
+                    ISNULL(bp.ConsumerNumber, bp.TxnReference),
+                    ISNULL(bp.PaymentMode, 'Cash'),
+                    ISNULL(bp.BillCategory, 'BillPay'),
+                    bp.TotalCollected,
+                    bp.Status,
+                    bp.CustomerID,
+                    ISNULL(bp.CreatedAt, CAST(bp.PaymentDate AS DATETIME))
+                FROM BillPayments bp
+                WHERE ISNULL(bp.IsDeleted, 0) = 0 AND bp.UserID = @userId
+
+                UNION ALL
+
+                SELECT
+                    CAST(u.UpdateDate AS DATE),
+                    CAST(ISNULL(CAST(u.CreatedAt AS TIME), CAST(u.UpdateDate AS TIME)) AS VARCHAR(8)),
+                    'UCL',
+                    ISNULL(u.UpdateType, 'UCL Update'),
+                    COALESCE(u.CustomerName, u.CustomerPhone, 'Resident'),
+                    'Aadhaar UCL',
+                    ISNULL(u.SID, u.PACCode),
+                    ISNULL(u.PaymentMode, 'Cash'),
+                    ISNULL(u.UpdateType, 'UCL'),
+                    u.TotalAmount,
+                    u.Status,
+                    u.CustomerID,
+                    ISNULL(u.CreatedAt, u.UpdateDate)
+                FROM UCLUpdates u
+                WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId
             ) t
             WHERE 1=1
               ${dateCond.replace(/t\.TransDate/g, 't.RecordDate')}
@@ -1510,6 +1794,7 @@ router.get('/export/excel', async (req, res) => {
               ${searchCond}
               ${exportFilterCond}
             ORDER BY t.SortDate DESC
+            LIMIT 2001
         `, params);
 
         // TOP 2001 purposely - agar 2001 row aaye to matlab data truncate hua hai.
@@ -1613,13 +1898,18 @@ router.get('/export/csv', async (req, res) => {
         const MODULE_MAP = {
             'all': null, 'cashbook': 'Cashbook', 'transactions': 'Cashbook',
             'csc': 'CSC', 'bc': 'BC Banking', 'khata': 'Khata',
-            'invoice': 'Invoice', 'invoices': 'Invoice'
+            'invoice': 'Invoice', 'invoices': 'Invoice',
+            'billpay': 'BillPay', 'ucl': 'UCL',
+            'loans': 'Loans', 'loan': 'Loans',
+            'accounts': null, 'charts': null
         };
         const selectedModule = MODULE_MAP[String(module || 'all').toLowerCase()];
         if (selectedModule === undefined) {
             return res.status(400).json({ success: false, error: 'Module galat hai' });
         }
-        if (selectedModule) {
+        if (selectedModule === 'Loans') {
+            dateCond += " AND t.SourceModule = 'Cashbook' AND t.EntryType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery')";
+        } else if (selectedModule) {
             dateCond += ' AND t.SourceModule = @srcModule';
             params.srcModule = selectedModule;
         }
@@ -1650,7 +1940,7 @@ router.get('/export/csv', async (req, res) => {
         if (csvExtraParts.length > 0) { csvExtraCond = ' AND ' + csvExtraParts.join(' AND '); }
 
         const data = await query(`
-            SELECT TOP 5001
+            SELECT
                 t.RecordDate, t.RecordTime, t.SourceModule, t.EntryType, t.Amount,
                 t.Title, t.RefNumber, t.AccountName, t.EntityName, t.CategoryOrService, t.CustomerID
             FROM (
@@ -1673,6 +1963,8 @@ router.get('/export/csv', async (req, res) => {
                 LEFT JOIN Parties p ON t.PartyID = p.PartyID
                 WHERE t.UserID = @userId AND t.IsDeleted = 0
                   AND NOT (${invoiceMirrorHasPaymentHistory('t')})
+                  AND (t.SourceModule IS NULL OR t.SourceModule NOT IN ('CSC', 'BillPay', 'UCL'))
+                  AND (t.Tags IS NULL OR (t.Tags NOT LIKE '%CSC_FEE_IN%' AND t.Tags NOT LIKE '%CSC_GOVT_FEE_OUT%'))
 
                 UNION ALL
 
@@ -1741,7 +2033,7 @@ router.get('/export/csv', async (req, res) => {
                     'Invoice',
                     i.PaymentStatus,
                     i.TotalAmount,
-                    'Bill #' + i.InvoiceNumber,
+                    'Bill #' || i.InvoiceNumber,
                     ISNULL(i.InvoiceNumber, ''),
                     ISNULL(a.AccountName, ''),
                     ISNULL(cust.CustomerName, ''),
@@ -1752,9 +2044,46 @@ router.get('/export/csv', async (req, res) => {
                 LEFT JOIN Customers cust ON i.CustomerID = cust.CustomerID
                 LEFT JOIN Accounts a ON i.AccountID = a.AccountID
                 WHERE i.Status != 'Cancelled' AND i.UserID = @userId
+
+                UNION ALL
+
+                SELECT
+                    bp.PaymentDate,
+                    CAST(ISNULL(bp.PaymentTime, CAST(bp.CreatedAt AS TIME)) AS VARCHAR(8)),
+                    'BillPay',
+                    ISNULL(bp.BillCategory, 'BillPay'),
+                    bp.TotalCollected,
+                    ISNULL(bp.BillCategory, 'Bill Pay') || CASE WHEN bp.ProviderName IS NOT NULL AND bp.ProviderName != '' THEN ' - ' || bp.ProviderName ELSE '' END,
+                    ISNULL(bp.ConsumerNumber, bp.TxnReference),
+                    ISNULL(bp.PaymentMode, 'Cash'),
+                    COALESCE(bp.CustomerName, bp.CustomerPhone, 'Customer'),
+                    ISNULL(bp.BillCategory, 'BillPay'),
+                    ISNULL(bp.CreatedAt, CAST(bp.PaymentDate AS DATETIME)),
+                    bp.CustomerID
+                FROM BillPayments bp
+                WHERE ISNULL(bp.IsDeleted, 0) = 0 AND bp.UserID = @userId
+
+                UNION ALL
+
+                SELECT
+                    CAST(u.UpdateDate AS DATE),
+                    CAST(ISNULL(CAST(u.CreatedAt AS TIME), CAST(u.UpdateDate AS TIME)) AS VARCHAR(8)),
+                    'UCL',
+                    ISNULL(u.UpdateType, 'UCL'),
+                    u.TotalAmount,
+                    ISNULL(u.UpdateType, 'UCL Update'),
+                    ISNULL(u.SID, u.PACCode),
+                    ISNULL(u.PaymentMode, 'Cash'),
+                    COALESCE(u.CustomerName, u.CustomerPhone, 'Resident'),
+                    'Aadhaar UCL',
+                    ISNULL(u.CreatedAt, u.UpdateDate),
+                    u.CustomerID
+                FROM UCLUpdates u
+                WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId
             ) t
             WHERE 1=1 ${dateCond.replace(/t\.TransDate/g, 't.RecordDate')} ${csvExtraCond}
             ORDER BY t.SortDate DESC
+            LIMIT 5001
         `, params);
 
         let csv = 'Date,Time,Module,Type,Amount,Title,Reference,Account,Party,Category,CustomerID\r\n';

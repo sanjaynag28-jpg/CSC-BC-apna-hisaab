@@ -2247,11 +2247,20 @@
                                 len-den</p>
                         </div>
                     </div>
-                    <div class="header-actions">
+                    <div class="header-actions" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                        <button class="btn-ghost btn-sm" onclick="loadTransactions(1)" title="Data Refresh Karein">
+                            <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> Refresh
+                        </button>
+                        <button class="btn-secondary btn-sm" onclick="printTransactionsLedger()" title="Ledger Print Karein">
+                            <i data-lucide="printer" style="width: 14px; height: 14px;"></i> Print
+                        </button>
                         <button class="btn-secondary btn-sm" onclick="exportTransactionsExcel()"
                             title="Excel file download karein">
                             <i data-lucide="file-spreadsheet"
                                 style="color: var(--accent-green); width: 14px; height: 14px;"></i> Excel
+                        </button>
+                        <button class="btn-secondary btn-sm" onclick="exportTransactionsCSV()" title="CSV file download karein">
+                            <i data-lucide="download" style="width: 14px; height: 14px;"></i> CSV
                         </button>
                         <button class="btn-primary btn-sm" onclick="openAddTransaction()" title="Nayi entry jodein">
                             <i data-lucide="plus" style="width: 14px; height: 14px;"></i> Nayi Entry
@@ -2301,24 +2310,38 @@
                 <div class="card trans-table-card">
                     <!-- Top Controls Bar: Tabs + Filters in unified header -->
                     <div class="trans-controls-header">
-                        <!-- Quick Type Filter Tabs -->
-                        <div class="trans-type-tabs trans-type-tabs-compact">
-                            <button class="tt-tab active" data-type="" onclick="setTransFilterType('', this)">
-                                <i data-lucide="layers"></i> Sabhi Len-Den
-                                <span class="tt-badge" id="ttBadgeAll">0</span>
-                            </button>
-                            <button class="tt-tab" data-type="Income" onclick="setTransFilterType('Income', this)">
-                                <i data-lucide="trending-up"></i> Aamadni (In)
-                            </button>
-                            <button class="tt-tab" data-type="Expense" onclick="setTransFilterType('Expense', this)">
-                                <i data-lucide="trending-down"></i> Kharcha (Out)
-                            </button>
-                            <button class="tt-tab" data-type="Transfer" onclick="setTransFilterType('Transfer', this)">
-                                <i data-lucide="arrow-left-right"></i> Adla-Badli
-                            </button>
-                            <button class="tt-tab" data-type="Loan" onclick="setTransFilterType('Loan', this)">
-                                <i data-lucide="handshake"></i> Udhaar / Loan
-                            </button>
+                        <!-- Quick Type Filter Tabs + Date Presets -->
+                        <div class="trans-presets-row">
+                            <div class="trans-type-tabs trans-type-tabs-compact" style="margin-bottom: 0;">
+                                <button class="tt-tab active" data-type="" onclick="setTransFilterType('', this)">
+                                    <i data-lucide="layers"></i> Sabhi Len-Den
+                                    <span class="tt-badge" id="ttBadgeAll">0</span>
+                                </button>
+                                <button class="tt-tab" data-type="Income" onclick="setTransFilterType('Income', this)">
+                                    <i data-lucide="trending-up"></i> Aamadni (In)
+                                    <span class="tt-badge" id="ttBadgeIncome">0</span>
+                                </button>
+                                <button class="tt-tab" data-type="Expense" onclick="setTransFilterType('Expense', this)">
+                                    <i data-lucide="trending-down"></i> Kharcha (Out)
+                                    <span class="tt-badge" id="ttBadgeExpense">0</span>
+                                </button>
+                                <button class="tt-tab" data-type="Transfer" onclick="setTransFilterType('Transfer', this)">
+                                    <i data-lucide="arrow-left-right"></i> Adla-Badli
+                                    <span class="tt-badge" id="ttBadgeTransfer">0</span>
+                                </button>
+                                <button class="tt-tab" data-type="Loan" onclick="setTransFilterType('Loan', this)">
+                                    <i data-lucide="handshake"></i> Udhaar / Loan
+                                    <span class="tt-badge" id="ttBadgeLoan">0</span>
+                                </button>
+                            </div>
+
+                            <div class="trans-quick-presets" id="transQuickPresets">
+                                <button type="button" class="trans-preset-pill" data-preset="today" onclick="setTransDatePreset('today', this)">Aaj</button>
+                                <button type="button" class="trans-preset-pill" data-preset="yesterday" onclick="setTransDatePreset('yesterday', this)">Kal</button>
+                                <button type="button" class="trans-preset-pill" data-preset="week" onclick="setTransDatePreset('week', this)">Is Hafte</button>
+                                <button type="button" class="trans-preset-pill active" data-preset="month" onclick="setTransDatePreset('month', this)">Is Mahine</button>
+                                <button type="button" class="trans-preset-pill" data-preset="all" onclick="setTransDatePreset('all', this)">All Time</button>
+                            </div>
                         </div>
 
                         <!-- Single-Row Compact Filter Toolbar -->
@@ -2332,20 +2355,31 @@
                             <div class="trans-filters-row">
                                 <div class="trans-date-group">
                                     <input type="date" id="filterStartDate" class="trans-date-input"
-                                        onchange="loadTransactions(1)" title="Shuru Tarikh">
+                                        onchange="onTransDateInputChanged()" title="Shuru Tarikh">
                                     <span class="trans-date-sep">se</span>
                                     <input type="date" id="filterEndDate" class="trans-date-input"
-                                        onchange="loadTransactions(1)" title="Aakhiri Tarikh">
+                                        onchange="onTransDateInputChanged()" title="Aakhiri Tarikh">
                                 </div>
 
                                 <select class="filter-input trans-select-input" id="filterAccount"
                                     onchange="loadTransactions(1)" aria-label="Khata filter">
-                                    <option value="">Sabhi Khate</option>
+                                    <option value="">Sab Accounts</option>
                                 </select>
 
                                 <select class="filter-input trans-select-input" id="filterCategory"
                                     onchange="loadTransactions(1)" aria-label="Category filter">
-                                    <option value="">Sabhi Categories</option>
+                                    <option value="">Sab Categories</option>
+                                </select>
+
+                                <select class="filter-input trans-select-input" id="filterSourceModule"
+                                    onchange="loadTransactions(1)" aria-label="Module filter" title="Kis module se aayi entry">
+                                    <option value="">Sab Sources</option>
+                                    <option value="manual">Manual Cashbook</option>
+                                    <option value="BillPay">Bill &amp; EMI Pay</option>
+                                    <option value="CSC">CSC Forms</option>
+                                    <option value="BC">BC Banking</option>
+                                    <option value="UCL">Aadhaar UCL</option>
+                                    <option value="Invoices">Billing / Invoice</option>
                                 </select>
 
                                 <select class="filter-input" id="filterType" onchange="syncTransTypeSelect(this.value)"
@@ -2373,15 +2407,15 @@
                         <table class="data-table trans-main-table" id="transMainTable">
                             <thead>
                                 <tr>
-                                    <th style="width: 105px; text-align: center;">Universal SN</th>
-                                    <th style="width: 120px;">Tarikh & Samay</th>
+                                    <th style="width: 92px; text-align: center;">Universal SN</th>
+                                    <th style="width: 102px;">Tarikh & Samay</th>
                                     <th>Vivran (Details) & Party</th>
-                                    <th style="width: 105px;">Type</th>
-                                    <th style="width: 165px;">Khata (Account)</th>
-                                    <th style="width: 130px;">Category</th>
-                                    <th style="width: 110px;">Ref / Serial</th>
-                                    <th style="width: 135px; text-align: right;">Rashi (Amount)</th>
-                                    <th style="width: 80px; text-align: center;">Action</th>
+                                    <th style="width: 86px;">Type</th>
+                                    <th style="width: 138px;">Khata (Account)</th>
+                                    <th style="width: 112px;">Category</th>
+                                    <th style="width: 92px;">Ref / Serial</th>
+                                    <th style="width: 114px; text-align: right;">Rashi (Amount)</th>
+                                    <th style="width: 74px; text-align: center;">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="transTableBody">
@@ -2412,114 +2446,114 @@
             </div>
         </div>
 
-        <!-- ACCOUNTS PAGE -->
+        <!-- ACCOUNTS PAGE (Compact Single-Bar Layout) -->
         <div id="page-accounts" class="page">
-            <!-- Page Header -->
-            <div class="page-header">
-                <div class="header-title-group">
-                    <div class="header-icon-badge accounts-badge">
+            <!-- Compact Header -->
+            <div class="page-header accounts-compact-header">
+                <div class="accounts-header-inline">
+                    <div class="accounts-header-icon">
                         <i data-lucide="wallet"></i>
                     </div>
-                    <div>
-                        <h1>Mere Accounts & Wallets (Khata Prabandhan)</h1>
-                        <p class="text-muted" style="margin: 0; font-size: 13px;">Cash in hand, Bank accounts, Digipay
-                            wallets aur UPI ka live balance aur vivran</p>
+                    <div class="accounts-header-text">
+                        <h1>Mere Accounts & Wallets</h1>
+                        <span class="accounts-header-sub">Cash, Bank, Digipay aur UPI ka live balance</span>
                     </div>
                 </div>
-                <div class="header-actions">
-                    <button class="btn-secondary" onclick="openQuickTransferModal()"
+                <div class="header-actions accounts-header-actions">
+                    <button class="btn-secondary accounts-action-btn" onclick="openQuickTransferModal()"
                         title="Accounts ke beech adla-badli karein">
                         <i data-lucide="arrow-left-right" style="color: var(--accent-blue);"></i> Paisa Transfer
                     </button>
-                    <button class="btn-primary" onclick="openAccountModal()">
+                    <button class="btn-primary accounts-action-btn" onclick="openAccountModal()">
                         <i data-lucide="plus"></i> Naya Account
                     </button>
                 </div>
             </div>
 
-            <!-- 4 KPI Summary Cards for Accounts -->
-            <div class="accounts-kpi-grid">
+            <!-- Compact 4-Card KPI Strip -->
+            <div class="accounts-kpi-grid accounts-kpi-compact">
                 <div class="acc-kpi-card total">
-                    <div class="ak-header">
-                        <div class="ak-icon"><i data-lucide="wallet-cards"></i></div>
-                        <span class="ak-badge total">KUL BAKIYA</span>
+                    <div class="ak-icon"><i data-lucide="wallet-cards"></i></div>
+                    <div class="ak-body">
+                        <div class="ak-top-row">
+                            <span class="ak-label">Kul Balance</span>
+                            <span class="ak-badge total">KUL BAKIYA</span>
+                        </div>
+                        <div class="ak-val" id="accKpiTotal">₹0.00</div>
                     </div>
-                    <div class="ak-label">Kul Net Balance (Total Worth)</div>
-                    <div class="ak-val" id="accKpiTotal">₹0.00</div>
-                    <div class="ak-sub" id="accKpiTotalSub">Sabhi Khaton ka Kul Jodh</div>
                 </div>
 
                 <div class="acc-kpi-card cash">
-                    <div class="ak-header">
-                        <div class="ak-icon"><i data-lucide="banknote"></i></div>
-                        <span class="ak-badge cash">GALLA CASH</span>
+                    <div class="ak-icon"><i data-lucide="banknote"></i></div>
+                    <div class="ak-body">
+                        <div class="ak-top-row">
+                            <span class="ak-label">Physical Cash</span>
+                            <span class="ak-badge cash">GALLA CASH</span>
+                        </div>
+                        <div class="ak-val text-income" id="accKpiCash">₹0.00</div>
                     </div>
-                    <div class="ak-label">Physical Cash in Hand (Galla)</div>
-                    <div class="ak-val text-income" id="accKpiCash">₹0.00</div>
-                    <div class="ak-sub">Counter Cash in Drawer</div>
                 </div>
 
                 <div class="acc-kpi-card wallets">
-                    <div class="ak-header">
-                        <div class="ak-icon"><i data-lucide="smartphone"></i></div>
-                        <span class="ak-badge wallets">CSC WALLETS</span>
+                    <div class="ak-icon"><i data-lucide="smartphone"></i></div>
+                    <div class="ak-body">
+                        <div class="ak-top-row">
+                            <span class="ak-label">CSC Wallets</span>
+                            <span class="ak-badge wallets">DIGIPAY</span>
+                        </div>
+                        <div class="ak-val" id="accKpiWallets">₹0.00</div>
                     </div>
-                    <div class="ak-label">CSC Wallets (Digipay + Lite)</div>
-                    <div class="ak-val" id="accKpiWallets">₹0.00</div>
-                    <div class="ak-sub">AEPS & DMT Portal Balance</div>
                 </div>
 
                 <div class="acc-kpi-card bank">
-                    <div class="ak-header">
-                        <div class="ak-icon"><i data-lucide="landmark"></i></div>
-                        <span class="ak-badge bank">BANK & UPI</span>
+                    <div class="ak-icon"><i data-lucide="landmark"></i></div>
+                    <div class="ak-body">
+                        <div class="ak-top-row">
+                            <span class="ak-label">Bank & UPI</span>
+                            <span class="ak-badge bank">BANK & UPI</span>
+                        </div>
+                        <div class="ak-val" id="accKpiBank">₹0.00</div>
                     </div>
-                    <div class="ak-label">Bank Accounts & UPI</div>
-                    <div class="ak-val" id="accKpiBank">₹0.00</div>
-                    <div class="ak-sub">Savings, Current & UPI</div>
                 </div>
             </div>
 
-            <!-- Card Wrapper for Filter Tabs, Search & Accounts Grid -->
+            <!-- Main Card with Unified Single-Row Filter + Search Toolbar -->
             <div class="card accounts-main-card">
-                <!-- Account Type Filter Tabs -->
-                <div class="acc-filter-tabs">
-                    <button class="aft-tab active" data-type="" onclick="filterAccountsByType('', this)">
-                        <i data-lucide="layers"></i> Sabhi Accounts
-                        <span class="aft-badge" id="aftBadgeAll">0</span>
-                    </button>
-                    <button class="aft-tab" data-type="Cash" onclick="filterAccountsByType('Cash', this)">
-                        <i data-lucide="banknote"></i> Cash in Hand (Galla)
-                    </button>
-                    <button class="aft-tab" data-type="CSC" onclick="filterAccountsByType('CSC', this)">
-                        <i data-lucide="smartphone"></i> CSC Wallets (Digipay)
-                    </button>
-                    <button class="aft-tab" data-type="Bank" onclick="filterAccountsByType('Bank', this)">
-                        <i data-lucide="landmark"></i> Bank Accounts
-                    </button>
-                    <button class="aft-tab" data-type="UPI" onclick="filterAccountsByType('UPI', this)">
-                        <i data-lucide="qr-code"></i> UPI / Wallets
-                    </button>
-                </div>
+                <div class="accounts-unified-bar">
+                    <div class="acc-filter-tabs">
+                        <button class="aft-tab active" data-type="" onclick="filterAccountsByType('', this)">
+                            <i data-lucide="layers"></i> Sabhi
+                            <span class="aft-badge" id="aftBadgeAll">0</span>
+                        </button>
+                        <button class="aft-tab" data-type="Cash" onclick="filterAccountsByType('Cash', this)">
+                            <i data-lucide="banknote"></i> Cash (Galla)
+                        </button>
+                        <button class="aft-tab" data-type="CSC" onclick="filterAccountsByType('CSC', this)">
+                            <i data-lucide="smartphone"></i> CSC Wallets
+                        </button>
+                        <button class="aft-tab" data-type="Bank" onclick="filterAccountsByType('Bank', this)">
+                            <i data-lucide="landmark"></i> Bank
+                        </button>
+                        <button class="aft-tab" data-type="UPI" onclick="filterAccountsByType('UPI', this)">
+                            <i data-lucide="qr-code"></i> UPI
+                        </button>
+                    </div>
 
-                <!-- Search Toolbar -->
-                <div class="acc-toolbar">
                     <div class="search-box acc-search-box">
                         <i data-lucide="search"></i>
                         <input type="text" id="searchAccountInput"
-                            placeholder="Account name, bank ya number se search karein..."
+                            placeholder="Account, bank ya number search karein..."
                             oninput="filterAccountsList()">
                     </div>
-                    <div class="acc-meta-count" id="accFilteredCount">
-                        Sabhi accounts dikh rahe hain
-                    </div>
+
+                    <div class="acc-meta-count" id="accFilteredCount">0 / 0</div>
                 </div>
 
                 <!-- Accounts Table -->
                 <div class="ptable-host">
                     <div class="ptable-card">
                         <div class="ptable-scroll">
-                            <table class="ptable">
+                            <table class="ptable accounts-compact-table">
                                 <thead>
                                     <tr>
                                         <th>Khata (Account)</th>
@@ -2535,102 +2569,115 @@
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
 
-        <!-- PARTIES PAGE -->
+        <!-- PARTIES PAGE (Compact Single-Bar Layout) -->
         <div id="page-parties" class="page">
-            <!-- Page Header -->
-            <div class="page-header parties-header">
-                <div class="page-header-info">
-                    <div class="page-header-badge"><i data-lucide="users"></i> KHATA BOOK & UDHAARI</div>
-                    <h1>Parties & Udhaari Management</h1>
-                    <p class="page-header-sub">Grahak, Dukan aur Udhaar lene-dene ka poora hisaab kitaab</p>
+            <!-- Compact Page Header -->
+            <div class="page-header parties-header parties-compact-header">
+                <div class="parties-header-inline">
+                    <h1>Parties & Udhaari</h1>
+                    <span class="page-header-badge"><i data-lucide="users"></i> KHATA BOOK</span>
+                    <span class="parties-header-sub">Grahak, Dukan aur Udhaar ka hisaab</span>
                 </div>
                 <div class="page-header-actions">
-                    <button class="btn-primary" onclick="openPartyModal()">
+                    <button class="btn-primary parties-add-btn" onclick="openPartyModal()">
                         <i data-lucide="user-plus"></i> + Naya Party
                     </button>
                 </div>
             </div>
 
-            <!-- 4 Top KPI Cards Grid -->
-            <div class="parties-kpi-grid">
+            <!-- Compact 4-Card KPI Strip -->
+            <div class="parties-kpi-grid parties-kpi-compact">
                 <div class="parties-kpi-card receivable">
-                    <div class="pk-header">
-                        <div class="pk-icon"><i data-lucide="arrow-down-left"></i></div>
-                        <span class="pk-badge receivable">MARKET SE LENA</span>
+                    <div class="pk-icon"><i data-lucide="arrow-down-left"></i></div>
+                    <div class="pk-body">
+                        <div class="pk-top-row">
+                            <span class="pk-label">Hamara Lena</span>
+                            <span class="pk-badge receivable">MARKET SE LENA</span>
+                        </div>
+                        <div class="pk-val-row">
+                            <div class="pk-val text-income" id="partyKpiLena">₹0.00</div>
+                            <div class="pk-sub" id="partyKpiLenaSub">0 parties</div>
+                        </div>
                     </div>
-                    <div class="pk-label">Hamara Lena (Market Receivable)</div>
-                    <div class="pk-val text-income" id="partyKpiLena">₹0.00</div>
-                    <div class="pk-sub" id="partyKpiLenaSub">Wo grahak jo hume paise denge</div>
                 </div>
 
                 <div class="parties-kpi-card payable">
-                    <div class="pk-header">
-                        <div class="pk-icon"><i data-lucide="arrow-up-right"></i></div>
-                        <span class="pk-badge payable">HUME DENA HAI</span>
+                    <div class="pk-icon"><i data-lucide="arrow-up-right"></i></div>
+                    <div class="pk-body">
+                        <div class="pk-top-row">
+                            <span class="pk-label">Hamara Dena</span>
+                            <span class="pk-badge payable">HUME DENA HAI</span>
+                        </div>
+                        <div class="pk-val-row">
+                            <div class="pk-val text-expense" id="partyKpiDena">₹0.00</div>
+                            <div class="pk-sub" id="partyKpiDenaSub">0 parties</div>
+                        </div>
                     </div>
-                    <div class="pk-label">Hamara Dena (Market Payable)</div>
-                    <div class="pk-val text-expense" id="partyKpiDena">₹0.00</div>
-                    <div class="pk-sub" id="partyKpiDenaSub">Hume jinko paise chukane hain</div>
                 </div>
 
                 <div class="parties-kpi-card net">
-                    <div class="pk-header">
-                        <div class="pk-icon"><i data-lucide="scale"></i></div>
-                        <span class="pk-badge net">NET HISAAB</span>
+                    <div class="pk-icon"><i data-lucide="scale"></i></div>
+                    <div class="pk-body">
+                        <div class="pk-top-row">
+                            <span class="pk-label">Net Balance</span>
+                            <span class="pk-badge net">NET HISAAB</span>
+                        </div>
+                        <div class="pk-val-row">
+                            <div class="pk-val" id="partyKpiNet">₹0.00</div>
+                            <div class="pk-sub" id="partyKpiNetSub">Lena − Dena</div>
+                        </div>
                     </div>
-                    <div class="pk-label">Net Udhaari Balance (Lena − Dena)</div>
-                    <div class="pk-val" id="partyKpiNet">₹0.00</div>
-                    <div class="pk-sub" id="partyKpiNetSub">Shuddh Baaki Rashi (Net Worth)</div>
                 </div>
 
                 <div class="parties-kpi-card total">
-                    <div class="pk-header">
-                        <div class="pk-icon"><i data-lucide="users"></i></div>
-                        <span class="pk-badge total">KUL PARTIES</span>
+                    <div class="pk-icon"><i data-lucide="users"></i></div>
+                    <div class="pk-body">
+                        <div class="pk-top-row">
+                            <span class="pk-label">Kul Parties</span>
+                            <span class="pk-badge total">ACTIVE</span>
+                        </div>
+                        <div class="pk-val-row">
+                            <div class="pk-val" id="partyKpiTotalCount">0</div>
+                            <div class="pk-sub">Registered Khatas</div>
+                        </div>
                     </div>
-                    <div class="pk-label">Total Registered Parties</div>
-                    <div class="pk-val" id="partyKpiTotalCount">0</div>
-                    <div class="pk-sub">Active Customer & Supplier Khatas</div>
                 </div>
             </div>
 
-            <!-- Card Wrapper for Filter Tabs, Search & Parties Grid -->
+            <!-- Main Card with Unified Single-Row Filter + Search Toolbar -->
             <div class="card parties-main-card">
-                <!-- Filter Tabs -->
-                <div class="parties-filter-tabs">
-                    <button class="pft-tab active" data-filter="all" onclick="filterParties('all', this)">
-                        <i data-lucide="layers"></i> Sabhi Parties
-                        <span class="pft-badge" id="pftBadgeAll">0</span>
-                    </button>
-                    <button class="pft-tab" data-filter="receivable" onclick="filterParties('receivable', this)">
-                        <i data-lucide="arrow-down-left"></i> Lena Hai (Wo Denge)
-                        <span class="pft-badge receivable" id="pftBadgeLena">0</span>
-                    </button>
-                    <button class="pft-tab" data-filter="payable" onclick="filterParties('payable', this)">
-                        <i data-lucide="arrow-up-right"></i> Dena Hai (Hum Denge)
-                        <span class="pft-badge payable" id="pftBadgeDena">0</span>
-                    </button>
-                    <button class="pft-tab" data-filter="settled" onclick="filterParties('settled', this)">
-                        <i data-lucide="check-check"></i> Hisaab Barabar (Clear)
-                        <span class="pft-badge settled" id="pftBadgeClear">0</span>
-                    </button>
-                </div>
+                <div class="parties-unified-bar">
+                    <div class="parties-filter-tabs">
+                        <button class="pft-tab active" data-filter="all" onclick="filterParties('all', this)">
+                            <i data-lucide="layers"></i> Sabhi
+                            <span class="pft-badge" id="pftBadgeAll">0</span>
+                        </button>
+                        <button class="pft-tab" data-filter="receivable" onclick="filterParties('receivable', this)">
+                            <i data-lucide="arrow-down-left"></i> Lena Hai
+                            <span class="pft-badge receivable" id="pftBadgeLena">0</span>
+                        </button>
+                        <button class="pft-tab" data-filter="payable" onclick="filterParties('payable', this)">
+                            <i data-lucide="arrow-up-right"></i> Dena Hai
+                            <span class="pft-badge payable" id="pftBadgeDena">0</span>
+                        </button>
+                        <button class="pft-tab" data-filter="settled" onclick="filterParties('settled', this)">
+                            <i data-lucide="check-check"></i> Clear
+                            <span class="pft-badge settled" id="pftBadgeClear">0</span>
+                        </button>
+                    </div>
 
-                <!-- Search Toolbar -->
-                <div class="parties-toolbar">
                     <div class="search-box parties-search-box">
                         <i data-lucide="search"></i>
                         <input type="text" id="searchPartyInput"
-                            placeholder="Party ka naam, phone number ya type search karein..."
+                            placeholder="Naam, phone ya type search karein..."
                             oninput="filterPartiesList()">
                     </div>
+
                     <div class="parties-toolbar-filters">
-                        <select id="partyTypeSelect" class="filter-input" onchange="filterPartiesList()"
-                            style="min-width: 140px;">
+                        <select id="partyTypeSelect" class="filter-input parties-type-select" onchange="filterPartiesList()">
                             <option value="">Sabhi Types</option>
                             <option value="Customer">Customer</option>
                             <option value="Supplier">Supplier</option>
@@ -2638,18 +2685,15 @@
                             <option value="Staff">Staff</option>
                             <option value="Other">Other</option>
                         </select>
-                        <div class="parties-meta-count" id="partiesFilteredCount">
-                            Sabhi parties dikh rahi hain
-                        </div>
+                        <div class="parties-meta-count" id="partiesFilteredCount">0 / 0</div>
                     </div>
                 </div>
-
 
                 <!-- Parties Table -->
                 <div class="ptable-host">
                     <div class="ptable-card">
                         <div class="ptable-scroll">
-                            <table class="ptable">
+                            <table class="ptable parties-compact-table">
                                 <thead>
                                     <tr>
                                         <th>Party</th>
@@ -2665,7 +2709,6 @@
                         </div>
                     </div>
                 </div>
-
             </div>
         </div>
 
@@ -2934,29 +2977,24 @@
             </div>
         </div>
 
-        <!-- REPORTS & ANALYSIS PAGE -->
+        <!-- REPORTS & ANALYSIS PAGE (Compact 8-KPI + 11-Module Complete Audit) -->
         <div id="page-reports" class="page">
-            <!-- Page Header -->
-            <div class="page-header">
-                <div class="header-title-group">
-                    <div class="header-icon-badge reports-badge">
-                        <i data-lucide="bar-chart-3"></i>
-                    </div>
-                    <div>
-                        <h1>Reports & Analysis (सम्पूर्ण रिपोर्ट व ऑडिट)</h1>
-                        <p class="text-muted" style="margin: 0; font-size: 13px;">Cashbook, CSC Seva, BC Banking, Khata
-                            Udhaar, Karz, Wallets aur sabhi aavedan ka har ek record ek hi jagah</p>
-                    </div>
+            <!-- Compact Page Header -->
+            <div class="page-header rep-compact-header">
+                <div class="rep-header-inline">
+                    <h1>Reports &amp; Analysis</h1>
+                    <span class="page-header-badge"><i data-lucide="bar-chart-3"></i> MASTER AUDIT</span>
+                    <span class="rep-header-sub">Cashbook, CSC, BC Banking, BillPay, UCL, Khata &amp; Invoices</span>
                 </div>
-                <div class="header-actions">
+                <div class="rep-header-actions">
                     <button class="btn-ghost" onclick="refreshReportsData()" title="Data Refresh Karein">
                         <i data-lucide="refresh-cw"></i> Refresh
                     </button>
                     <button class="btn-secondary" onclick="printReportsSheet()" title="Print A4 Full Ledger Sheet">
-                        <i data-lucide="printer"></i> Print Sheet
+                        <i data-lucide="printer"></i> Print
                     </button>
                     <button class="btn-success" onclick="exportReportsExcel()" title="Excel me Download karein">
-                        <i data-lucide="file-spreadsheet"></i> Excel Export
+                        <i data-lucide="file-spreadsheet"></i> Excel
                     </button>
                     <button class="btn-secondary" onclick="exportReportsCSV()" title="CSV Data Download karein">
                         <i data-lucide="download"></i> CSV
@@ -2967,180 +3005,225 @@
             <!-- Date Range & Quick Presets Bar -->
             <div class="reports-date-bar">
                 <div class="date-presets-group">
-                    <button class="preset-pill" data-preset="today" onclick="setReportsDatePreset('today', this)">Aaj
-                        (Today)</button>
-                    <button class="preset-pill" data-preset="yesterday"
-                        onclick="setReportsDatePreset('yesterday', this)">Kal (Yesterday)</button>
-                    <button class="preset-pill" data-preset="this_week"
-                        onclick="setReportsDatePreset('this_week', this)">Is Hafte</button>
-                    <button class="preset-pill active" data-preset="this_month"
-                        onclick="setReportsDatePreset('this_month', this)">Is Mahine</button>
-                    <button class="preset-pill" data-preset="last_month"
-                        onclick="setReportsDatePreset('last_month', this)">Pichla Mahina</button>
-                    <button class="preset-pill" data-preset="this_year"
-                        onclick="setReportsDatePreset('this_year', this)">Is Saal</button>
-                    <button class="preset-pill" data-preset="all" onclick="setReportsDatePreset('all', this)">Sabhi (All
-                        Time)</button>
+                    <button class="preset-pill" data-preset="today" onclick="setReportsDatePreset('today', this)">Aaj</button>
+                    <button class="preset-pill" data-preset="yesterday" onclick="setReportsDatePreset('yesterday', this)">Kal</button>
+                    <button class="preset-pill" data-preset="this_week" onclick="setReportsDatePreset('this_week', this)">Is Hafte</button>
+                    <button class="preset-pill active" data-preset="this_month" onclick="setReportsDatePreset('this_month', this)">Is Mahine</button>
+                    <button class="preset-pill" data-preset="last_month" onclick="setReportsDatePreset('last_month', this)">Pichla Mahina</button>
+                    <button class="preset-pill" data-preset="this_year" onclick="setReportsDatePreset('this_year', this)">Is Saal</button>
+                    <button class="preset-pill" data-preset="all" onclick="setReportsDatePreset('all', this)">All Time</button>
                 </div>
                 <div class="date-custom-pickers">
                     <div class="date-picker-wrap">
-                        <label>Se (From):</label>
+                        <label>Se:</label>
                         <input type="date" id="repStartDate" class="form-control" onchange="onCustomDateRangeChanged()">
                     </div>
                     <div class="date-picker-wrap">
-                        <label>Tak (To):</label>
+                        <label>Tak:</label>
                         <input type="date" id="repEndDate" class="form-control" onchange="onCustomDateRangeChanged()">
                     </div>
                 </div>
             </div>
 
-            <!-- 6 Real-Time Aggregated KPI Cards -->
-            <div class="reports-kpi-grid">
-                <!-- 1. Kul Aamadani / Inflow -->
-                <div class="rep-kpi-card income">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="arrow-down-left"></i></div>
-                        <span class="rk-badge income">KUL AAMADANI</span>
+            <!-- 8 Compact Real-Time KPI Cards (4x2 Grid including BillPay & UCL) -->
+            <div class="reports-kpi-grid reports-kpi-compact">
+                <div class="rep-kpi-card income is-clickable" onclick="switchReportModule('transactions', document.querySelector('.rep-tab[data-mod=transactions]'))">
+                    <div class="rk-icon"><i data-lucide="arrow-down-left"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Kul Aamadani</span>
+                            <span class="rk-badge income">INFLOW</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiIncome">₹0.00</div>
+                            <div class="rk-sub" id="repKpiIncomeSub">Cashbook + Comm</div>
+                        </div>
                     </div>
-                    <div class="rk-label">Kul Inflow (Sabhi Modules)</div>
-                    <div class="rk-amount" id="repKpiIncome">₹0.00</div>
-                    <div class="rk-sub" id="repKpiIncomeSub">Cashbook + CSC + BC + Jama</div>
                 </div>
 
-                <!-- 2. Kul Kharcha / Outflow -->
-                <div class="rep-kpi-card expense">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="arrow-up-right"></i></div>
-                        <span class="rk-badge expense">KUL KHARCHA</span>
+                <div class="rep-kpi-card expense is-clickable" onclick="switchReportModule('transactions', document.querySelector('.rep-tab[data-mod=transactions]'))">
+                    <div class="rk-icon"><i data-lucide="arrow-up-right"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Kul Kharcha</span>
+                            <span class="rk-badge expense">OUTFLOW</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiExpense">₹0.00</div>
+                            <div class="rk-sub" id="repKpiExpenseSub">Expense + Govt Fee</div>
+                        </div>
                     </div>
-                    <div class="rk-label">Kul Outflow (Sabhi Kharch)</div>
-                    <div class="rk-amount" id="repKpiExpense">₹0.00</div>
-                    <div class="rk-sub" id="repKpiExpenseSub">Expense + Govt Fee + Udhaar</div>
                 </div>
 
-                <!-- 3. Net Munafa / Net Profit -->
-                <div class="rep-kpi-card net">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="sparkles"></i></div>
-                        <span class="rk-badge net">SHUDDH LABH</span>
+                <div class="rep-kpi-card net is-clickable" onclick="switchReportModule('charts', document.querySelector('.rep-tab[data-mod=charts]'))">
+                    <div class="rk-icon"><i data-lucide="sparkles"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Net Munafa</span>
+                            <span class="rk-badge net">NET PROFIT</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiProfit">₹0.00</div>
+                            <div class="rk-sub" id="repKpiProfitSub">Shuddh Labh</div>
+                        </div>
                     </div>
-                    <div class="rk-label">Net Profit (Shuddh Munafa)</div>
-                    <div class="rk-amount" id="repKpiProfit">₹0.00</div>
-                    <div class="rk-sub" id="repKpiProfitSub">Aamadani - Kharcha + Commissions</div>
                 </div>
 
-                <!-- 4. CSC Seva Kamai -->
-                <div class="rep-kpi-card csc">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="clipboard-check"></i></div>
-                        <span class="rk-badge csc">CSC EARNINGS</span>
+                <div class="rep-kpi-card csc is-clickable" onclick="switchReportModule('csc', document.querySelector('.rep-tab[data-mod=csc]'))">
+                    <div class="rk-icon"><i data-lucide="clipboard-check"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">CSC Earnings</span>
+                            <span class="rk-badge csc">CSC SEVA</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiCSC">₹0.00</div>
+                            <div class="rk-sub" id="repKpiCSCSub">0 Aavedan</div>
+                        </div>
                     </div>
-                    <div class="rk-label">CSC Applications & Profit</div>
-                    <div class="rk-amount" id="repKpiCSC">₹0.00</div>
-                    <div class="rk-sub" id="repKpiCSCSub">0 Applications darj</div>
                 </div>
 
-                <!-- 5. BC Banking Turnover -->
-                <div class="rep-kpi-card bc">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="landmark"></i></div>
-                        <span class="rk-badge bc">BC TURNOVER</span>
+                <div class="rep-kpi-card bc is-clickable" onclick="switchReportModule('bc', document.querySelector('.rep-tab[data-mod=bc]'))">
+                    <div class="rk-icon"><i data-lucide="landmark"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">BC Turnover</span>
+                            <span class="rk-badge bc">BC AEPS</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiBC">₹0.00</div>
+                            <div class="rk-sub" id="repKpiBCSub">Kamai: ₹0</div>
+                        </div>
                     </div>
-                    <div class="rk-label">BC Volume & Commission</div>
-                    <div class="rk-amount" id="repKpiBC">₹0.00</div>
-                    <div class="rk-sub" id="repKpiBCSub">AEPS, Mini ATM, Deposit</div>
                 </div>
 
-                <!-- 6. Market Udhaar Baki -->
-                <div class="rep-kpi-card khata">
-                    <div class="rk-header">
-                        <div class="rk-icon"><i data-lucide="book-open"></i></div>
-                        <span class="rk-badge khata">MARKET BAKI</span>
+                <div class="rep-kpi-card billpay is-clickable" onclick="switchReportModule('billpay', document.querySelector('.rep-tab[data-mod=billpay]'))">
+                    <div class="rk-icon"><i data-lucide="zap"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Bill &amp; EMI Pay</span>
+                            <span class="rk-badge billpay">BIJLI / EMI</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiBP">₹0.00</div>
+                            <div class="rk-sub" id="repKpiBPSub">0 Bills</div>
+                        </div>
                     </div>
-                    <div class="rk-label">Grahak Udhaar Baki (Khata)</div>
-                    <div class="rk-amount" id="repKpiUdhaar">₹0.00</div>
-                    <div class="rk-sub" id="repKpiUdhaarSub">Customers se lena baaki</div>
+                </div>
+
+                <div class="rep-kpi-card ucl is-clickable" onclick="switchReportModule('ucl', document.querySelector('.rep-tab[data-mod=ucl]'))">
+                    <div class="rk-icon"><i data-lucide="fingerprint"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Aadhaar UCL</span>
+                            <span class="rk-badge ucl">UCL WORK</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiUCL">₹0.00</div>
+                            <div class="rk-sub" id="repKpiUCLSub">0 Updates</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rep-kpi-card khata is-clickable" onclick="switchReportModule('khata', document.querySelector('.rep-tab[data-mod=khata]'))">
+                    <div class="rk-icon"><i data-lucide="book-open"></i></div>
+                    <div class="rk-body">
+                        <div class="rk-top-row">
+                            <span class="rk-label">Market Udhaar</span>
+                            <span class="rk-badge khata">KHATA BAKI</span>
+                        </div>
+                        <div class="rk-val-row">
+                            <div class="rk-amount" id="repKpiUdhaar">₹0.00</div>
+                            <div class="rk-sub" id="repKpiUdhaarSub">Adv: ₹0</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Module Navigation Tabs (Kiska Record Dekhna Hai) -->
+            <!-- 11 Module Navigation Tabs -->
             <div class="reports-module-tabs">
                 <button class="rep-tab active" data-mod="all" onclick="switchReportModule('all', this)">
-                    <i data-lucide="layers"></i> 1. Samagra Master Feed
+                    <i data-lucide="layers"></i> 1. Samagra Master
                 </button>
                 <button class="rep-tab" data-mod="transactions" onclick="switchReportModule('transactions', this)">
-                    <i data-lucide="arrow-left-right"></i> 2. Cashbook Ledger
+                    <i data-lucide="arrow-left-right"></i> 2. Cashbook
                 </button>
                 <button class="rep-tab" data-mod="csc" onclick="switchReportModule('csc', this)">
-                    <i data-lucide="file-check"></i> 3. CSC Applications
+                    <i data-lucide="file-check"></i> 3. CSC Forms
                 </button>
                 <button class="rep-tab" data-mod="bc" onclick="switchReportModule('bc', this)">
-                    <i data-lucide="credit-card"></i> 4. BC Banking Counter
+                    <i data-lucide="credit-card"></i> 4. BC Banking
+                </button>
+                <button class="rep-tab" data-mod="billpay" onclick="switchReportModule('billpay', this)">
+                    <i data-lucide="zap"></i> 5. Bill &amp; EMI
+                </button>
+                <button class="rep-tab" data-mod="ucl" onclick="switchReportModule('ucl', this)">
+                    <i data-lucide="fingerprint"></i> 6. Aadhaar UCL
                 </button>
                 <button class="rep-tab" data-mod="khata" onclick="switchReportModule('khata', this)">
-                    <i data-lucide="book-user"></i> 5. Grahak Khata (Udhaar)
+                    <i data-lucide="book-user"></i> 7. Khata
                 </button>
                 <button class="rep-tab" data-mod="loans" onclick="switchReportModule('loans', this)">
-                    <i data-lucide="handshake"></i> 6. Loan & Karz
+                    <i data-lucide="handshake"></i> 8. Loan &amp; Karz
                 </button>
                 <button class="rep-tab" data-mod="invoices" onclick="switchReportModule('invoices', this)">
-                    <i data-lucide="receipt"></i> 7. Invoices & Billing
+                    <i data-lucide="receipt"></i> 9. Invoices
                 </button>
                 <button class="rep-tab" data-mod="accounts" onclick="switchReportModule('accounts', this)">
-                    <i data-lucide="wallet"></i> 8. Accounts & Wallets
+                    <i data-lucide="wallet"></i> 10. Accounts
                 </button>
                 <button class="rep-tab" data-mod="charts" onclick="switchReportModule('charts', this)">
-                    <i data-lucide="pie-chart"></i> 9. Analytics Charts
+                    <i data-lucide="pie-chart"></i> 11. Charts
                 </button>
             </div>
 
-            <!-- Advanced Filter & Search Toolbar (Har Chhoti se Chhoti Cheej Filter Ho) -->
+            <!-- Compact Filter & Search Toolbar -->
             <div class="card reports-filters-card" id="repFiltersCard">
                 <div class="reports-filter-row">
-                    <div class="search-box" style="flex: 2; min-width: 260px;">
+                    <div class="search-box" style="flex: 2 1 220px; min-width: 210px;">
                         <i data-lucide="search"></i>
                         <input type="text" id="repSearchInput"
-                            placeholder="🔍 Customer, phone, UTR, ack no, description dhoondein..."
+                            placeholder="Customer, phone, UTR, Ack, SID, Consumer # dhoondein..."
                             oninput="debounceReportsSearch()">
                     </div>
 
-                    <div class="filter-group" style="flex: 1; min-width: 170px;">
+                    <div class="filter-group" style="flex: 1 1 165px; min-width: 155px;">
                         <select id="repTypeFilter" class="form-control" onchange="applyReportsFilters()">
-                            <option value="all">-- Sabhi Prakar (All Types) --</option>
+                            <option value="all">-- Sabhi Prakar --</option>
                         </select>
                     </div>
 
-                    <div class="filter-group" id="repAccountFilterWrap" style="flex: 1; min-width: 170px;">
+                    <div class="filter-group" id="repAccountFilterWrap" style="flex: 1 1 165px; min-width: 155px;">
                         <select id="repAccountFilter" class="form-control" onchange="applyReportsFilters()">
-                            <option value="all">-- Sabhi Khate (All Accounts) --</option>
+                            <option value="all">-- Sabhi Khate --</option>
                         </select>
                     </div>
 
-                    <div class="filter-group" id="repCategoryFilterWrap" style="flex: 1; min-width: 170px;">
+                    <div class="filter-group" id="repCategoryFilterWrap" style="flex: 1 1 160px; min-width: 150px;">
                         <select id="repCategoryFilter" class="form-control" onchange="applyReportsFilters()">
                             <option value="all">-- Sabhi Categories --</option>
                         </select>
                     </div>
 
-                    <div class="filter-group" id="repCustomerFilterWrap" style="flex: 1; min-width: 200px;">
+                    <div class="filter-group" id="repCustomerFilterWrap" style="flex: 1 1 185px; min-width: 175px;">
                         <select id="repCustomerFilter" class="form-control searchable-select" data-searchable="true"
                             onchange="applyReportsFilters()"
                             title="Kisi ek grahak ka saara data dekhne ke liye chunein">
-                            <option value="all">-- Sabhi Grahak (All Customers) --</option>
+                            <option value="all">-- Sabhi Grahak --</option>
                         </select>
                     </div>
 
-                    <div class="filter-group" style="flex: 1; min-width: 150px;">
+                    <div class="filter-group" style="flex: 1 1 145px; min-width: 135px;">
                         <select id="repStatusFilter" class="form-control" onchange="applyReportsFilters()">
                             <option value="all">-- Sabhi Status --</option>
                             <option value="Completed">Completed / Success</option>
-                            <option value="Pending">Pending / In Progress</option>
+                            <option value="Pending">Pending / Due</option>
                             <option value="Failed">Failed / Rejected</option>
                         </select>
                     </div>
 
                     <button class="btn-ghost btn-sm" onclick="resetReportsFilters()" title="Filters Reset Karein"
-                        style="white-space: nowrap;">
+                        style="white-space: nowrap; height: 34px; flex: 0 0 auto;">
                         <i data-lucide="rotate-ccw"></i> Reset
                     </button>
                 </div>
@@ -3256,6 +3339,8 @@
                                             <th style="text-align: right;">Cashbook Expense</th>
                                             <th style="text-align: right;">CSC Profit</th>
                                             <th style="text-align: right;">BC Commission</th>
+                                            <th style="text-align: right;">BillPay Profit</th>
+                                            <th style="text-align: right;">UCL Work</th>
                                             <th style="text-align: right;">Kul Aamadani</th>
                                             <th style="text-align: right;">Kul Kharcha</th>
                                             <th style="text-align: right;">Net Munafa</th>
@@ -3305,89 +3390,133 @@
             </div>
         </div>
 
-        <!-- CUSTOMERS PAGE -->
+        <!-- CUSTOMERS PAGE (Compact Layout + KYC & Sort Tools) -->
         <div id="page-customers" class="page">
-            <div class="page-header">
-                <div>
+            <div class="page-header cust-compact-header">
+                <div class="cust-header-inline">
                     <h1>Customers (ग्राहक)</h1>
-                    <p class="text-muted">Aapke sabhi vyapar grahak, unka khata balance aur billing link</p>
+                    <span class="page-header-badge"><i data-lucide="users"></i> VYAPAR &amp; KYC</span>
+                    <span class="cust-header-sub">Grahak, Khata balance, Aadhaar KYC aur billing link</span>
                 </div>
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <div class="cust-header-actions">
                     <button class="btn-ghost" onclick="loadCustomersPage()" title="List refresh karein">
                         <i data-lucide="refresh-cw"></i> Refresh
                     </button>
-                    <button class="btn-secondary" onclick="exportCustomersExcel()"
-                        title="Sabhi Customers ko Excel (.xlsx) me download karein">
-                        <i data-lucide="file-spreadsheet"></i> Export Excel
+                    <button class="btn-secondary" onclick="exportCustomersExcel()" title="Sabhi Customers ko Excel (.xlsx) me download karein">
+                        <i data-lucide="file-spreadsheet"></i> Export
                     </button>
-                    <button class="btn-secondary" onclick="openCustomerImportModal()"
-                        title="Excel se Customers Import karein">
-                        <i data-lucide="upload"></i> Import Excel
+                    <button class="btn-secondary" onclick="openCustomerImportModal()" title="Excel se Customers Import karein">
+                        <i data-lucide="upload"></i> Import
                     </button>
                     <button class="btn-primary" onclick="openCustomerModal()">
-                        <i data-lucide="user-plus"></i> Naya Customer Jodein
+                        <i data-lucide="user-plus"></i> + Naya Customer
                     </button>
                 </div>
             </div>
 
-            <!-- Customer KPI Cards -->
-            <div class="summary-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+            <!-- Compact 4-Card KPI Strip -->
+            <div class="summary-grid cust-kpi-compact">
                 <div class="summary-card total">
                     <div class="sc-icon"><i data-lucide="users"></i></div>
                     <div class="sc-content">
-                        <div class="sc-label">Kul Customers</div>
-                        <div class="sc-amount" id="custKpiTotal">0</div>
-                        <div class="sc-sub">Registered grahak</div>
+                        <div class="sc-top-row">
+                            <span class="sc-label">Kul Customers</span>
+                            <span class="ck-badge total">TOTAL</span>
+                        </div>
+                        <div class="sc-val-row">
+                            <div class="sc-amount" id="custKpiTotal">0</div>
+                            <span class="sc-sub">Registered grahak</span>
+                        </div>
                     </div>
                 </div>
                 <div class="summary-card expense">
                     <div class="sc-icon"><i data-lucide="arrow-up-right"></i></div>
                     <div class="sc-content">
-                        <div class="sc-label">Aapko Lena Hai (Udhaar)</div>
-                        <div class="sc-amount" id="custKpiToReceive" style="color: var(--money-out) !important;">₹0.00
+                        <div class="sc-top-row">
+                            <span class="sc-label">Lena Hai (Udhaar)</span>
+                            <span class="ck-badge due">BAKI</span>
                         </div>
-                        <div class="sc-sub">Market me baki paisa</div>
+                        <div class="sc-val-row">
+                            <div class="sc-amount" id="custKpiToReceive" style="color: var(--money-out) !important;">₹0.00</div>
+                            <span class="sc-sub">Market baki</span>
+                        </div>
                     </div>
                 </div>
                 <div class="summary-card income">
                     <div class="sc-icon"><i data-lucide="arrow-down-left"></i></div>
                     <div class="sc-content">
-                        <div class="sc-label">Aapko Dena Hai (Advance)</div>
-                        <div class="sc-amount" id="custKpiToPay" style="color: var(--money-in) !important;">₹0.00</div>
-                        <div class="sc-sub">Advance jama rashi</div>
+                        <div class="sc-top-row">
+                            <span class="sc-label">Dena Hai (Advance)</span>
+                            <span class="ck-badge adv">ADVANCE</span>
+                        </div>
+                        <div class="sc-val-row">
+                            <div class="sc-amount" id="custKpiToPay" style="color: var(--money-in) !important;">₹0.00</div>
+                            <span class="sc-sub">Jama rashi</span>
+                        </div>
                     </div>
                 </div>
                 <div class="summary-card net">
                     <div class="sc-icon"><i data-lucide="wallet"></i></div>
                     <div class="sc-content">
-                        <div class="sc-label">Net Khata Bakiya</div>
-                        <div class="sc-amount" id="custKpiNet">₹0.00</div>
-                        <div class="sc-sub">Lena - Dena</div>
+                        <div class="sc-top-row">
+                            <span class="sc-label">Net Khata Bakiya</span>
+                            <span class="ck-badge net">NET</span>
+                        </div>
+                        <div class="sc-val-row">
+                            <div class="sc-amount" id="custKpiNet">₹0.00</div>
+                            <span class="sc-sub">Lena − Dena</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Main Card Wrapper -->
-            <div class="card">
-                <!-- Filters & Search Toolbar -->
-                <div class="customer-toolbar"
-                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
-                    <div class="search-box" style="flex: 1; max-width: 360px;">
-                        <i data-lucide="search"></i>
-                        <input type="text" id="custSearchInput"
-                            placeholder="Customer ka naam, phone ya pata dhoondein..." oninput="filterCustomersList()">
+            <div class="card cust-main-card">
+                <!-- Filters, KYC, Sort & Search Toolbar -->
+                <div class="customer-toolbar">
+                    <div class="cust-toolbar-top">
+                        <div class="search-box cust-search-wrap">
+                            <i data-lucide="search"></i>
+                            <input type="text" id="custSearchInput"
+                                placeholder="Naam, #ID, Phone, Aadhaar ya Pata khojein..." oninput="filterCustomersList()">
+                            <button type="button" id="custSearchClearBtn" class="cust-search-clear" onclick="clearCustomerSearch()" title="Search saaf karein">✕</button>
+                        </div>
+                        <div class="cust-toolbar-selects">
+                            <select id="custKycSelect" class="cust-mini-select" onchange="filterCustomersList()" title="KYC status se filter karein">
+                                <option value="">Sabhi KYC Status</option>
+                                <option value="complete">✅ Complete (Phone + Aadhaar)</option>
+                                <option value="has_aadhaar">🪪 Aadhaar Linked</option>
+                                <option value="no_aadhaar">⚠️ Aadhaar Missing</option>
+                                <option value="no_phone">📞 Phone Missing</option>
+                            </select>
+                            <select id="custSortSelect" class="cust-mini-select" onchange="filterCustomersList()" title="Sorting chunein">
+                                <option value="newest">Latest First (#ID ↓)</option>
+                                <option value="oldest">Oldest First (#ID ↑)</option>
+                                <option value="name_az">Name (A → Z)</option>
+                                <option value="due_high">Zyada Udhaar (Lena ↓)</option>
+                                <option value="adv_high">Zyada Advance (Dena ↓)</option>
+                                <option value="most_active">Zyada Entries (Khata ↓)</option>
+                            </select>
+                            <span class="cust-count-chip" id="custToolbarCount">0 / 0</span>
+                        </div>
                     </div>
-                    <div class="tab-btn-group" style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="tab-btn active" data-filter="all" onclick="setCustomerFilter('all', this)">Sabhi
-                            Grahak</button>
-                        <button class="tab-btn" data-filter="family" onclick="setCustomerFilter('family', this)"><i
-                                data-lucide="users"></i> 👨‍👩‍👧‍👦 Parivar (Family)</button>
-                        <button class="tab-btn" data-filter="to_receive"
-                            onclick="setCustomerFilter('to_receive', this)">🔴 Lena Hai (Udhaar)</button>
-                        <button class="tab-btn" data-filter="to_pay" onclick="setCustomerFilter('to_pay', this)">🟢 Dena
-                            Hai (Advance)</button>
-                        <button class="tab-btn" data-filter="settled" onclick="setCustomerFilter('settled', this)">⚪
-                            Hisaab Barabar</button>
+
+                    <div class="tab-btn-group">
+                        <button class="tab-btn active" data-filter="all" onclick="setCustomerFilter('all', this)">
+                            Sabhi Grahak <span class="ct-badge" id="custBadgeAll">0</span>
+                        </button>
+                        <button class="tab-btn" data-filter="family" onclick="setCustomerFilter('family', this)">
+                            👨‍👩‍👧‍👦 Parivar <span class="ct-badge" id="custBadgeFamily">0</span>
+                        </button>
+                        <button class="tab-btn" data-filter="to_receive" onclick="setCustomerFilter('to_receive', this)">
+                            🔴 Lena Hai <span class="ct-badge" id="custBadgeReceive">0</span>
+                        </button>
+                        <button class="tab-btn" data-filter="to_pay" onclick="setCustomerFilter('to_pay', this)">
+                            🟢 Dena Hai <span class="ct-badge" id="custBadgePay">0</span>
+                        </button>
+                        <button class="tab-btn" data-filter="settled" onclick="setCustomerFilter('settled', this)">
+                            ⚪ Barabar <span class="ct-badge" id="custBadgeSettled">0</span>
+                        </button>
                     </div>
                 </div>
 
@@ -3398,14 +3527,14 @@
                             <table class="ptable cust-master-table">
                                 <thead>
                                     <tr>
-                                        <th style="width: 75px; text-align: center;">ID</th>
+                                        <th style="width: 72px; text-align: center;">ID</th>
                                         <th>Grahak (Customer)</th>
-                                        <th style="width: 140px;">Sampark</th>
-                                        <th style="width: 165px;">Aadhaar (12-Digit)</th>
-                                        <th style="width: 140px;">Pata / City</th>
-                                        <th class="cell-center" style="width: 155px;">Khata &amp; Bills</th>
-                                        <th class="cell-right" style="width: 130px;">Balance</th>
-                                        <th class="cell-center" style="width: 90px;">Kriya</th>
+                                        <th style="width: 145px;">Sampark</th>
+                                        <th style="width: 185px;">Aadhaar (12-Digit)</th>
+                                        <th style="width: 130px;">Pata / City</th>
+                                        <th class="cell-center" style="width: 145px;">Khata &amp; Bills</th>
+                                        <th class="cell-right" style="width: 165px;">Balance</th>
+                                        <th class="cell-center" style="width: 85px;">Kriya</th>
                                     </tr>
                                 </thead>
                                 <tbody id="customersTableBody">
@@ -3416,9 +3545,8 @@
                     </div>
                 </div>
 
-
                 <!-- Customers Table Footer with Pagination -->
-                <div class="table-footer" id="custTableFooter" style="margin-top: 14px;">
+                <div class="table-footer" id="custTableFooter">
                     <div class="tf-left" style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
                         <span id="custPaginationInfo">Showing 0 of 0 entries</span>
                         <div class="page-size-selector"
@@ -3667,19 +3795,17 @@
         <!-- Page: Database Explorer -->
         <!-- DOCUMENTS PAGE — Customer & Shop ke sabhi prakar ke documents -->
         <div id="page-documents" class="page">
-            <div class="page-header"
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
-                <div class="page-header-info">
-                    <div class="page-header-badge"><i data-lucide="folder-open"></i> DOCUMENT VAULT</div>
+            <div class="page-header doc-compact-header">
+                <div class="doc-header-inline">
                     <h1>Documents (दस्तावेज़)</h1>
-                    <p class="page-header-sub">Customer aur shop ki sab files — upload, view, print, download, rename,
-                        delete</p>
+                    <span class="page-header-badge"><i data-lucide="folder-open"></i> DOCUMENT VAULT</span>
+                    <span class="doc-header-sub">Customer aur shop ki sab files — preview, print, download, rename</span>
                 </div>
-                <div class="page-header-actions">
-                    <button class="btn-secondary" onclick="loadDocumentsPage()" title="List refresh karein">
+                <div class="page-header-actions" style="display:flex; gap:8px; align-items:center;">
+                    <button class="btn-secondary btn-sm" onclick="loadDocumentsPage()" title="List refresh karein">
                         <i data-lucide="refresh-cw"></i> Refresh
                     </button>
-                    <button class="btn-primary" onclick="openDocUploadModal()" title="Nayi file upload karein">
+                    <button class="btn-primary btn-sm" onclick="openDocUploadModal()" title="Nayi file upload karein">
                         <i data-lucide="upload"></i> Upload File
                     </button>
                 </div>
@@ -3717,28 +3843,70 @@
                 </div>
             </div>
 
-            <!-- Filters & Search -->
-            <div
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
-                <div class="search-box" style="flex: 1; max-width: 320px;">
-                    <i data-lucide="search"></i>
-                    <input type="text" id="docSearchInput" placeholder="Document naam ya description dhoondein..."
-                        oninput="filterDocumentsList()">
+            <!-- Compact 2-Row Filter & View Toolbar -->
+            <div class="card doc-filters-card">
+                <div class="doc-filter-row">
+                    <div class="search-box">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="docSearchInput" placeholder="Document naam, customer ya note khojein..."
+                            oninput="filterDocumentsList()">
+                    </div>
+
+                    <div style="flex: 1 1 200px; min-width: 185px;">
+                        <select id="docCustomerFilter" class="form-control searchable-select" data-searchable="true"
+                            data-placeholder="🔍 Customer / Shop chunein..." onchange="filterDocumentsList()">
+                            <option value="all">Sab Customers + Shop</option>
+                            <option value="shop">🏪 Sirf Shop Documents</option>
+                        </select>
+                    </div>
+
+                    <div style="flex: 1 1 155px; min-width: 145px;">
+                        <select id="docEntityFilter" class="form-control" onchange="filterDocumentsList()" title="Module ke hisab se filter karein">
+                            <option value="all">-- Sabhi Modules --</option>
+                            <option value="UCL">Aadhaar UCL</option>
+                            <option value="CSC">CSC Tracker</option>
+                            <option value="BillPay">Bill &amp; EMI Pay</option>
+                            <option value="Invoice">Billing / Invoice</option>
+                            <option value="Customer">Customer KYC / Profile</option>
+                            <option value="Shop">Shop / Dukaan Docs</option>
+                        </select>
+                    </div>
+
+                    <div style="flex: 1 1 150px; min-width: 140px;">
+                        <select id="docSortSelect" class="form-control" onchange="filterDocumentsList()" title="Sort order">
+                            <option value="newest">Naya Pehle (Latest)</option>
+                            <option value="oldest">Purana Pehle (Oldest)</option>
+                            <option value="name_asc">Naam (A → Z)</option>
+                            <option value="size_desc">Size (Bada → Chota)</option>
+                            <option value="size_asc">Size (Chota → Bada)</option>
+                        </select>
+                    </div>
+
+                    <button class="btn-ghost btn-sm" onclick="resetDocFilters()" title="Sabhi filters reset karein" style="height: 34px; white-space: nowrap;">
+                        <i data-lucide="rotate-ccw"></i> Reset
+                    </button>
                 </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                    <select id="docCustomerFilter" class="form-control searchable-select" data-searchable="true"
-                        data-placeholder="🔍 Customer filter khojein..." style="width: auto; min-width: 180px;"
-                        onchange="filterDocumentsList()">
-                        <option value="all">Sab Customers + Shop</option>
-                        <option value="shop">🏪 Sirf Shop Documents</option>
-                    </select>
-                    <div class="rb-pills" id="docTypePills" style="margin: 0;">
-                        <button class="pill-btn active" onclick="setDocTypeFilter('all', this)">Sab</button>
-                        <button class="pill-btn" onclick="setDocTypeFilter('image', this)">🖼️ Images</button>
-                        <button class="pill-btn" onclick="setDocTypeFilter('pdf', this)">📕 PDF</button>
-                        <button class="pill-btn" onclick="setDocTypeFilter('document', this)">📄 Docs</button>
-                        <button class="pill-btn" onclick="setDocTypeFilter('excel', this)">📊 Excel</button>
-                        <button class="pill-btn" onclick="setDocTypeFilter('other', this)">📦 Other</button>
+
+                <div class="doc-pills-bar">
+                    <div class="rb-pills" id="docTypePills">
+                        <button class="pill-btn active" onclick="setDocTypeFilter('all', this)">Sab <span class="doc-pill-count" id="docPillCntAll">0</span></button>
+                        <button class="pill-btn" onclick="setDocTypeFilter('image', this)">🖼️ Images <span class="doc-pill-count" id="docPillCntImg">0</span></button>
+                        <button class="pill-btn" onclick="setDocTypeFilter('pdf', this)">📕 PDF <span class="doc-pill-count" id="docPillCntPdf">0</span></button>
+                        <button class="pill-btn" onclick="setDocTypeFilter('document', this)">📄 Docs <span class="doc-pill-count" id="docPillCntDoc">0</span></button>
+                        <button class="pill-btn" onclick="setDocTypeFilter('excel', this)">📊 Excel <span class="doc-pill-count" id="docPillCntXls">0</span></button>
+                        <button class="pill-btn" onclick="setDocTypeFilter('other', this)">📦 Other <span class="doc-pill-count" id="docPillCntOther">0</span></button>
+                    </div>
+
+                    <div class="doc-view-toggle" role="group" aria-label="Document view mode">
+                        <button type="button" class="doc-vt-btn active" id="docViewBtnGrid" onclick="setDocViewMode('grid', this)" title="Cards Grid View">
+                            <i data-lucide="layout-grid" width="13" height="13"></i> Grid
+                        </button>
+                        <button type="button" class="doc-vt-btn" id="docViewBtnList" onclick="setDocViewMode('list', this)" title="Table List View">
+                            <i data-lucide="list" width="13" height="13"></i> List
+                        </button>
+                        <button type="button" class="doc-vt-btn" id="docViewBtnBoth" onclick="setDocViewMode('both', this)" title="Grid aur List dono">
+                            Dono
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3752,7 +3920,7 @@
             </div>
 
             <!-- Documents Table (list view) -->
-            <div class="table-responsive" style="margin-top: 16px;">
+            <div id="docTableWrap" class="table-responsive" style="margin-top: 14px; display: none;">
                 <table class="data-table" id="docTable">
                     <thead>
                         <tr>
@@ -7033,7 +7201,7 @@
         </div>
     </div>
 
-    <!-- Add / Edit Transaction Modal -->
+    <!-- Add / Edit Transaction Modal (Compact Single-Screen Layout) -->
     <div class="modal-overlay" id="transModal">
         <div class="modal trans-modal-card" onclick="event.stopPropagation()">
             <!-- Modal Header -->
@@ -7042,221 +7210,147 @@
                     <div class="trans-header-icon-box" id="transHeaderIconBox">
                         <i data-lucide="receipt"></i>
                     </div>
-                    <div>
+                    <div style="min-width: 0;">
                         <div class="trans-header-title-row">
                             <h2 id="transModalTitle">Nayi Entry</h2>
                             <span class="trans-header-badge" id="transHeaderBadge">Khata Register</span>
                         </div>
-                        <p class="trans-modal-sub" id="transModalSubtitle">Apne khate me aamadni, kharcha, transfer ya
-                            udhaari ka hisaab jodein</p>
+                        <p class="trans-modal-sub" id="transModalSubtitle">Apne khate me aamadni, kharcha, transfer ya udhaari ka hisaab jodein</p>
                     </div>
                 </div>
-                <button class="modal-close" onclick="closeModal('transModal')" title="Band karein (Esc)"><i
-                        data-lucide="x"></i></button>
+                <button class="modal-close" onclick="closeModal('transModal')" title="Band karein (Esc)"><i data-lucide="x"></i></button>
             </div>
 
             <div class="modal-body trans-modal-body">
-                <!-- 1. Transaction Type Selector Tabs -->
-                <div class="trans-type-section">
-                    <div class="trans-field-section-title">
-                        <i data-lucide="layers"></i>
-                        <span>1. Len-Den Ki Kism (Select Transaction Type)</span>
-                        <span class="trans-step-pill">Kadam 1</span>
-                    </div>
-                    <div class="trans-type-tabs">
-                        <button type="button" class="type-tab" data-type="Income" onclick="setTransType('Income', this)"
-                            title="Khate me kamai ya aamadni jama karna">
-                            <div class="tt-icon-wrap"><i data-lucide="trending-up"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Aamadni (Income)</span>
-                                <span class="tt-hint">Paisa Aaya 🔺 (+Cr)</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab active expense" data-type="Expense"
-                            onclick="setTransType('Expense', this)" title="Khate se kharcha ya bhugtan karna">
-                            <div class="tt-icon-wrap"><i data-lucide="trending-down"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Kharcha (Expense)</span>
-                                <span class="tt-hint">Paisa Gaya 🔻 (-Dr)</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab" data-type="Transfer"
-                            onclick="setTransType('Transfer', this)"
-                            title="Ek bank/cash khate se dusre khate me bhejna">
-                            <div class="tt-icon-wrap"><i data-lucide="arrow-left-right"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Transfer</span>
-                                <span class="tt-hint">Adla-Badli 🔄 (Self)</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab" data-type="Loan Given"
-                            onclick="setTransType('Loan Given', this)" title="Kisi vyakti ya grahak ko udhaar dena">
-                            <div class="tt-icon-wrap"><i data-lucide="hand-coins"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Udhaar Diya</span>
-                                <span class="tt-hint">Loan Given 📤</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab" data-type="Loan Received"
-                            onclick="setTransType('Loan Received', this)" title="Kisi vyakti ya bank se udhaar lena">
-                            <div class="tt-icon-wrap"><i data-lucide="hand-helping"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Udhaar Liya</span>
-                                <span class="tt-hint">Loan Taken 📥</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab" data-type="Loan Repay"
-                            onclick="setTransType('Loan Repay', this)"
-                            title="Purane karz ka bhugtan wapas chukta karna">
-                            <div class="tt-icon-wrap"><i data-lucide="rotate-ccw"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Wapas Kiya</span>
-                                <span class="tt-hint">Karz Chukta 📤</span>
-                            </div>
-                        </button>
-                        <button type="button" class="type-tab" data-type="Loan Recovery"
-                            onclick="setTransType('Loan Recovery', this)" title="Diye gaye udhaar ka paisa wapas milna">
-                            <div class="tt-icon-wrap"><i data-lucide="arrow-down-left"></i></div>
-                            <div class="tt-text-wrap">
-                                <span class="tt-main">Wapas Mila</span>
-                                <span class="tt-hint">Udhaar Wapsi 📥</span>
-                            </div>
-                        </button>
-                    </div>
+                <!-- 1. Single-Line 7-Tab Selector -->
+                <div class="trans-type-tabs">
+                    <button type="button" class="type-tab" data-type="Income" onclick="setTransType('Income', this)" title="Khate me kamai ya aamadni jama karna">
+                        <div class="tt-icon-wrap"><i data-lucide="trending-up"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Aamadni</span>
+                            <span class="tt-hint">Paisa Aaya +Cr</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab active expense" data-type="Expense" onclick="setTransType('Expense', this)" title="Khate se kharcha ya bhugtan karna">
+                        <div class="tt-icon-wrap"><i data-lucide="trending-down"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Kharcha</span>
+                            <span class="tt-hint">Paisa Gaya -Dr</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab" data-type="Transfer" onclick="setTransType('Transfer', this)" title="Ek bank/cash khate se dusre khate me bhejna">
+                        <div class="tt-icon-wrap"><i data-lucide="arrow-left-right"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Transfer</span>
+                            <span class="tt-hint">Adla-Badli (Self)</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab" data-type="Loan Given" onclick="setTransType('Loan Given', this)" title="Kisi vyakti ya grahak ko udhaar dena">
+                        <div class="tt-icon-wrap"><i data-lucide="hand-coins"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Udhaar Diya</span>
+                            <span class="tt-hint">Loan Given 📤</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab" data-type="Loan Received" onclick="setTransType('Loan Received', this)" title="Kisi vyakti ya bank se udhaar lena">
+                        <div class="tt-icon-wrap"><i data-lucide="hand-helping"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Udhaar Liya</span>
+                            <span class="tt-hint">Loan Taken 📥</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab" data-type="Loan Repay" onclick="setTransType('Loan Repay', this)" title="Purane karz ka bhugtan wapas chukta karna">
+                        <div class="tt-icon-wrap"><i data-lucide="rotate-ccw"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Wapas Kiya</span>
+                            <span class="tt-hint">Karz Chukta</span>
+                        </div>
+                    </button>
+                    <button type="button" class="type-tab" data-type="Loan Recovery" onclick="setTransType('Loan Recovery', this)" title="Diye gaye udhaar ka paisa wapas milna">
+                        <div class="tt-icon-wrap"><i data-lucide="arrow-down-left"></i></div>
+                        <div class="tt-text-wrap">
+                            <span class="tt-main">Wapas Mila</span>
+                            <span class="tt-hint">Udhaar Wapsi</span>
+                        </div>
+                    </button>
                 </div>
 
                 <input type="hidden" id="transId">
                 <input type="hidden" id="transType" value="Expense">
 
-                <!-- 2. Main Form Fields Container -->
-                <div class="trans-form-card">
-                    <div class="trans-field-section-title">
-                        <i data-lucide="edit-3"></i>
-                        <span>2. Len-Den Vivran (Transaction Details)</span>
-                        <span class="trans-step-pill">Kadam 2</span>
+                <!-- 2. Smart 12-Col Compact Form Grid -->
+                <div class="trans-form-grid" id="transFormGrid">
+                    <!-- Tarikh -->
+                    <div class="form-group tcol-3" id="colTransDate">
+                        <label for="transDate"><i data-lucide="calendar"></i> Tarikh (Date) <span class="req">*</span></label>
+                        <input type="date" id="transDate" class="form-control" title="Transaction jis din hua tha">
                     </div>
 
-                    <div class="form-grid trans-form-grid">
-                        <!-- Tarikh -->
-                        <div class="form-group">
-                            <label for="transDate">
-                                <i data-lucide="calendar"></i> Tarikh (Date) <span class="req">*</span>
-                            </label>
-                            <input type="date" id="transDate" class="form-control" title="Transaction jis din hua tha">
-                            <span class="field-help-hint">📅 Jis din len-den hua (Default: Aaj ki date)</span>
+                    <!-- Amount -->
+                    <div class="form-group tcol-4" id="colTransAmount">
+                        <label for="transAmount"><i data-lucide="indian-rupee"></i> Kul Rakam (Amount) <span class="req">*</span></label>
+                        <div class="trans-amount-input-box">
+                            <span class="trans-currency-symbol">₹</span>
+                            <input type="number" id="transAmount" class="form-control font-bold trans-amount-input"
+                                placeholder="0.00" step="0.01" min="0" oninput="updateTransFlowHelper()"
+                                title="Kul kitne rupaye ka transaction hua">
                         </div>
+                    </div>
 
-                        <!-- Amount -->
-                        <div class="form-group">
-                            <label for="transAmount">
-                                <i data-lucide="indian-rupee"></i> Kul Rakam (Amount) <span class="req">*</span>
-                            </label>
-                            <div class="trans-amount-input-box">
-                                <span class="trans-currency-symbol">₹</span>
-                                <input type="number" id="transAmount" class="form-control font-bold trans-amount-input"
-                                    placeholder="0.00" step="0.01" min="0" oninput="updateTransFlowHelper()"
-                                    title="Kul kitne rupaye ka transaction hua">
-                            </div>
-                            <span class="field-help-hint" id="transAmountHint">💰 Kul kitne rupaye ka len-den hua (Kewal
-                                sankhya dalein)</span>
-                        </div>
+                    <!-- Primary Account (From / Deposit) -->
+                    <div class="form-group tcol-5" id="transFromAccGroup">
+                        <label id="transAccountLabel" for="transAccount"><i data-lucide="wallet"></i> Khata (Account) <span class="req">*</span></label>
+                        <select id="transAccount" class="form-control" onchange="onTransAccountChanged()"></select>
+                    </div>
 
-                        <!-- Primary Account (From / Deposit) -->
-                        <div class="form-group" id="transFromAccGroup">
-                            <label id="transAccountLabel" for="transAccount" style="font-weight: 700;">
-                                <i data-lucide="wallet"></i> Kis Khate Se Kharcha Hua <span class="req">*</span>
-                            </label>
-                            <select id="transAccount" class="form-control" onchange="onTransAccountChanged()"></select>
-                            <span class="field-help-hint" id="transAccountHelper">🏦 Is Bank / Cash khate ka live
-                                balance badlega</span>
-                        </div>
+                    <!-- Destination Account (Transfer Only) -->
+                    <div class="form-group tcol-3" id="toAccountGroup" style="display: none;">
+                        <label id="transToAccountLabel" for="transToAccount"><i data-lucide="arrow-down-to-dot"></i> Jama Khata (To) <span class="req">*</span></label>
+                        <select id="transToAccount" class="form-control" onchange="onTransToAccountChanged()"></select>
+                    </div>
 
-                        <!-- Destination Account (Transfer Only) -->
-                        <div class="form-group" id="toAccountGroup" style="display: none;">
-                            <label id="transToAccountLabel" for="transToAccount" style="font-weight: 700;">
-                                <i data-lucide="arrow-down-to-dot"></i> Kahan Paisa Jama Hoga <span class="req">*</span>
-                            </label>
-                            <select id="transToAccount" class="form-control"
-                                onchange="onTransToAccountChanged()"></select>
-                            <span class="field-help-hint" id="transToAccountHelper">📥 Paisa transfer hokar is khate me
-                                credit hoga</span>
-                        </div>
+                    <!-- Category -->
+                    <div class="form-group tcol-4" id="categoryGroup">
+                        <label for="transCategory"><i data-lucide="tag"></i> Category (Mad / Shreni)</label>
+                        <select id="transCategory" class="form-control" onchange="updateTransFlowHelper()">
+                            <option value="">-- Select Category --</option>
+                        </select>
+                    </div>
 
-                        <!-- Dynamic Live Flow Helper Card -->
-                        <div class="form-group full-span trans-flow-box-wrap" id="transFlowHelperBox"
-                            style="display: none;">
-                            <div id="transFlowHelperText"></div>
-                        </div>
+                    <!-- Party / Person -->
+                    <div class="form-group tcol-4" id="partyGroup">
+                        <label for="transParty"><i data-lucide="user"></i> Party / Vyakti (Grahak)</label>
+                        <select id="transParty" class="form-control searchable-select" data-searchable="true"
+                            data-placeholder="🔍 Party / Grahak khojein..." onchange="updateTransFlowHelper()">
+                            <option value="">-- Koi Vyakti Nahi (Self) --</option>
+                        </select>
+                    </div>
 
-                        <!-- Category -->
-                        <div class="form-group" id="categoryGroup">
-                            <label for="transCategory">
-                                <i data-lucide="tag"></i> Category (Mad / Shreni)
-                            </label>
-                            <select id="transCategory" class="form-control" onchange="updateTransFlowHelper()">
-                                <option value="">-- Select Category --</option>
-                            </select>
-                            <span class="field-help-hint">🏷️ Kharcha ya aamadni ki mad (Jaise: Dukan Bhada, Bijli,
-                                Sale)</span>
-                        </div>
+                    <!-- Description -->
+                    <div class="form-group tcol-4" id="colTransDesc">
+                        <label for="transDesc"><i data-lucide="file-text"></i> Vivran / Remark (Wajah)</label>
+                        <input type="text" id="transDesc" class="form-control" placeholder="Entry kis wajah se hui (e.g. Udhaar wapsi, Bijli bill)">
+                    </div>
 
-                        <!-- Party / Person -->
-                        <div class="form-group" id="partyGroup">
-                            <label for="transParty">
-                                <i data-lucide="user"></i> Party / Vyakti (Grahak / Vyapari)
-                            </label>
-                            <select id="transParty" class="form-control searchable-select" data-searchable="true"
-                                data-placeholder="🔍 Party / Grahak khojein..." onchange="updateTransFlowHelper()">
-                                <option value="">-- Koi Vyakti Nahi (Self) --</option>
-                            </select>
-                            <span class="field-help-hint" id="transPartyHelper">👤 Kiske sath len-den hua? Unke ledger
-                                me darj hoga</span>
-                        </div>
+                    <!-- Reference -->
+                    <div class="form-group tcol-6" id="colTransRef">
+                        <label for="transRef"><i data-lucide="hash"></i> Ref / UTR / Cheque No.</label>
+                        <input type="text" id="transRef" class="form-control" placeholder="UPI Ref, UTR, Cheque No ya Bill No">
+                    </div>
 
-                        <!-- Description (Full Span) -->
-                        <div class="form-group full-span">
-                            <label for="transDesc">
-                                <i data-lucide="file-text"></i> Vivran / Remark (Wajah)
-                            </label>
-                            <input type="text" id="transDesc" class="form-control"
-                                placeholder="Yeh entry kis wajah se hui? (e.g. Ramesh ko cash payment diya, Dukan bijli bill bhara)">
-                            <span class="field-help-hint">📝 Entry ka karan likhein taaki aage chal kar hisaab yaad
-                                rahe</span>
-                        </div>
-
-                        <!-- Reference -->
-                        <div class="form-group">
-                            <label for="transRef">
-                                <i data-lucide="hash"></i> Reference / UTR / Cheque No.
-                            </label>
-                            <input type="text" id="transRef" class="form-control"
-                                placeholder="UPI Ref, UTR, Cheque No ya Bill No">
-                            <span class="field-help-hint">🔢 Bank statement match aur audit ke liye reference
-                                number</span>
-                        </div>
-
-                        <!-- Tags -->
-                        <div class="form-group">
-                            <label for="transTags">
-                                <i data-lucide="bookmark"></i> Search Tags
-                            </label>
-                            <input type="text" id="transTags" class="form-control"
-                                placeholder="e.g. urgent, dukan, family, monthly">
-                            <span class="field-help-hint">🔖 Filter karne ke liye comma lagakar tags dalein</span>
-                        </div>
+                    <!-- Tags -->
+                    <div class="form-group tcol-6" id="colTransTags">
+                        <label for="transTags"><i data-lucide="bookmark"></i> Search Tags</label>
+                        <input type="text" id="transTags" class="form-control" placeholder="e.g. urgent, dukan, family, monthly">
                     </div>
                 </div>
 
-                <!-- 3. Universal Document Uploader (Multiple Docs + Rename) -->
-                <div class="trans-uploader-card">
-                    <div class="trans-field-section-title">
-                        <i data-lucide="paperclip"></i>
-                        <span>3. Transaction Slip / Voucher Attachment (Optional)</span>
-                        <span class="trans-step-pill optional">Optional</span>
-                    </div>
-                    <span class="field-help-hint" style="margin-bottom: 8px;">📎 Bill, cash receipt, bank slip ya parchi
-                        ki photo attach karein (Safe record ke liye)</span>
-                    <div id="transDocUploader" class="universal-doc-uploader-box" data-entity-type="transaction"></div>
+                <!-- 3. Compact Inline Document Uploader -->
+                <div id="transDocUploader" class="universal-doc-uploader-box trans-uploader-compact" data-entity-type="transaction"></div>
+
+                <!-- 4. Dynamic Live Flow Helper Strip -->
+                <div class="trans-flow-box-wrap" id="transFlowHelperBox" style="display: none;">
+                    <div id="transFlowHelperText"></div>
                 </div>
             </div>
 
@@ -7264,16 +7358,13 @@
             <div class="modal-footer trans-modal-footer">
                 <div class="trans-footer-info">
                     <i data-lucide="shield-check"></i>
-                    <span><b>Realtime Sync:</b> Save karte hi sabhi account balance, cashbook aur passbook live update
-                        ho jayenge.</span>
+                    <span><b>Realtime Sync:</b> Save karte hi sabhi account balance, cashbook aur passbook live update ho jayenge.</span>
                 </div>
                 <div class="trans-footer-buttons">
-                    <button type="button" class="btn-ghost trans-btn-cancel" onclick="closeModal('transModal')"
-                        title="Bina save kiye band karein">
-                        <i data-lucide="x"></i> Radd Karein (Cancel)
+                    <button type="button" class="btn-ghost trans-btn-cancel" onclick="closeModal('transModal')" title="Bina save kiye band karein">
+                        <i data-lucide="x"></i> Radd Karein
                     </button>
-                    <button type="button" class="btn-primary trans-btn-save" onclick="saveTransaction()"
-                        title="Entry khate me darj karein">
+                    <button type="button" class="btn-primary trans-btn-save" onclick="saveTransaction()" title="Entry khate me darj karein">
                         <i data-lucide="save"></i> Entry Save Karein
                     </button>
                 </div>
@@ -8257,34 +8348,35 @@
                 <div class="c360-header-left">
                     <button class="btn-ghost btn-sm c360-back-btn" id="c360BackBtn" onclick="closeCustomer360Modal()"
                         title="Pichhli screen par wapas jayein">
-                        <i data-lucide="arrow-left"></i> <span>Wapas (Back)</span>
+                        <i data-lucide="arrow-left"></i> <span>Wapas</span>
                     </button>
                     <div class="c360-title-wrap">
                         <h2 id="c360CustomerName">Grahak Ka Naam</h2>
                         <div class="c360-badges-wrap">
                             <span class="badge badge-aadhaar-c360" id="c360AadhaarBadge">🪪 Aadhaar: -</span>
-                            <span class="badge badge-family-c360" id="c360FamilyBadge" style="display:none;">👨‍👩‍👧‍👦
-                                Parivar</span>
+                            <span class="badge badge-family-c360" id="c360FamilyBadge" style="display:none;">👨‍👩‍👧‍👦 Parivar</span>
                             <span class="badge" id="c360KhataModeBadge">Individual</span>
                         </div>
                     </div>
                 </div>
                 <div class="c360-header-actions">
-                    <button class="btn-primary btn-sm" onclick="printCustomerDossier('a4')"
-                        title="Customer ka poora A4 statement print karein">
-                        <i data-lucide="printer"></i> <span>Print A4</span>
+                    <button class="btn-secondary btn-sm" onclick="c360EditProfile()" title="Grahak profile / KYC edit karein">
+                        <i data-lucide="edit-3"></i> <span>Edit</span>
                     </button>
-                    <button class="btn-secondary btn-sm" onclick="printCustomerDossier('a4_half')"
-                        title="1/2 Page (A4/2) statement print karein">
-                        <i data-lucide="scissors"></i> <span>Print A4/2</span>
+                    <button class="btn-secondary btn-sm" onclick="c360QuickBill()" title="Is grahak ke liye naya bill banayein">
+                        <i data-lucide="receipt"></i> <span>+ Bill</span>
                     </button>
-                    <button class="btn-warning btn-sm" onclick="c360QuickKhata()"
-                        title="Is customer ke khate me jama ya udhaar karein">
+                    <button class="btn-warning btn-sm" onclick="c360QuickKhata()" title="Khate me jama ya udhaar karein">
                         <i data-lucide="book-open"></i> <span>+ Khata</span>
                     </button>
-                    <button class="btn-success btn-sm" onclick="c360QuickBC()"
-                        title="Is customer ke liye BC banking counter kholein">
+                    <button class="btn-success btn-sm" onclick="c360QuickBC()" title="BC banking counter kholein">
                         <i data-lucide="landmark"></i> <span>+ BC Txn</span>
+                    </button>
+                    <button class="btn-primary btn-sm" onclick="printCustomerDossier('a4')" title="A4 statement print karein">
+                        <i data-lucide="printer"></i> <span>A4</span>
+                    </button>
+                    <button class="btn-secondary btn-sm" onclick="printCustomerDossier('a4_half')" title="1/2 Page statement print karein">
+                        <i data-lucide="scissors"></i> <span>A4/2</span>
                     </button>
                     <button class="modal-close" onclick="closeCustomer360Modal()"><i data-lucide="x"></i></button>
                 </div>
@@ -8292,7 +8384,7 @@
 
             <!-- Modal Body -->
             <div class="modal-body c360-body" id="printableC360Dossier">
-                <!-- Customer KYC & Live Balance Hero Card -->
+                <!-- Compact Customer KYC & Live Balance Hero Card -->
                 <div class="c360-hero-card">
                     <div class="c360-avatar-box">
                         <div class="c360-avatar" id="c360Avatar">G</div>
@@ -8301,33 +8393,38 @@
                         <div class="c360-hero-row-top">
                             <span class="c360-hero-name" id="c360HeroName">-</span>
                             <span class="c360-cust-id" id="c360CustIdBadge">ID: #0</span>
+                            <button type="button" class="c360-hero-edit-btn" onclick="c360EditProfile()" title="KYC aur detail badlein">
+                                <i data-lucide="pencil" width="11" height="11"></i> Edit KYC
+                            </button>
                         </div>
                         <div class="c360-hero-grid">
                             <div class="c360-hero-item">
                                 <span class="chi-label"><i data-lucide="phone"></i> Mobile:</span>
                                 <b class="chi-val" id="c360PhoneVal">-</b>
                                 <button class="btn-copy-mini" id="c360CopyPhoneBtn" tabindex="-1"
-                                    onclick="c360CopyPhone(event)" title="Mobile number copy karein"><i
-                                        data-lucide="copy" width="12" height="12"></i></button>
+                                    onclick="c360CopyPhone(event)" title="Mobile copy karein"><i data-lucide="copy" width="12" height="12"></i></button>
                                 <button class="btn-icon-mini" id="c360WhatsAppDirectBtn" tabindex="-1"
-                                    onclick="c360ShareWhatsApp()" title="WhatsApp par message bhejein"><i
-                                        data-lucide="message-circle"></i></button>
+                                    onclick="c360ShareWhatsApp()" title="WhatsApp reminder bhejein"><i data-lucide="message-circle" width="12" height="12"></i></button>
                             </div>
                             <div class="c360-hero-item">
-                                <span class="chi-label"><i data-lucide="shield-check"></i> Aadhaar (12-Digit):</span>
+                                <span class="chi-label"><i data-lucide="shield-check"></i> Aadhaar:</span>
                                 <b class="chi-val c360-aadhaar-display" id="c360AadhaarVal">-</b>
                             </div>
                             <div class="c360-hero-item">
-                                <span class="chi-label"><i data-lucide="cake"></i> Date of Birth:</span>
+                                <span class="chi-label"><i data-lucide="cake"></i> DOB:</span>
                                 <span class="chi-val" id="c360DobVal">-</span>
                             </div>
                             <div class="c360-hero-item">
-                                <span class="chi-label"><i data-lucide="map-pin"></i> Pata (Address):</span>
+                                <span class="chi-label"><i data-lucide="map-pin"></i> Pata:</span>
                                 <span class="chi-val" id="c360AddressVal">-</span>
                             </div>
                             <div class="c360-hero-item">
-                                <span class="chi-label"><i data-lucide="users"></i> Parivar & Sambandh:</span>
+                                <span class="chi-label"><i data-lucide="users"></i> Parivar:</span>
                                 <span class="chi-val" id="c360FamilyRelVal">-</span>
+                            </div>
+                            <div class="c360-hero-item">
+                                <span class="chi-label"><i data-lucide="tag"></i> Note / Limit:</span>
+                                <span class="chi-val" id="c360ExtraVal">-</span>
                             </div>
                         </div>
                     </div>
@@ -8340,12 +8437,12 @@
                     </div>
                 </div>
 
-                <!-- 4 KPI Summary Metric Tiles -->
+                <!-- 5 Compact KPI Summary Metric Tiles -->
                 <div class="c360-kpi-grid">
                     <div class="c360-kpi-card kpi-khata" onclick="switchC360Tab('khata')">
                         <div class="ckc-icon"><i data-lucide="book-open"></i></div>
                         <div class="ckc-content">
-                            <div class="ckc-label">Khatabook Hisaab</div>
+                            <div class="ckc-label">Khatabook</div>
                             <div class="ckc-val" id="c360KpiKhataVal">0 Entries</div>
                             <div class="ckc-sub" id="c360KpiKhataSub">Udhaar: ₹0 • Jama: ₹0</div>
                         </div>
@@ -8353,25 +8450,49 @@
                     <div class="c360-kpi-card kpi-bc" onclick="switchC360Tab('bc')">
                         <div class="ckc-icon"><i data-lucide="landmark"></i></div>
                         <div class="ckc-content">
-                            <div class="ckc-label">BC Banking Counter</div>
-                            <div class="ckc-val" id="c360KpiBCVal">0 Transactions</div>
+                            <div class="ckc-label">BC Banking</div>
+                            <div class="ckc-val" id="c360KpiBCVal">0 Txns</div>
                             <div class="ckc-sub" id="c360KpiBCSub">Kul Len-Den: ₹0</div>
                         </div>
                     </div>
                     <div class="c360-kpi-card kpi-invoice" onclick="switchC360Tab('invoices')">
                         <div class="ckc-icon"><i data-lucide="receipt"></i></div>
                         <div class="ckc-content">
-                            <div class="ckc-label">Bills & Invoices</div>
-                            <div class="ckc-val" id="c360KpiInvoiceVal">0 Invoices</div>
-                            <div class="ckc-sub" id="c360KpiInvoiceSub">Billed: ₹0 • Due: ₹0</div>
+                            <div class="ckc-label">Bills &amp; Invoices</div>
+                            <div class="ckc-val" id="c360KpiInvoiceVal">0 Bills</div>
+                            <div class="ckc-sub" id="c360KpiInvoiceSub">Chukta (₹0 Baki)</div>
+                        </div>
+                    </div>
+                    <div class="c360-kpi-card kpi-billpay" onclick="switchC360Tab('billpay')">
+                        <div class="ckc-icon"><i data-lucide="zap"></i></div>
+                        <div class="ckc-content">
+                            <div class="ckc-label">Bill &amp; EMI</div>
+                            <div class="ckc-val" id="c360KpiBPVal">0 Bills</div>
+                            <div class="ckc-sub" id="c360KpiBPSub">Jama: ₹0</div>
+                        </div>
+                    </div>
+                    <div class="c360-kpi-card kpi-ucl" onclick="switchC360Tab('ucl')">
+                        <div class="ckc-icon"><i data-lucide="fingerprint"></i></div>
+                        <div class="ckc-content">
+                            <div class="ckc-label">Aadhaar UCL</div>
+                            <div class="ckc-val" id="c360KpiUCLVal">0 UCL</div>
+                            <div class="ckc-sub" id="c360KpiUCLSub">Fee: ₹0</div>
+                        </div>
+                    </div>
+                    <div class="c360-kpi-card kpi-csc" onclick="switchC360Tab('csc')">
+                        <div class="ckc-icon"><i data-lucide="clipboard-check"></i></div>
+                        <div class="ckc-content">
+                            <div class="ckc-label">CSC Forms</div>
+                            <div class="ckc-val" id="c360KpiCSCVal">0 Forms</div>
+                            <div class="ckc-sub" id="c360KpiCSCSub">Fee: ₹0 • Due: ₹0</div>
                         </div>
                     </div>
                     <div class="c360-kpi-card kpi-family" onclick="switchC360Tab('family')">
                         <div class="ckc-icon"><i data-lucide="users"></i></div>
                         <div class="ckc-content">
-                            <div class="ckc-label">Parivar (Family)</div>
+                            <div class="ckc-label">Parivar</div>
                             <div class="ckc-val" id="c360KpiFamilyVal">1 Sadasya</div>
-                            <div class="ckc-sub" id="c360KpiFamilySub">Head & Members</div>
+                            <div class="ckc-sub" id="c360KpiFamilySub">Single Account</div>
                         </div>
                     </div>
                 </div>
@@ -8379,77 +8500,137 @@
                 <!-- Profile Sub-Navigation Tabs -->
                 <div class="c360-tabs-nav">
                     <button class="c360-tab-btn active" id="c360TabKhata" onclick="switchC360Tab('khata')">
-                        <i data-lucide="book-open"></i> <span>Khatabook Ledger (<b id="c360TabCountKhata">0</b>)</span>
+                        <i data-lucide="book-open"></i> <span>Khatabook (<b id="c360TabCountKhata">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabBC" onclick="switchC360Tab('bc')">
                         <i data-lucide="landmark"></i> <span>BC Banking (<b id="c360TabCountBC">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabInvoices" onclick="switchC360Tab('invoices')">
-                        <i data-lucide="receipt"></i> <span>Bills & Invoices (<b id="c360TabCountInvoices">0</b>)</span>
+                        <i data-lucide="receipt"></i> <span>Bills (<b id="c360TabCountInvoices">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabFamily" onclick="switchC360Tab('family')">
-                        <i data-lucide="users"></i> <span>Parivar Sadasya (<b id="c360TabCountFamily">0</b>)</span>
+                        <i data-lucide="users"></i> <span>Parivar (<b id="c360TabCountFamily">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabDocs" onclick="switchC360Tab('docs')">
                         <i data-lucide="folder-open"></i> <span>Documents (<b id="c360TabCountDocs">0</b>)</span>
+                    </button>
+                    <button class="c360-tab-btn" id="c360TabBillPay" onclick="switchC360Tab('billpay')">
+                        <i data-lucide="zap"></i> <span>Bill &amp; EMI (<b id="c360TabCountBillPay">0</b>)</span>
+                    </button>
+                    <button class="c360-tab-btn" id="c360TabUCL" onclick="switchC360Tab('ucl')">
+                        <i data-lucide="fingerprint"></i> <span>Aadhaar UCL (<b id="c360TabCountUCL">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabCSC" onclick="switchC360Tab('csc')">
                         <i data-lucide="clipboard-check"></i> <span>CSC Forms (<b id="c360TabCountCSC">0</b>)</span>
                     </button>
                     <button class="c360-tab-btn" id="c360TabAudit" onclick="switchC360Tab('audit')">
-                        <i data-lucide="history"></i> <span>Profile History (<b id="c360TabCountAudit">0</b>)</span>
+                        <i data-lucide="history"></i> <span>History (<b id="c360TabCountAudit">0</b>)</span>
                     </button>
                 </div>
 
                 <!-- TAB PANELS -->
                 <!-- 1. Khatabook Ledger Panel -->
                 <div class="c360-panel active" id="c360PanelKhata">
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360KhataSearch" class="c360-tab-search"
+                                placeholder="🔍 SN, vivran ya ref khojein..." oninput="filterC360Khata()">
+                            <select id="c360KhataFilter" class="c360-tab-select" onchange="filterC360Khata()">
+                                <option value="">Sabhi Entries</option>
+                                <option value="Gave">⬅️ Maine Diya (Udhaar)</option>
+                                <option value="Got">➡️ Mujhe Mila (Jama)</option>
+                                <option value="BC-Flow">🔄 BC Flow</option>
+                                <option value="Settlement">⚖️ Advance Settle</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360KhataCountPill">0 entries</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-danger btn-sm" onclick="c360QuickKhataType('Gave')" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                − Maine Diya
+                            </button>
+                            <button type="button" class="btn-success btn-sm" onclick="c360QuickKhataType('Got')" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                + Mujhe Mila
+                            </button>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table class="data-table c360-table" id="c360KhataTable">
                             <thead>
                                 <tr>
                                     <th style="width: 95px; text-align: center;">Universal SN</th>
-                                    <th>Tarikh & Samay</th>
+                                    <th>Tarikh &amp; Samay</th>
                                     <th>Prakar (Type)</th>
                                     <th>Rashi (Amount)</th>
-                                    <th>Bakiya (Running Balance)</th>
+                                    <th>Bakiya (Running)</th>
                                     <th>Vivran / Notes</th>
-                                    <th>Mode / Ref</th>
-                                    <th style="text-align: right;">Slip / Print</th>
+                                    <th>Mode</th>
+                                    <th style="text-align: right;">Slip</th>
                                 </tr>
                             </thead>
-                            <tbody id="c360KhataTableBody">
-                                <!-- Dynamic Rows -->
-                            </tbody>
+                            <tbody id="c360KhataTableBody"></tbody>
                         </table>
                     </div>
                 </div>
 
                 <!-- 2. BC Banking Panel -->
                 <div class="c360-panel" id="c360PanelBC" style="display: none;">
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360BCSearch" class="c360-tab-search"
+                                placeholder="🔍 RRN, Bank ya Service khojein..." oninput="filterC360BC()">
+                            <select id="c360BCFilter" class="c360-tab-select" onchange="filterC360BC()">
+                                <option value="">Sabhi BC Services</option>
+                                <option value="withdrawal">⬅️ Cash Withdrawal (Nikasi)</option>
+                                <option value="deposit">➡️ Cash Deposit (Jama)</option>
+                                <option value="transfer">🔄 Fund Transfer / AEPS</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360BCCountPill">0 txns</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-success btn-sm" onclick="c360QuickBC()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                + Naya BC Txn
+                            </button>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table class="data-table c360-table" id="c360BCTable">
                             <thead>
                                 <tr>
                                     <th style="width: 95px; text-align: center;">Universal SN</th>
-                                    <th>Date & Time</th>
+                                    <th>Date &amp; Time</th>
                                     <th>BC Service</th>
                                     <th>Bank / A/c</th>
                                     <th>RRN / UTR</th>
                                     <th>Amount (₹)</th>
                                     <th>Status</th>
-                                    <th style="text-align: right;">Slip / Print</th>
+                                    <th style="text-align: right;">Slip</th>
                                 </tr>
                             </thead>
-                            <tbody id="c360BCTableBody">
-                                <!-- Dynamic Rows -->
-                            </tbody>
+                            <tbody id="c360BCTableBody"></tbody>
                         </table>
                     </div>
                 </div>
 
                 <!-- 3. Invoices & Bills Panel -->
                 <div class="c360-panel" id="c360PanelInvoices" style="display: none;">
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360InvSearch" class="c360-tab-search"
+                                placeholder="🔍 Invoice # ya SN khojein..." oninput="filterC360Invoices()">
+                            <select id="c360InvFilter" class="c360-tab-select" onchange="filterC360Invoices()">
+                                <option value="">Sabhi Bills</option>
+                                <option value="Paid">✅ Paid</option>
+                                <option value="Partial">🟠 Partial</option>
+                                <option value="Unpaid">🔴 Due / Unpaid</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360InvCountPill">0 bills</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-primary btn-sm" onclick="c360QuickBill()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                + Naya Bill Banayein
+                            </button>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table class="data-table c360-table" id="c360InvoicesTable">
                             <thead>
@@ -8458,55 +8639,151 @@
                                     <th>Invoice #</th>
                                     <th>Date</th>
                                     <th>Items</th>
-                                    <th>Total Amount</th>
-                                    <th>Paid</th>
+                                    <th>Total</th>
+                                    <th>Paid / Due</th>
                                     <th>Status</th>
-                                    <th style="text-align: right;">Bill / Print</th>
+                                    <th style="text-align: right;">Bill</th>
                                 </tr>
                             </thead>
-                            <tbody id="c360InvoicesTableBody">
-                                <!-- Dynamic Rows -->
-                            </tbody>
+                            <tbody id="c360InvoicesTableBody"></tbody>
                         </table>
                     </div>
                 </div>
 
                 <!-- 4. Family Members Panel -->
                 <div class="c360-panel" id="c360PanelFamily" style="display: none;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
-                        <div
-                            style="font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
-                            <i data-lucide="users" style="width: 16px; height: 16px; color: #10b981;"></i>
-                            <span>👨‍👩‍👧‍👦 Parivar ke sabhi sadasya, unka rishta, khata hisaab aur direct
-                                actions</span>
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <span style="font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                                <i data-lucide="users" style="width: 15px; height: 15px; color: #10b981;"></i>
+                                <span>Parivar ke sadasya, rishta, khata hisaab aur direct profile links</span>
+                            </span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-primary btn-sm" onclick="c360ManageFamily()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                <i data-lucide="user-plus" width="13" height="13"></i> Parivar Manage / Member Jodein
+                            </button>
                         </div>
                     </div>
-                    <div class="c360-family-grid" id="c360FamilyList">
-                        <!-- Dynamic Family Member Cards -->
-                    </div>
+                    <div class="c360-family-grid" id="c360FamilyList"></div>
                 </div>
 
-                <!-- 5. Documents Panel (Aadhaar / PAN / Photo / Agreement) -->
+                <!-- 5. Documents Panel -->
                 <div class="c360-panel" id="c360PanelDocs" style="display: none;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-                        <div style="font-size: 13px; color: var(--text-muted);">🪪 Aadhaar • PAN • Photo • Agreement —
-                            sab yahin</div>
-                        <button class="btn-primary btn-sm" onclick="c360UploadDoc()"><i data-lucide="upload"></i>
-                            Document Upload Karein</button>
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <span style="font-size: 12.5px; color: var(--text-muted);">🪪 Aadhaar • PAN • Photo • Agreement — sab yahin</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button class="btn-primary btn-sm" onclick="c360UploadDoc()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                <i data-lucide="upload" width="13" height="13"></i> Document Upload Karein
+                            </button>
+                        </div>
                     </div>
                     <div id="c360DocsList"></div>
                 </div>
 
+                <!-- 3B. Bill & EMI Payments Panel (BillPayments) -->
+                <div class="c360-panel" id="c360PanelBillPay" style="display: none;">
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360BPSearch" class="c360-tab-search"
+                                placeholder="🔍 Consumer #, Provider, RRN ya SN khojein..." oninput="filterC360BillPay()">
+                            <select id="c360BPFilter" class="c360-tab-select" onchange="filterC360BillPay()">
+                                <option value="">Sabhi Bill / EMI</option>
+                                <option value="Paid">✅ Paid</option>
+                                <option value="Partial">🟠 Partial / Due</option>
+                                <option value="Electricity">⚡ Bijli (Electricity)</option>
+                                <option value="EMI">🏦 Loan EMI</option>
+                                <option value="Recharge">📱 Mobile / DTH</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360BPCountPill">0 bills</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-primary btn-sm" onclick="c360QuickBillPay()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                + Naya Bill / EMI Pay
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table c360-table" id="c360BillPayTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 95px; text-align: center;">Universal SN</th>
+                                    <th>Date</th>
+                                    <th>Category &amp; Provider</th>
+                                    <th>Consumer / Account #</th>
+                                    <th>Bill Amt</th>
+                                    <th>Collected / Due</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="c360BillPayTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 3C. Aadhaar UCL Updates Panel (UCLUpdates) -->
+                <div class="c360-panel" id="c360PanelUCL" style="display: none;">
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360UCLSearch" class="c360-tab-search"
+                                placeholder="🔍 SID, PAC Code, Type ya SN khojein..." oninput="filterC360UCL()">
+                            <select id="c360UCLFilter" class="c360-tab-select" onchange="filterC360UCL()">
+                                <option value="">Sabhi UCL Updates</option>
+                                <option value="Generated">📄 Generated</option>
+                                <option value="Completed">✅ Completed</option>
+                                <option value="Pending">⏳ Pending</option>
+                                <option value="Due">🔴 Balance Due</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360UCLCountPill">0 updates</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button type="button" class="btn-primary btn-sm" onclick="c360QuickUCL()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                + Naya UCL Update
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table c360-table" id="c360UCLTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 95px; text-align: center;">Universal SN</th>
+                                    <th>Date</th>
+                                    <th>Update Type</th>
+                                    <th>SID / URN #</th>
+                                    <th>Aadhaar / PAC</th>
+                                    <th>Fee / Due</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="c360UCLTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- 6. CSC Forms Tracker Panel -->
                 <div class="c360-panel" id="c360PanelCSC" style="display: none;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-                        <div style="font-size: 13px; color: var(--text-muted);">📋 Customer ke Sabhi CSC Forms (PAN,
-                            Aay, Niwas, Ration Card, etc.)</div>
-                        <button class="btn-primary btn-sm" onclick="openNewCSCModalForCurrentCustomer()"><i
-                                data-lucide="plus"></i> Naya CSC Form Apply Karein</button>
+                    <div class="c360-tab-toolbar">
+                        <div class="c360-tab-toolbar-left">
+                            <input type="text" id="c360CSCSearch" class="c360-tab-search"
+                                placeholder="🔍 Service, Ack # ya SN khojein..." oninput="filterC360CSC()">
+                            <select id="c360CSCFilter" class="c360-tab-select" onchange="filterC360CSC()">
+                                <option value="">Sabhi CSC Forms</option>
+                                <option value="Pending">⏳ Pending</option>
+                                <option value="In Progress">🔄 In Progress</option>
+                                <option value="Ready">✅ Ready</option>
+                                <option value="Delivered">📦 Delivered</option>
+                            </select>
+                            <span class="c360-tab-summary-pill" id="c360CSCCountPill">0 forms</span>
+                        </div>
+                        <div class="c360-tab-toolbar-right">
+                            <button class="btn-primary btn-sm" onclick="openNewCSCModalForCurrentCustomer()" style="height:29px; padding:0 10px; font-size:11.5px;">
+                                <i data-lucide="plus" width="13" height="13"></i> Naya CSC Form Apply Karein
+                            </button>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="data-table c360-table" id="c360CSCTable">
@@ -8523,9 +8800,7 @@
                                     <th style="text-align: right;">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="c360CSCTableBody">
-                                <!-- Dynamic Rows -->
-                            </tbody>
+                            <tbody id="c360CSCTableBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -8533,19 +8808,19 @@
                 <!-- 7. Profile History / Audit Trail Panel -->
                 <div class="c360-panel" id="c360PanelAudit" style="display: none;">
                     <div class="c360-audit-wrapper">
-                        <div class="c360-audit-topbar">
-                            <div class="c360-audit-summary-text">
-                                <i data-lucide="shield-check" style="color: #10b981; width: 16px; height: 16px;"></i>
-                                <span>Grahak profile me hue sabhi badlaav (Change Log) ki audit history:</span>
+                        <div class="c360-tab-toolbar">
+                            <div class="c360-tab-toolbar-left">
+                                <i data-lucide="shield-check" style="color: #10b981; width: 15px; height: 15px;"></i>
+                                <span style="font-size: 12.5px; color: var(--text-muted);">Grahak profile me hue sabhi badlaav (Audit History):</span>
                             </div>
-                            <button type="button" class="btn-ghost btn-sm" onclick="reloadC360AuditHistory()"
-                                title="Itihaas Refresh Karein" style="font-size: 12px; padding: 4px 10px;">
-                                <i data-lucide="rotate-ccw" style="width: 13px; height: 13px;"></i> Refresh
-                            </button>
+                            <div class="c360-tab-toolbar-right">
+                                <button type="button" class="btn-ghost btn-sm" onclick="reloadC360AuditHistory()"
+                                    title="Itihaas Refresh Karein" style="height:28px; font-size: 11.5px; padding: 0 10px;">
+                                    <i data-lucide="rotate-ccw" width="12" height="12"></i> Refresh
+                                </button>
+                            </div>
                         </div>
-                        <div id="c360AuditList" class="c360-audit-timeline">
-                            <!-- Timeline cards rendered dynamically -->
-                        </div>
+                        <div id="c360AuditList" class="c360-audit-timeline"></div>
                     </div>
                 </div>
             </div>
@@ -8553,15 +8828,12 @@
             <!-- Modal Footer -->
             <div class="modal-footer c360-footer">
                 <div class="c360-footer-hint">
-                    <i data-lucide="info"></i> <span>Customer ka poora hisaab live SQL Server database se linked
-                        hai.</span>
+                    <i data-lucide="database"></i> <span>Customer ka poora hisaab live SQLite database se linked hai.</span>
                 </div>
                 <div class="c360-footer-actions">
                     <button class="btn-ghost" onclick="closeCustomer360Modal()">Band Karein</button>
-                    <button class="btn-primary" onclick="printCustomerDossier('a4')"><i data-lucide="printer"></i> Print
-                        A4 (Poora Hisaab)</button>
-                    <button class="btn-secondary" onclick="printCustomerDossier('a4_half')"><i
-                            data-lucide="scissors"></i> Print A4/2 (1/2 Page)</button>
+                    <button class="btn-primary" onclick="printCustomerDossier('a4')"><i data-lucide="printer"></i> Print A4</button>
+                    <button class="btn-secondary" onclick="printCustomerDossier('a4_half')"><i data-lucide="scissors"></i> Print A4/2</button>
                 </div>
             </div>
         </div>
@@ -12030,8 +12302,16 @@
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" for="docCategorySelect">Category</label>
                         <select id="docCategorySelect" class="form-control">
-                            <option value="">Koi Category Nahi (Other)</option>
-                            <option value="shop">&#127978; Dukaan Document</option>
+                            <option value="">Koi Category Nahi (General)</option>
+                            <option value="Aadhaar Card">&#129699; Aadhaar Card</option>
+                            <option value="PAN Card">&#128179; PAN Card</option>
+                            <option value="Passport Photo">&#128247; Customer Photo</option>
+                            <option value="UCL Receipt">&#128424; UCL Receipt / Slip</option>
+                            <option value="CSC Certificate">&#128196; CSC Form / Certificate</option>
+                            <option value="Bank Passbook">&#127974; Bank Passbook / Statement</option>
+                            <option value="Bill / Invoice">&#129534; Bill / Invoice Copy</option>
+                            <option value="Agreement">&#128221; Agreement / Affidavit</option>
+                            <option value="shop">&#127978; Dukaan Document (Shop)</option>
                         </select>
                     </div>
                 </div>

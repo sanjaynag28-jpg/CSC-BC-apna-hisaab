@@ -10,7 +10,7 @@ color 0C
 net session >nul 2>&1
 if %errorlevel% neq 0 (
     echo [..] Administrator permission mang rahe hain...
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%comspec%' -ArgumentList @('/k', 'call', ([char]34 + '%~f0' + [char]34)) -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%comspec%' -ArgumentList @('/c', 'call', ([char]34 + '%~f0' + [char]34)) -Verb RunAs"
     exit /b
 )
 
@@ -72,22 +72,24 @@ del /f /q "%TEMP%\cmbc_installer_wizard_sqlite*.ps1" >nul 2>&1
 set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite_%RANDOM%.ps1"
 
 :: ====================================================================
-:: 4. Dynamic Live Engine Fetch (Always 100% Latest from GitHub/CDN)
+:: 4. Dynamic Live Engine Fetch (Multi-Mirror + DoH Network Bypass)
 :: ====================================================================
 echo.
 echo [2/4] Downloading latest AI Setup Engine from GitHub (Live Dynamic)...
 
 set "CACHE_BUSTER=%RANDOM%%RANDOM%"
 
-:: Method 1: PowerShell Multi-Mirror Download with Cache-Buster
+:: Method 1: PowerShell Multi-Mirror Download (TLS 1.2/1.3 + System Proxy)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-  "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls; " ^
+  "try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072 -bor 12288 } catch { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }; " ^
+  "try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials } catch {}; " ^
   "$dst = '%WIZ_SCRIPT%';" ^
   "$cb = '%CACHE_BUSTER%';" ^
   "$urls = @(" ^
   "  ('https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
   "  ('https://fastly.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)," ^
+  "  'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/latest/download/installer_wizard_sqlite.ps1'," ^
   "  ('https://cdn.statically.io/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=' + $cb)" ^
   ");" ^
   "foreach ($u in $urls) {" ^
@@ -102,12 +104,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
   "};" ^
   "exit 1"
 
-:: Method 2: Curl Fallback if PowerShell timed out or was blocked
+:: Method 2: Curl + DNS-over-HTTPS (DoH) Fallback if ISP/DNS blocks GitHub
 if not exist "%WIZ_SCRIPT%" (
     where curl.exe >nul 2>&1
     if not errorlevel 1 (
-        echo   [..] PowerShell network busy. Switching to AI curl fallback mirror...
-        curl.exe -fSL --retry 3 --connect-timeout 10 "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%" -o "%WIZ_SCRIPT%" >nul 2>&1
+        echo   [..] PowerShell network blocked/busy. Trying AI Curl + DoH bypass mirrors...
+        for %%U in (
+            "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%"
+            "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/releases/latest/download/installer_wizard_sqlite.ps1"
+            "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/scripts/installer_wizard_sqlite.ps1?t=%CACHE_BUSTER%"
+        ) do (
+            if not exist "%WIZ_SCRIPT%" (
+                curl.exe -fSL --doh-url https://cloudflare-dns.com/dns-query --retry 2 --connect-timeout 12 %%U -o "%WIZ_SCRIPT%" >nul 2>&1
+                if not exist "%WIZ_SCRIPT%" curl.exe -fSL --retry 2 --connect-timeout 12 %%U -o "%WIZ_SCRIPT%" >nul 2>&1
+            )
+        )
     )
 )
 
@@ -122,8 +133,8 @@ if not exist "%WIZ_SCRIPT%" (
 if not exist "%WIZ_SCRIPT%" (
     echo.
     echo ======================================================================
-    echo   [AI AUTO-FIX FAILED] Internet connection drop detect hua.
-    echo   Kripya Wi-Fi / Hotspot verify karein aur dobara chalayein.
+    echo   [AI AUTO-FIX FAILED] Internet connection / DNS block detect hua.
+    echo   Kripya Wi-Fi / Mobile Hotspot check karein aur dobara chalayein.
     echo ======================================================================
     pause
     exit /b 1

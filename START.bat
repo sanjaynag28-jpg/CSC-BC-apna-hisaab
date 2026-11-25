@@ -4,6 +4,13 @@ title CSC ^& BC Apna Hisaab (SQLite Edition)
 color 0A
 cd /d "%~dp0"
 
+:: Ensure Node.js path is available even in a pre-existing Explorer session
+where node >nul 2>&1
+if errorlevel 1 (
+    if exist "C:\Program Files\nodejs\node.exe" set "PATH=C:\Program Files\nodejs;%PATH%"
+    if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "PATH=%LOCALAPPDATA%\Programs\nodejs;%PATH%"
+)
+
 :: Ensure .env is configured
 if not exist ".env" (
     if exist ".env.example" copy /y ".env.example" ".env" >nul 2>&1
@@ -20,11 +27,20 @@ if errorlevel 1 (
     exit /b
 )
 
-:: Check if initial setup was completed (node_modules exist)
+:: Check if core dependencies (express + better-sqlite3) load cleanly
 if not exist "%~dp0node_modules" (
     echo ========================================================
     echo   [!] Project dependencies nahi mile.
     echo   Automatic SQLite Setup shuru kiya ja raha hai...
+    echo ========================================================
+    call "%~dp0INSTALL_SQLITE.bat"
+    exit /b
+)
+node -e "require('express');require('better-sqlite3');" >nul 2>&1
+if errorlevel 1 (
+    echo ========================================================
+    echo   [!] Core npm modules incomplete/corrupt mile.
+    echo   Automatic repair chalaya ja raha hai...
     echo ========================================================
     call "%~dp0INSTALL_SQLITE.bat"
     exit /b

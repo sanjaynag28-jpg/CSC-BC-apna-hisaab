@@ -387,6 +387,40 @@ router.get('/customer-360/:id', async (req, res) => {
         const totalCSCFee = cscApps.reduce((acc, a) => acc + (parseFloat(a.TotalFee) || 0), 0);
         const totalCSCDue = cscApps.reduce((acc, a) => acc + (parseFloat(a.DueAmount) || 0), 0);
 
+        // F2. Bill & EMI Payments (BillPayments: Bijli, Gas, Mobile, Loan EMI)
+        const bpRes = await query(`
+            SELECT bp.PaymentID, bp.GlobalSerialNo, bp.SNCode, bp.ModuleCode, bp.CustomerID,
+                   bp.CustomerName, bp.CustomerPhone, bp.BillCategory, bp.ProviderName,
+                   bp.ConsumerNumber, bp.BillNumber, bp.TotalBillAmount, bp.BillAmount,
+                   bp.CustomerCharge, bp.TotalCollected, bp.CustomerDue, bp.CommissionEarned,
+                   bp.NetProfit, bp.PaymentMode, bp.Status, bp.TxnReference, bp.PaymentDate,
+                   bp.PaymentTime, bp.Notes, bp.CreatedAt
+            FROM BillPayments bp
+            WHERE ISNULL(bp.IsDeleted, 0) = 0 AND bp.UserID = @userId
+              AND (bp.CustomerID = @id OR (@phone IS NOT NULL AND bp.CustomerPhone = @phone))
+            ORDER BY bp.PaymentDate DESC, bp.PaymentID DESC
+        `, { id: custId, userId, phone: customer.Phone || null });
+        const billPayments = bpRes.recordset || [];
+        const totalBPCollected = billPayments.reduce((acc, b) => acc + (parseFloat(b.TotalCollected) || 0), 0);
+        const totalBPDue = billPayments.reduce((acc, b) => acc + (parseFloat(b.CustomerDue) || 0), 0);
+        const totalBPProfit = billPayments.reduce((acc, b) => acc + (parseFloat(b.NetProfit) || 0), 0);
+
+        // F3. Aadhaar UCL Updates (UCLUpdates)
+        const uclRes = await query(`
+            SELECT u.UCLID, u.GlobalSerialNo, u.SNCode, u.ModuleCode, u.CustomerID,
+                   u.CustomerName, u.CustomerPhone, u.AadhaarLast4, u.AadhaarMasked,
+                   u.SID, u.UpdateType, u.PACCode, u.BiometricsUpdate, u.UpdateDate,
+                   u.TotalFee, u.OperatorFee, u.TotalAmount, u.PaidAmount, u.BalanceAmount,
+                   u.PaymentMode, u.Status, u.Notes, u.CreatedAt
+            FROM UCLUpdates u
+            WHERE ISNULL(u.IsDeleted, 0) = 0 AND u.UserID = @userId
+              AND (u.CustomerID = @id OR (@phone IS NOT NULL AND u.CustomerPhone = @phone))
+            ORDER BY u.UpdateDate DESC, u.UCLID DESC
+        `, { id: custId, userId, phone: customer.Phone || null });
+        const uclUpdates = uclRes.recordset || [];
+        const totalUCLAmount = uclUpdates.reduce((acc, u) => acc + (parseFloat(u.TotalAmount) || 0), 0);
+        const totalUCLDue = uclUpdates.reduce((acc, u) => acc + (parseFloat(u.BalanceAmount) || 0), 0);
+
         // G. Customer Profile Audit History (Track all updates, changes and diffs)
         const auditRes = await query(`
             SELECT TOP 100
@@ -431,6 +465,19 @@ router.get('/customer-360/:id', async (req, res) => {
                     totalCount: cscApps.length,
                     totalFee: totalCSCFee,
                     totalDue: totalCSCDue
+                },
+                billPayments: {
+                    records: billPayments,
+                    totalCount: billPayments.length,
+                    totalCollected: totalBPCollected,
+                    totalDue: totalBPDue,
+                    totalProfit: totalBPProfit
+                },
+                uclUpdates: {
+                    records: uclUpdates,
+                    totalCount: uclUpdates.length,
+                    totalAmount: totalUCLAmount,
+                    totalDue: totalUCLDue
                 }
             }
         });

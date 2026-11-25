@@ -11,7 +11,7 @@ const { registerGlobalTransaction, updateGlobalTransaction, deactivateGlobalTran
 // GET transactions with filters
 router.get('/', async (req, res) => {
     try {
-        const { startDate, endDate, type, accountId, categoryId, partyId, search } = req.query;
+        const { startDate, endDate, type, accountId, categoryId, partyId, search, sourceModule } = req.query;
 
         const limit = clampInt(req.query.limit, 1, 500, 100);
         const offset = clampInt(req.query.offset, 0, 1000000, 0);
@@ -22,7 +22,24 @@ router.get('/', async (req, res) => {
 
         if (startDate) { whereClause += ' AND t.TransDate >= @startDate'; params.startDate = startDate; }
         if (endDate) { whereClause += ' AND t.TransDate <= @endDate'; params.endDate = endDate; }
-        if (type) { whereClause += ' AND t.TransType = @type'; params.type = type; }
+        if (type) {
+            if (type === 'Loan') {
+                whereClause += " AND t.TransType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery')";
+            } else {
+                whereClause += ' AND t.TransType = @type';
+                params.type = type;
+            }
+        }
+        if (sourceModule) {
+            if (sourceModule === 'manual') {
+                whereClause += " AND (t.SourceModule IS NULL OR t.SourceModule = '' OR t.SourceModule = 'Cashbook')";
+            } else if (sourceModule === 'BC') {
+                whereClause += " AND t.SourceModule IN ('BC', 'BC Banking')";
+            } else {
+                whereClause += ' AND t.SourceModule = @sourceModule';
+                params.sourceModule = sourceModule;
+            }
+        }
         if (accountId) { whereClause += ' AND (t.AccountID = @accountId OR t.ToAccountID = @accountId)'; params.accountId = parseOptionalId(accountId); }
         if (categoryId) { whereClause += ' AND t.CategoryID = @categoryId'; params.categoryId = parseOptionalId(categoryId); }
         if (partyId) { whereClause += ' AND t.PartyID = @partyId'; params.partyId = parseOptionalId(partyId); }
@@ -35,12 +52,20 @@ router.get('/', async (req, res) => {
             SELECT COUNT(*) as total FROM Transactions t ${whereClause}
         `, params);
 
+        const allCountRes = await query(`
+            SELECT COUNT(*) as allTotal FROM Transactions WHERE UserID = @userId AND IsDeleted = 0
+        `, { userId });
+
         const totalsResult = await query(`
             SELECT
                 ISNULL(SUM(CASE WHEN t.TransType = 'Income' THEN t.Amount ELSE 0 END), 0) as totalIncome,
                 ISNULL(SUM(CASE WHEN t.TransType = 'Expense' THEN t.Amount ELSE 0 END), 0) as totalExpense,
                 ISNULL(SUM(CASE WHEN t.TransType = 'Transfer' THEN t.Amount ELSE 0 END), 0) as totalTransfer,
                 ISNULL(SUM(CASE WHEN t.TransType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery') THEN t.Amount ELSE 0 END), 0) as totalLoan,
+                SUM(CASE WHEN t.TransType = 'Income' THEN 1 ELSE 0 END) as countIncome,
+                SUM(CASE WHEN t.TransType = 'Expense' THEN 1 ELSE 0 END) as countExpense,
+                SUM(CASE WHEN t.TransType = 'Transfer' THEN 1 ELSE 0 END) as countTransfer,
+                SUM(CASE WHEN t.TransType IN ('Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery') THEN 1 ELSE 0 END) as countLoan,
                 COUNT(*) as totalCount
             FROM Transactions t
             ${whereClause}
@@ -66,6 +91,7 @@ router.get('/', async (req, res) => {
             success: true,
             data: result.recordset,
             total: countResult.recordset[0].total,
+            allTimeTotal: allCountRes.recordset[0]?.allTotal || 0,
             totals: totalsResult.recordset[0],
             limit,
             offset

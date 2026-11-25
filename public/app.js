@@ -3182,6 +3182,7 @@ function updateBreadcrumb() {
         customers: 'Customers (ग्राहक)',
         billing: 'Billing & Invoices (बिलिंग)',
         khatabook: 'Khatabook (खाताबुक)',
+        documents: 'Documents (दस्तावेज़)',
         budgets: 'Budget', bills: 'Bills & Reminders',
         reports: 'Reports', categories: 'Categories',
         database: 'Database Explorer (डेटाबेस)',
@@ -3455,8 +3456,9 @@ function populateSelects() {
         const sel = document.getElementById(id);
         if (!sel) return;
         const currentVal = sel.value;
+        const prefix = id === 'filterCategory' ? '<option value="">Sab Categories</option>' : '<option value="">-- Select --</option>';
         const opts = (allCategories || []).map(c => `<option value="${c.CategoryID}" ${currentVal == c.CategoryID ? 'selected' : ''}>${escapeHtml(c.CategoryName)} (${escapeHtml(c.CategoryType)})</option>`).join('');
-        sel.innerHTML = '<option value="">-- Select --</option>' + opts;
+        sel.innerHTML = prefix + opts;
     });
 
     // Party selects
@@ -3735,6 +3737,7 @@ async function loadTransactions(page = 1) {
     const type = transCurrentTypeFilter || document.getElementById('filterType')?.value;
     const accountId = document.getElementById('filterAccount')?.value;
     const categoryId = document.getElementById('filterCategory')?.value;
+    const sourceModule = document.getElementById('filterSourceModule')?.value;
     const search = document.getElementById('searchTrans')?.value;
 
     if (startDate) params.append('startDate', startDate);
@@ -3742,6 +3745,7 @@ async function loadTransactions(page = 1) {
     if (type) params.append('type', type);
     if (accountId) params.append('accountId', accountId);
     if (categoryId) params.append('categoryId', categoryId);
+    if (sourceModule) params.append('sourceModule', sourceModule);
     if (search) params.append('search', search);
 
     try {
@@ -3751,15 +3755,19 @@ async function loadTransactions(page = 1) {
         const total = data.total || 0;
         const totals = data.totals || {};
 
-        // Update sidebar badge
+        // Update sidebar badge with full active transactions count
         const badge = document.getElementById('badge-transactions');
         if (badge) {
-            badge.textContent = total || 0;
+            badge.textContent = (data.allTimeTotal !== undefined ? data.allTimeTotal : total) || 0;
             badge.classList.remove('hidden');
             badge.style.display = 'inline-block';
         }
-        const badgeAll = document.getElementById('ttBadgeAll');
-        if (badgeAll) badgeAll.textContent = total;
+        const setTabCnt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || 0; };
+        setTabCnt('ttBadgeAll', totals.totalCount !== undefined ? totals.totalCount : total);
+        setTabCnt('ttBadgeIncome', totals.countIncome || 0);
+        setTabCnt('ttBadgeExpense', totals.countExpense || 0);
+        setTabCnt('ttBadgeTransfer', totals.countTransfer || 0);
+        setTabCnt('ttBadgeLoan', totals.countLoan || 0);
 
         // Update 4 KPI Cards
         updateTransKpiCards(totals, allTransactions);
@@ -3804,7 +3812,7 @@ async function loadTransactions(page = 1) {
                     </div>`;
             }
 
-            // Format Category display with color dot if available
+            // Format Category display with color dot or SourceModule badge fallback
             let catHtml = '<span class="text-muted">-</span>';
             if (t.CategoryName) {
                 const catColor = t.CategoryColor || '#94a3b8';
@@ -3813,6 +3821,12 @@ async function loadTransactions(page = 1) {
                         <span class="cat-bullet" style="background:${catColor}"></span>
                         ${escapeHtml(t.CategoryName)}
                     </span>`;
+            } else if (t.SourceModule) {
+                const sm = String(t.SourceModule);
+                const icon = sm === 'BillPay' ? '⚡ ' : (sm === 'CSC' ? '🏛️ ' : (sm === 'UCL' ? '🪪 ' : (sm.includes('Invoice') ? '🧾 ' : (sm.includes('BC') ? '🏦 ' : ''))));
+                catHtml = `<span class="trans-src-cat-pill">${icon}${escapeHtml(sm)}</span>`;
+            } else if (t.TransType === 'Transfer') {
+                catHtml = `<span class="trans-src-cat-pill">↔ Transfer</span>`;
             }
 
             // Type badge styling
@@ -3933,6 +3947,13 @@ function toggleTransActionMenu(e, transId) {
             </div>
         </div>
         <div class="cad-items">
+            <button type="button" class="cad-item" id="transOptDetail">
+                <span class="cad-icon blue"><i data-lucide="file-text"></i></span>
+                <div class="cad-label">
+                    <span class="cad-primary">Poori Detail / Receipt</span>
+                    <span class="cad-secondary">Universal SN slip dekhein aur print karein</span>
+                </div>
+            </button>
             <button type="button" class="cad-item" id="transOptEdit">
                 <span class="cad-icon cyan"><i data-lucide="edit-2"></i></span>
                 <div class="cad-label">
@@ -3967,6 +3988,12 @@ function toggleTransActionMenu(e, transId) {
         </div>
     `;
 
+    menu.querySelector('#transOptDetail')?.addEventListener('click', () => {
+        closeTransActionMenu();
+        if (typeof openUniversalRecordDetail === 'function') {
+            openUniversalRecordDetail('Cashbook', t.TransactionID, t.SNCode || '');
+        }
+    });
     menu.querySelector('#transOptEdit')?.addEventListener('click', () => {
         closeTransActionMenu();
         editTransaction(t.TransactionID);
@@ -4479,13 +4506,55 @@ function changeTransPageSize(newSize) {
     loadTransactions(1);
 }
 
+function setTransDatePreset(preset, btn) {
+    document.querySelectorAll('#transQuickPresets .trans-preset-pill').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const sd = document.getElementById('filterStartDate');
+    const ed = document.getElementById('filterEndDate');
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+    if (preset === 'today') {
+        const s = toLocalYMD(now);
+        if (sd) sd.value = s;
+        if (ed) ed.value = s;
+    } else if (preset === 'yesterday') {
+        const yest = toLocalYMD(new Date(y, m, d - 1));
+        if (sd) sd.value = yest;
+        if (ed) ed.value = yest;
+    } else if (preset === 'week') {
+        const dow = now.getDay();
+        const monday = new Date(y, m, d - (dow === 0 ? 6 : dow - 1));
+        if (sd) sd.value = toLocalYMD(monday);
+        if (ed) ed.value = toLocalYMD(now);
+    } else if (preset === 'month') {
+        if (sd) sd.value = toLocalYMD(new Date(y, m, 1));
+        if (ed) ed.value = toLocalYMD(now);
+    } else {
+        if (sd) sd.value = '';
+        if (ed) ed.value = '';
+    }
+    loadTransactions(1);
+}
+
+function onTransDateInputChanged() {
+    document.querySelectorAll('#transQuickPresets .trans-preset-pill').forEach(b => b.classList.remove('active'));
+    loadTransactions(1);
+}
+
 function clearFilters() {
-    document.getElementById('filterStartDate').value = '';
-    document.getElementById('filterEndDate').value = '';
-    document.getElementById('filterAccount').value = '';
+    const sd = document.getElementById('filterStartDate');
+    const ed = document.getElementById('filterEndDate');
+    const accSel = document.getElementById('filterAccount');
     const catSel = document.getElementById('filterCategory');
-    if (catSel) catSel.value = '';
-    document.getElementById('searchTrans').value = '';
+    const srcSel = document.getElementById('filterSourceModule');
+    const searchEl = document.getElementById('searchTrans');
+    if (sd) sd.value = '';
+    if (ed) ed.value = '';
+    if (accSel) { accSel.value = ''; if (accSel._ssInstance?.syncFromNative) try { accSel._ssInstance.syncFromNative(); } catch (_) { } }
+    if (catSel) { catSel.value = ''; if (catSel._ssInstance?.syncFromNative) try { catSel._ssInstance.syncFromNative(); } catch (_) { } }
+    if (srcSel) srcSel.value = '';
+    if (searchEl) searchEl.value = '';
+    document.querySelectorAll('#transQuickPresets .trans-preset-pill').forEach(b => b.classList.toggle('active', b.dataset.preset === 'all'));
     setTransFilterType('', document.querySelector('.tt-tab[data-type=""]'));
 }
 
@@ -4494,14 +4563,79 @@ function debounceSearch() {
     searchTimeout = setTimeout(() => loadTransactions(1), 350);
 }
 
-function exportTransactionsExcel() {
+function buildTransExportParams() {
     const params = new URLSearchParams();
+    params.append('module', 'cashbook');
     const startDate = document.getElementById('filterStartDate')?.value;
     const endDate = document.getElementById('filterEndDate')?.value;
+    const type = transCurrentTypeFilter || document.getElementById('filterType')?.value;
+    const accountId = document.getElementById('filterAccount')?.value;
+    const categoryId = document.getElementById('filterCategory')?.value;
+    const search = document.getElementById('searchTrans')?.value?.trim();
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
+    if (type && type !== 'Loan') params.append('type', type);
+    else if (type === 'Loan') params.set('module', 'loans');
+    if (accountId) params.append('accountId', accountId);
+    if (categoryId) params.append('categoryId', categoryId);
+    if (search) params.append('search', search);
+    return params;
+}
 
-    window.open(`${API}/reports/export/excel?${params}`, '_blank');
+function exportTransactionsExcel() {
+    window.open(`${API}/reports/export/excel?${buildTransExportParams().toString()}`, '_blank');
+}
+
+function exportTransactionsCSV() {
+    window.open(`${API}/reports/export/csv?${buildTransExportParams().toString()}`, '_blank');
+}
+
+function printTransactionsLedger() {
+    const list = allTransactions || [];
+    if (!list.length) {
+        showToast('Print karne ke liye koi len-den record nahi hai', 'warning', 'Cashbook');
+        return;
+    }
+    const sd = document.getElementById('filterStartDate')?.value || 'Shuru se';
+    const ed = document.getElementById('filterEndDate')?.value || 'Aaj tak';
+    const rowsHtml = list.map((t, idx) => {
+        const dt = t.TransDate ? formatIndianDate(t.TransDate) : '-';
+        const desc = escapeHtml(t.Description || t.CategoryName || t.TransType || '');
+        const acc = t.TransType === 'Transfer'
+            ? escapeHtml((t.AccountName || '-') + ' → ' + (t.ToAccountName || '-'))
+            : escapeHtml(t.AccountName || '-');
+        const sign = getTransSign(t.TransType) === '+' ? '+' : '-';
+        return `<tr>
+            <td>${idx + 1}</td>
+            <td>${escapeHtml(t.SNCode || ('#' + t.TransactionID))}</td>
+            <td>${dt}</td>
+            <td>${desc}${t.PartyName ? ' (' + escapeHtml(t.PartyName) + ')' : ''}</td>
+            <td>${escapeHtml(t.TransType || '')}</td>
+            <td>${acc}</td>
+            <td>${escapeHtml(t.CategoryName || t.SourceModule || '-')}</td>
+            <td style="text-align:right;font-weight:700;">${sign}${formatMoney(t.Amount)}</td>
+        </tr>`;
+    }).join('');
+    const html = `<div style="font-family:Segoe UI,Arial,sans-serif;padding:10px;">
+        <h2 style="margin:0 0 4px 0;">Len-Den Register (Cashbook Sheet)</h2>
+        <p style="margin:0 0 12px 0;font-size:12px;color:#475569;">Avadhi: ${escapeHtml(sd)} se ${escapeHtml(ed)} | Kul Entries (Page): ${list.length}</p>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
+            <thead><tr style="background:#f1f5f9;">
+                <th style="border:1px solid #cbd5e1;padding:6px;">#</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">SN</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">Tarikh</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">Vivran & Party</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">Type</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">Khata</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;">Category</th>
+                <th style="border:1px solid #cbd5e1;padding:6px;text-align:right;">Rashi</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+        </table>
+    </div>`;
+    if (typeof universalPrint === 'function') {
+        universalPrint(html, { format: 'a4', orientation: 'landscape', title: 'Len-Den Cashbook Register' });
+    }
 }
 
 // ============ TRANSACTION MODAL ============
@@ -4610,38 +4744,84 @@ function setTransType(type, btn) {
     }
 
     document.querySelectorAll('#transModal .type-tab').forEach(b => {
-        b.classList.remove('active', 'income', 'expense', 'transfer', 'loan');
+        b.classList.remove('active', 'income', 'expense', 'transfer', 'loan', 'loan-given', 'loan-received', 'loan-repay', 'loan-recovery');
     });
     if (!btn) {
         btn = document.querySelector(`#transModal .type-tab[data-type="${type}"]`);
     }
+    const typeClassMap = {
+        'Income': 'income',
+        'Expense': 'expense',
+        'Transfer': 'transfer',
+        'Loan Given': 'loan-given',
+        'Loan Received': 'loan-received',
+        'Loan Repay': 'loan-repay',
+        'Loan Recovery': 'loan-recovery'
+    };
     if (btn) {
-        btn.classList.add('active');
-        if (type === 'Income') btn.classList.add('income');
-        else if (type === 'Expense') btn.classList.add('expense');
-        else if (type === 'Transfer') btn.classList.add('transfer');
-        else btn.classList.add('loan');
+        btn.classList.add('active', typeClassMap[type] || 'loan-given');
     }
 
+    const colDate = document.getElementById('colTransDate');
+    const colAmt = document.getElementById('colTransAmount');
+    const fromAccGroup = document.getElementById('transFromAccGroup');
     const toAccGroup = document.getElementById('toAccountGroup');
     const catGroup = document.getElementById('categoryGroup');
     const partyGroup = document.getElementById('partyGroup');
+    const colDesc = document.getElementById('colTransDesc');
+    const colRef = document.getElementById('colTransRef');
+    const colTags = document.getElementById('colTransTags');
 
-    if (toAccGroup) toAccGroup.style.setProperty('display', type === 'Transfer' ? 'flex' : 'none', 'important');
-    if (catGroup) catGroup.style.setProperty('display', ['Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery'].includes(type) ? 'none' : 'flex', 'important');
-    if (partyGroup) partyGroup.style.setProperty('display', ['Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery', 'Income', 'Expense'].includes(type) ? 'flex' : 'none', 'important');
+    const isTransfer = type === 'Transfer';
+    const hasCategory = ['Income', 'Expense'].includes(type);
+    const hasParty = ['Loan Given', 'Loan Received', 'Loan Repay', 'Loan Recovery', 'Income', 'Expense'].includes(type);
 
-    // Clear dynamic labels and helper texts for accounts
+    if (toAccGroup) toAccGroup.style.setProperty('display', isTransfer ? 'flex' : 'none', 'important');
+    if (catGroup) catGroup.style.setProperty('display', hasCategory ? 'flex' : 'none', 'important');
+    if (partyGroup) partyGroup.style.setProperty('display', hasParty ? 'flex' : 'none', 'important');
+
+    // Dynamic 12-col spans so there are NEVER empty blank columns
+    const setSpan = (el, span) => {
+        if (!el) return;
+        el.classList.remove('tcol-3', 'tcol-4', 'tcol-5', 'tcol-6', 'tcol-7', 'tcol-12');
+        el.classList.add(`tcol-${span}`);
+    };
+
+    if (isTransfer) {
+        setSpan(colDate, 3);
+        setSpan(colAmt, 3);
+        setSpan(fromAccGroup, 3);
+        setSpan(toAccGroup, 3);
+        setSpan(colDesc, 6);
+        setSpan(colRef, 3);
+        setSpan(colTags, 3);
+    } else if (hasCategory) {
+        setSpan(colDate, 3);
+        setSpan(colAmt, 4);
+        setSpan(fromAccGroup, 5);
+        setSpan(catGroup, 4);
+        setSpan(partyGroup, 4);
+        setSpan(colDesc, 4);
+        setSpan(colRef, 6);
+        setSpan(colTags, 6);
+    } else {
+        // Loan modes: Party + Description fill Row 2 completely
+        setSpan(colDate, 3);
+        setSpan(colAmt, 4);
+        setSpan(fromAccGroup, 5);
+        setSpan(partyGroup, 5);
+        setSpan(colDesc, 7);
+        setSpan(colRef, 6);
+        setSpan(colTags, 6);
+    }
+
+    // Concise single-line account labels (no multi-line wrapping)
     const fromLabel = document.getElementById('transAccountLabel');
-    const fromHelper = document.getElementById('transAccountHelper');
     const toLabel = document.getElementById('transToAccountLabel');
-    const toHelper = document.getElementById('transToAccountHelper');
 
     if (type === 'Transfer') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="arrow-up-right"></i> Kahan Se Paisa Niklega (Source Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔻 Is khate se transfer ki rakam minus (debit) hogi';
-        if (toLabel) toLabel.innerHTML = '<i data-lucide="arrow-down-left"></i> Kahan Paisa Jama Hoga (Destination Account) <span class="req">*</span>';
-        if (toHelper) toHelper.textContent = '🔺 Is doosre khate me yeh rakam jama (credit) ho jayegi';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="arrow-up-right"></i> Nikasi Khata (From) <span class="req">*</span>';
+        if (toLabel) toLabel.innerHTML = '<i data-lucide="arrow-down-left"></i> Jama Khata (To) <span class="req">*</span>';
 
         const fromSel = document.getElementById('transAccount');
         const toSel = document.getElementById('transToAccount');
@@ -4649,23 +4829,17 @@ function setTransType(type, btn) {
             syncMutuallyExclusiveSelects(fromSel, toSel, 'from', updateTransFlowHelper);
         }
     } else if (type === 'Income') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Me Paisa Aaya (Deposit Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔺 Is Bank ya Cash khate me kamai ki rakam judegi (+Cr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Jama Khata (Deposit Acc) <span class="req">*</span>';
     } else if (type === 'Expense') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Se Kharcha Hua (Source Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔻 Is Bank ya Cash khate se yeh kharcha katega (-Dr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kharch Khata (Source Acc) <span class="req">*</span>';
     } else if (type === 'Loan Given') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Se Udhaar Diya (Source Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔻 Is khate se paisa nikalkar party ko udhaar diya jayega (-Dr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Se Diya (Source) <span class="req">*</span>';
     } else if (type === 'Loan Received') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Udhaar Ka Paisa Kis Khate Me Aaya (Deposit Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔺 Karz ki yeh rakam is khate me jama hogi (+Cr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Jama Khata (Deposit Acc) <span class="req">*</span>';
     } else if (type === 'Loan Repay') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Se Karz Chukta Kiya (Source Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔻 Liye gaye karz ka bhugtan is khate se katega (-Dr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Kis Khate Se Chukaya (Source) <span class="req">*</span>';
     } else if (type === 'Loan Recovery') {
-        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Udhaar Ka Paisa Kis Khate Me Wapas Aaya (Deposit Account) <span class="req">*</span>';
-        if (fromHelper) fromHelper.textContent = '🔺 Diye gaye udhaar ki wapsi is khate me jama hogi (+Cr)';
+        if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Jama Khata (Deposit Acc) <span class="req">*</span>';
     } else {
         if (fromLabel) fromLabel.innerHTML = '<i data-lucide="wallet"></i> Account <span class="req">*</span>';
     }
@@ -4786,6 +4960,17 @@ function updateTransFlowHelper() {
                 <span class="flow-chip chip-info">🔄 [${fromName}] se <b>${amtStr}</b> ka transaction</span>
                 <span class="flow-arrow">➔</span>
                 <span class="flow-chip chip-plus">👤 ${pText} ↩️</span>
+            </div>
+        `;
+    } else if (type === 'Loan Recovery') {
+        helperBox.className = 'form-group full-span trans-flow-box-wrap flow-income';
+        const pText = cleanParty ? `[${cleanParty}] ka baaki udhaar ghat jayega` : 'Party ka udhaar balance ghat jayega';
+        helperText.innerHTML = `
+            <div class="flow-pill-title"><i data-lucide="arrow-down-left"></i> Udhaar Wapsi Asar:</div>
+            <div class="flow-pill-content">
+                <span class="flow-chip chip-plus">🔺 [${fromName}] me <b>${amtStr}</b> jama (Credit) honge</span>
+                <span class="flow-arrow">➔</span>
+                <span class="flow-chip chip-info">👤 ${pText} ↙️</span>
             </div>
         `;
     } else {
@@ -5060,7 +5245,7 @@ function renderAccountsList() {
 
     const countEl = document.getElementById('accFilteredCount');
     if (countEl) {
-        countEl.textContent = `${filtered.length} of ${allAccounts.length} accounts dikh rahe hain`;
+        countEl.textContent = `${filtered.length} / ${allAccounts.length}`;
     }
 
     if (!filtered.length) {
@@ -5461,7 +5646,7 @@ function renderPartiesList() {
 
     const metaCount = document.getElementById('partiesFilteredCount');
     if (metaCount) {
-        metaCount.textContent = `${filtered.length} of ${allParties.length} parties dikh rahi hain`;
+        metaCount.textContent = `${filtered.length} / ${allParties.length}`;
     }
 
     if (!filtered.length) {
@@ -5522,28 +5707,32 @@ function renderPartiesList() {
                 <td>
                     <div class="cell-flex">
                         <div class="pavatar-circle" style="background:${bgGrad}">${initial}</div>
-                        <div>
+                        <div style="min-width:0;">
                             <div class="cell-title" title="${safeName}">${safeName}</div>
                             <div class="cell-sub">Opening: ${formatMoney(openingBal)}</div>
                         </div>
                     </div>
                 </td>
                 <td><span class="pbadge gray">${safeType}</span></td>
-                <td class="cell-sub">
-                    ${safePhone ? `<a href="tel:${safePhone}" style="color:#60a5fa; text-decoration:none;">📞 ${safePhone}</a>` : '<span class="cell-muted">Phone nahi hai</span>'}
+                <td>
+                    <div class="party-phone-cell">
+                        ${safePhone ? `<a href="tel:${safePhone}" class="party-phone-link">📞 ${safePhone}</a>` : '<span class="cell-muted">Phone nahi hai</span>'}
+                    </div>
                 </td>
                 <td class="cell-center cell-muted cell-nowrap">${transCount} entries</td>
                 <td class="cell-right">
-                    <div class="cell-amount ${bal > 0 ? 'amt-pos' : bal < 0 ? 'amt-neg' : 'amt-zero'}">${balAmountText}</div>
-                    <span class="pbadge ${balClass}" style="margin-top:4px">${balBadge}</span>
+                    <div class="party-bal-inline">
+                        <span class="pbadge ${balClass}">${balBadge}</span>
+                        <span class="cell-amount ${bal > 0 ? 'amt-pos' : bal < 0 ? 'amt-neg' : 'amt-zero'}">${balAmountText}</span>
+                    </div>
                 </td>
                 <td class="cell-center cell-nowrap">
                     <div class="party-action-cell">
                         <button type="button" class="party-quick-btn" onclick="openPartyLedger(${p.PartyID}, '${inlineName}')" title="Khata Passbook Kholein">
-                            <i data-lucide="book-open" width="14" height="14"></i>
+                            <i data-lucide="book-open" width="13" height="13"></i> Khata
                         </button>
                         <button type="button" class="party-menu-trigger-btn" onclick="togglePartyActionMenu(event, ${p.PartyID})" title="Sabhi Kriya (3 Dots Menu)">
-                            <i data-lucide="more-vertical" width="16" height="16"></i>
+                            <i data-lucide="more-vertical" width="15" height="15"></i>
                         </button>
                     </div>
                 </td>
@@ -10729,6 +10918,9 @@ async function updateAllSidebarBadges() {
             setBadge('badge-khatabook', d.khatabook || 0);
             setBadge('badge-documents', d.documents || 0);
             setBadge('badge-csc', d.csc || 0);
+            setBadge('badge-billpayments', d.billpayments || 0);
+            setBadge('badge-ucl', d.ucl || 0);
+            setBadge('badge-pac', d.pac || 0);
             setBadge('badge-budgets', d.budgets || 0);
             setBadge('badge-bills', d.bills || 0);
             setBadge('badge-categories', d.categories || 0);
@@ -10829,18 +11021,54 @@ function setCustomerFilter(filter, btn) {
     renderCustomersTable();
 }
 
+function clearCustomerSearch() {
+    const inp = document.getElementById('custSearchInput');
+    if (inp) {
+        inp.value = '';
+        inp.focus();
+    }
+    filterCustomersList();
+}
+window.clearCustomerSearch = clearCustomerSearch;
+
 function filterCustomersList() {
     custCurrentPage = 1;
     renderCustomersTable();
+}
+
+function updateCustomerTabBadges() {
+    const data = allCustomersData || [];
+    let fam = 0, rec = 0, pay = 0, set = 0;
+    data.forEach(c => {
+        const bal = parseFloat(c.CurrentBalance) || 0;
+        if (bal > 0) rec++;
+        else if (bal < 0) pay++;
+        else set++;
+        if ((c.FamilyMembersCount > 1) || (!c.IsFamilyHead) || (c.ParentCustomerID != null)) fam++;
+    });
+    const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setTxt('custBadgeAll', data.length);
+    setTxt('custBadgeFamily', fam);
+    setTxt('custBadgeReceive', rec);
+    setTxt('custBadgePay', pay);
+    setTxt('custBadgeSettled', set);
 }
 
 function renderCustomersTable() {
     const tbody = document.getElementById('customersTableBody');
     if (!tbody) return;
 
-    const queryStr = (document.getElementById('custSearchInput')?.value || '').toLowerCase().trim();
+    updateCustomerTabBadges();
 
-    let list = allCustomersData.filter(c => {
+    const searchEl = document.getElementById('custSearchInput');
+    const queryStr = (searchEl?.value || '').toLowerCase().trim();
+    const clearBtn = document.getElementById('custSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = queryStr ? 'block' : 'none';
+
+    const kycFilter = document.getElementById('custKycSelect')?.value || '';
+    const sortBy = document.getElementById('custSortSelect')?.value || 'newest';
+
+    let list = (allCustomersData || []).filter(c => {
         // Search
         const nameMatch = (c.CustomerName || '').toLowerCase().includes(queryStr);
         const phoneMatch = (c.Phone || '').toLowerCase().includes(queryStr);
@@ -10854,7 +11082,15 @@ function renderCustomersTable() {
         const parentMatch = (c.ParentCustomerName || '').toLowerCase().includes(queryStr);
         if (queryStr && !idMatch && !nameMatch && !phoneMatch && !aadhaarMatch && !addrMatch && !famMatch && !relMatch && !parentMatch) return false;
 
-        // Filter
+        // KYC Filter
+        const hasAadhaar = !!((c.AadhaarNumber || '').replace(/\D/g, '').length >= 4);
+        const hasPhone = !!((c.Phone || '').trim().length >= 6);
+        if (kycFilter === 'complete' && !(hasAadhaar && hasPhone)) return false;
+        if (kycFilter === 'has_aadhaar' && !hasAadhaar) return false;
+        if (kycFilter === 'no_aadhaar' && hasAadhaar) return false;
+        if (kycFilter === 'no_phone' && hasPhone) return false;
+
+        // Tab Filter
         const bal = parseFloat(c.CurrentBalance) || 0;
         if (currentCustomerFilter === 'to_receive') return bal > 0;
         if (currentCustomerFilter === 'to_pay') return bal < 0;
@@ -10865,10 +11101,24 @@ function renderCustomersTable() {
         return true;
     });
 
-    // Latest first sorting
-    list.sort((a, b) => (b.CustomerID || 0) - (a.CustomerID || 0));
+    // Dynamic sorting
+    if (sortBy === 'oldest') {
+        list.sort((a, b) => (a.CustomerID || 0) - (b.CustomerID || 0));
+    } else if (sortBy === 'name_az') {
+        list.sort((a, b) => (a.CustomerName || '').localeCompare(b.CustomerName || ''));
+    } else if (sortBy === 'due_high') {
+        list.sort((a, b) => (parseFloat(b.CurrentBalance) || 0) - (parseFloat(a.CurrentBalance) || 0));
+    } else if (sortBy === 'adv_high') {
+        list.sort((a, b) => (parseFloat(a.CurrentBalance) || 0) - (parseFloat(b.CurrentBalance) || 0));
+    } else if (sortBy === 'most_active') {
+        list.sort((a, b) => ((b.TotalKhataEntries || 0) + (b.TotalBills || 0)) - ((a.TotalKhataEntries || 0) + (a.TotalBills || 0)));
+    } else {
+        list.sort((a, b) => (b.CustomerID || 0) - (a.CustomerID || 0));
+    }
 
     const totalCust = list.length;
+    const countChip = document.getElementById('custToolbarCount');
+    if (countChip) countChip.textContent = `${totalCust} / ${(allCustomersData || []).length}`;
 
     if (totalCust === 0) {
         tbody.innerHTML = `
@@ -10904,22 +11154,27 @@ function renderCustomersTable() {
 
     tbody.innerHTML = pagedList.map(c => {
         const bal = parseFloat(c.CurrentBalance) || 0;
-        let balBadge = '<span class="pbadge gray" style="margin-top:4px;">Barabar (Chukta)</span>';
+        let balBadge = '<span class="pbadge gray">Barabar</span>';
         let amtClass = 'cell-muted';
         if (bal > 0) {
-            balBadge = '<span class="badge badge-due" style="margin-top:4px; font-size:11px;">⚠️ Lena Hai (Baaki)</span>';
+            balBadge = '<span class="badge badge-due" style="font-size:10.5px;">Lena Hai</span>';
             amtClass = 'amt-red';
         } else if (bal < 0) {
-            balBadge = '<span class="badge badge-advance" style="margin-top:4px; font-size:11px;">🟢 Dena Hai (Advance)</span>';
+            balBadge = '<span class="badge badge-advance" style="font-size:10.5px;">Advance</span>';
             amtClass = 'amt-green';
         }
 
         const initials = (c.CustomerName || 'C').substring(0, 2).toUpperCase();
         const isHead = c.IsFamilyHead !== false && c.IsFamilyHead !== 0;
         const famCount = c.FamilyMembersCount || 1;
-        const hasFamily = famCount > 1 || !isHead || c.ParentCustomerID != null;
         const khataCount = c.TotalKhataEntries || 0;
         const billCount = c.TotalBills || 0;
+
+        const subParts = [];
+        if (c.DateOfBirth) subParts.push(`<span class="cell-sub" style="margin:0;">🎂 ${formatIndianDate(c.DateOfBirth)}</span>`);
+        if (c.GSTIN) subParts.push(`<span class="cell-sub font-mono" style="margin:0;">GST: ${escapeHtml(c.GSTIN)}</span>`);
+        if (c.CreditLimit && Number(c.CreditLimit) > 0) subParts.push(`<span class="cell-sub font-mono" style="margin:0; color:#38bdf8;">💳 Limit: ₹${Number(c.CreditLimit).toLocaleString('en-IN')}</span>`);
+        if (c.Notes) subParts.push(`<span class="cell-sub" style="margin:0; color:#a78bfa;" title="${escapeHtml(c.Notes)}">📝 ${escapeHtml(c.Notes.substring(0, 24))}${c.Notes.length > 24 ? '...' : ''}</span>`);
 
         return `
             <tr class="trans-data-row cust-row">
@@ -10933,14 +11188,14 @@ function renderCustomersTable() {
                         <div class="pavatar cust-avatar ${isHead ? 'is-head' : 'is-member'}">
                             ${escapeHtml(initials)}
                         </div>
-                        <div class="cust-meta-wrap">
+                        <div class="cust-meta-wrap" style="min-width:0;">
                             <div class="cell-title cust-name-title">
                                 <span class="cust-name-link" onclick="openCustomer360Modal(${c.CustomerID})" title="Customer 360° Profile Dekhein">${escapeHtml(c.CustomerName)}</span>
                                 ${isHead && famCount > 1 ? `<span class="mukhiya-badge" onclick="openFamilyModal(${c.CustomerID})" title="Parivar Mukhiya (${famCount} Sadasya)">👑 Mukhiya (${famCount})</span>` : ''}
                             </div>
                             ${!isHead ? `
                                 <div class="cell-sub">
-                                     <span class="pbadge purple fam-sub-badge" onclick="openFamilyModal(${c.CustomerID})" style="cursor:pointer;" title="Parivar Tree Dekhein">👨‍👩‍👧 ${escapeHtml(c.Relationship || 'Member')} • ${escapeHtml(c.ParentCustomerName || 'Mukhiya')}</span>
+                                    <span class="pbadge purple fam-sub-badge" onclick="openFamilyModal(${c.CustomerID})" style="cursor:pointer;" title="Parivar Tree Dekhein">👨‍👩‍👧 ${escapeHtml(c.Relationship || 'Member')} • ${escapeHtml(c.ParentCustomerName || 'Mukhiya')}</span>
                                     ${c.KhataMode === 'Joint' ? '<span class="joint-khata-tag">[Joint]</span>' : ''}
                                 </div>
                             ` : (famCount > 1 ? `
@@ -10948,10 +11203,7 @@ function renderCustomersTable() {
                                     <span class="fam-link" onclick="openFamilyModal(${c.CustomerID})" title="Parivar Tree Dekhein">👨‍👩‍👧‍👦 ${escapeHtml(c.FamilyName || c.CustomerName + ' Parivar')} (${famCount})</span>
                                 </div>
                             ` : '')}
-                            ${c.GSTIN ? `<div class="cell-sub font-mono">GST: ${escapeHtml(c.GSTIN)}</div>` : ''}
-                            ${c.DateOfBirth ? `<div class="cell-sub" style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 3px;">🎂 ${formatIndianDate(c.DateOfBirth)}</div>` : ''}
-                            ${c.Notes ? `<div class="cell-sub" style="font-size: 11px; color: #a78bfa; display: flex; align-items: center; gap: 3px;" title="${escapeHtml(c.Notes)}">📝 ${escapeHtml(c.Notes.substring(0, 26))}${c.Notes.length > 26 ? '...' : ''}</div>` : ''}
-                            ${c.CreditLimit && Number(c.CreditLimit) > 0 ? `<div class="cell-sub font-mono" style="font-size: 10.5px; color: #38bdf8;">💳 Limit: ₹${Number(c.CreditLimit).toLocaleString('en-IN')}</div>` : ''}
+                            ${subParts.length ? `<div class="cust-sub-inline">${subParts.join('')}</div>` : ''}
                         </div>
                     </div>
                 </td>
@@ -10982,8 +11234,10 @@ function renderCustomersTable() {
                     </div>
                 </td>
                 <td class="cell-right">
-                    <div class="cell-amount c360-num ${amtClass}">${bal > 0 ? '− ' : (bal < 0 ? '+ ' : '')}${formatMoney(Math.abs(bal))}</div>
-                    ${balBadge}
+                    <div class="cust-bal-inline">
+                        ${balBadge}
+                        <span class="cell-amount c360-num ${amtClass}">${bal > 0 ? '− ' : (bal < 0 ? '+ ' : '')}${formatMoney(Math.abs(bal))}</span>
+                    </div>
                 </td>
                 <td class="cell-center cell-nowrap">
                     <div class="cust-action-cell">
@@ -16041,6 +16295,20 @@ window.openUniversalRecordDetail = async function (sourceModule, recordId, snCod
             }
         }
 
+        // 4B. Bill & EMI Payments
+        if (mod === 'BILLPAY' || mod === 'BILL_PAYMENT' || mod === 'BILLPAYMENTS' || mod === 'BP') {
+            if (typeof openEditBillPaymentModal === 'function') {
+                return openEditBillPaymentModal(recordId);
+            }
+        }
+
+        // 4C. Aadhaar UCL Updates
+        if (mod === 'UCL' || mod === 'UCLUPDATES' || mod.includes('UCL')) {
+            if (typeof openEditUCLModal === 'function') {
+                return openEditUCLModal(recordId);
+            }
+        }
+
         // 5. Khatabook
         if (mod === 'KHATA' || mod === 'KHATABOOK' || mod === 'KH') {
             if (typeof openKhataSlipFromRow === 'function') {
@@ -16215,6 +16483,9 @@ function renderCustomer360View(data) {
     const khata = data.khatabook;
     const bc = data.bcBanking;
     const bills = data.billing;
+    const cscWork = data.cscWork || { applications: [], totalCount: 0, totalFee: 0, totalDue: 0 };
+    const billPay = data.billPayments || { records: [], totalCount: 0, totalCollected: 0, totalDue: 0 };
+    const uclWork = data.uclUpdates || { records: [], totalCount: 0, totalAmount: 0, totalDue: 0 };
     const family = data.familyMembers || [];
 
     // 1. Header & Title
@@ -16226,16 +16497,15 @@ function renderCustomer360View(data) {
     // 2. Aadhaar Badge & Value with eye reveal
     if (c.AadhaarNumber) {
         document.getElementById('c360AadhaarBadge').innerHTML = renderAadhaarWithEye(c.AadhaarNumber, { color: 'inherit', fontSize: '11px' });
-        document.getElementById('c360AadhaarVal').innerHTML = renderAadhaarWithEye(c.AadhaarNumber, { color: 'inherit', fontSize: '13px' });
+        document.getElementById('c360AadhaarVal').innerHTML = renderAadhaarWithEye(c.AadhaarNumber, { color: 'inherit', fontSize: '12px' });
     } else {
         document.getElementById('c360AadhaarBadge').textContent = '🪪 Aadhaar: Not Linked';
         document.getElementById('c360AadhaarVal').textContent = 'Not Linked';
     }
 
-    // 3. Contact & Address
+    // 3. Contact, DOB, Address & Extra (Notes/GSTIN/CreditLimit)
     document.getElementById('c360PhoneVal').textContent = c.Phone || 'Phone nahi hai';
     document.getElementById('c360AddressVal').textContent = c.Address || 'Pata darj nahi hai';
-    // Date of Birth (agar darj hai to dikhao, warna age ke saath)
     const dobVal = document.getElementById('c360DobVal');
     if (dobVal) {
         if (c.DateOfBirth) {
@@ -16246,6 +16516,15 @@ function renderCustomer360View(data) {
             dobVal.textContent = 'Darj nahi hai';
         }
     }
+    const extraEl = document.getElementById('c360ExtraVal');
+    if (extraEl) {
+        const parts = [];
+        if (c.CreditLimit && Number(c.CreditLimit) > 0) parts.push(`Limit ₹${Number(c.CreditLimit).toLocaleString('en-IN')}`);
+        if (c.GSTIN) parts.push(`GST: ${c.GSTIN}`);
+        if (c.Notes) parts.push(c.Notes);
+        extraEl.textContent = parts.length ? parts.join(' • ') : 'Koi note nahi';
+        extraEl.title = parts.join(' • ');
+    }
 
     // 4. Family Info
     const famBadge = document.getElementById('c360FamilyBadge');
@@ -16255,7 +16534,7 @@ function renderCustomer360View(data) {
         document.getElementById('c360FamilyRelVal').textContent = `${c.Relationship || 'Member'} (${c.FamilyName || 'Parivar'})`;
     } else {
         famBadge.style.display = 'none';
-        document.getElementById('c360FamilyRelVal').textContent = 'Single / Individual Khata';
+        document.getElementById('c360FamilyRelVal').textContent = 'Single / Individual';
     }
     document.getElementById('c360KhataModeBadge').textContent = c.KhataMode || 'Individual';
 
@@ -16280,37 +16559,87 @@ function renderCustomer360View(data) {
         balStatus.textContent = 'Hisaab Barabar (Settled)';
     }
 
-    // 6. 4 KPI Metrics
+    // 6. 5 KPI Metrics
     document.getElementById('c360KpiKhataVal').textContent = `${khata.totalEntries} Entries`;
-    document.getElementById('c360KpiKhataSub').innerHTML = `<span class="amt-red" style="font-size: 11px;">Udhaar: −₹${Number(khata.totalGave).toLocaleString('en-IN')}</span> • <span class="amt-green" style="font-size: 11px;">Jama: +₹${Number(khata.totalGot).toLocaleString('en-IN')}</span>`;
+    document.getElementById('c360KpiKhataSub').innerHTML = `<span class="amt-red" style="font-size: 11px;">Diya: −₹${Number(khata.totalGave).toLocaleString('en-IN')}</span> • <span class="amt-green" style="font-size: 11px;">Mila: +₹${Number(khata.totalGot).toLocaleString('en-IN')}</span>`;
 
     document.getElementById('c360KpiBCVal').textContent = `${bc.totalCount} Txns`;
-    document.getElementById('c360KpiBCSub').textContent = `Kul Len-Den: ₹${Number(bc.totalVolume).toLocaleString('en-IN')}`;
+    document.getElementById('c360KpiBCSub').textContent = `Len-Den: ₹${Number(bc.totalVolume).toLocaleString('en-IN')}`;
 
     document.getElementById('c360KpiInvoiceVal').textContent = `${bills.totalCount} Bills`;
     const billDueAmt = Number(bills.totalDue) || 0;
     document.getElementById('c360KpiInvoiceSub').innerHTML = billDueAmt > 0
-        ? `<span class="amt-red" style="font-size: 11px;">Due Baki: −₹${billDueAmt.toLocaleString('en-IN')}</span>`
+        ? `<span class="amt-red" style="font-size: 11px;">Due: −₹${billDueAmt.toLocaleString('en-IN')}</span>`
         : `<span class="amt-green" style="font-size: 11px;">Chukta (₹0 Baki)</span>`;
+
+    const cscValEl = document.getElementById('c360KpiCSCVal');
+    const cscSubEl = document.getElementById('c360KpiCSCSub');
+    if (cscValEl) cscValEl.textContent = `${cscWork.totalCount || 0} Forms`;
+    if (cscSubEl) {
+        const cscDue = Number(cscWork.totalDue || 0);
+        cscSubEl.innerHTML = cscDue > 0
+            ? `<span class="amt-red" style="font-size: 11px;">Due: ₹${cscDue.toLocaleString('en-IN')}</span>`
+            : `Fee: ₹${Number(cscWork.totalFee || 0).toLocaleString('en-IN')}`;
+    }
+
+    const bpValEl = document.getElementById('c360KpiBPVal');
+    const bpSubEl = document.getElementById('c360KpiBPSub');
+    if (bpValEl) bpValEl.textContent = `${billPay.totalCount || 0} Bills`;
+    if (bpSubEl) {
+        const bpDue = Number(billPay.totalDue || 0);
+        bpSubEl.innerHTML = bpDue > 0
+            ? `<span class="amt-red" style="font-size: 11px;">Due: ₹${bpDue.toLocaleString('en-IN')}</span>`
+            : `Jama: ₹${Number(billPay.totalCollected || 0).toLocaleString('en-IN')}`;
+    }
+
+    const uclValEl = document.getElementById('c360KpiUCLVal');
+    const uclSubEl = document.getElementById('c360KpiUCLSub');
+    if (uclValEl) uclValEl.textContent = `${uclWork.totalCount || 0} UCL`;
+    if (uclSubEl) {
+        const uclDue = Number(uclWork.totalDue || 0);
+        uclSubEl.innerHTML = uclDue > 0
+            ? `<span class="amt-red" style="font-size: 11px;">Due: ₹${uclDue.toLocaleString('en-IN')}</span>`
+            : `Fee: ₹${Number(uclWork.totalAmount || 0).toLocaleString('en-IN')}`;
+    }
 
     document.getElementById('c360KpiFamilyVal').textContent = `${family.length || 1} Sadasya`;
     document.getElementById('c360KpiFamilySub').textContent = c.FamilyName || 'Single Account';
 
-    // 7. Tab Counts
+    // 7. Tab Counts & Reset tab filters
     document.getElementById('c360TabCountKhata').textContent = khata.totalEntries;
     document.getElementById('c360TabCountBC').textContent = bc.totalCount;
     document.getElementById('c360TabCountInvoices').textContent = bills.totalCount;
     document.getElementById('c360TabCountFamily').textContent = family.length;
+    const bpTabCnt = document.getElementById('c360TabCountBillPay');
+    if (bpTabCnt) bpTabCnt.textContent = billPay.totalCount || 0;
+    const uclTabCnt = document.getElementById('c360TabCountUCL');
+    if (uclTabCnt) uclTabCnt.textContent = uclWork.totalCount || 0;
+    const cscTabCnt = document.getElementById('c360TabCountCSC');
+    if (cscTabCnt) cscTabCnt.textContent = cscWork.totalCount || 0;
     const auditCountEl = document.getElementById('c360TabCountAudit');
     if (auditCountEl) auditCountEl.textContent = (data.auditHistory || []).length;
 
+    ['c360KhataSearch', 'c360KhataFilter', 'c360BCSearch', 'c360BCFilter', 'c360InvSearch', 'c360InvFilter', 'c360BPSearch', 'c360BPFilter', 'c360UCLSearch', 'c360UCLFilter', 'c360CSCSearch', 'c360CSCFilter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
+    // Store raw arrays for instant client-side filtering inside tabs
+    window._c360RawKhata = khata.entries || [];
+    window._c360RawBC = bc.transactions || [];
+    window._c360RawInvoices = bills.invoices || [];
+    window._c360RawBillPay = billPay.records || [];
+    window._c360RawUCL = uclWork.records || [];
+
     // 8. Render Table Panels
-    renderC360KhataTable(khata.entries, c);
-    renderC360BCTable(bc.transactions);
-    renderC360InvoicesTable(bills.invoices);
+    renderC360KhataTable(window._c360RawKhata, c);
+    renderC360BCTable(window._c360RawBC);
+    renderC360InvoicesTable(window._c360RawInvoices);
+    renderC360BillPayTable(window._c360RawBillPay);
+    renderC360UCLTable(window._c360RawUCL);
     renderC360FamilyList(family);
     if (typeof loadC360Documents === 'function') loadC360Documents(c.CustomerID);
-    if (typeof loadC360CSC === 'function') loadC360CSC(c.CustomerID);
+    if (typeof loadC360CSC === 'function') loadC360CSC(c.CustomerID, cscWork.applications);
     renderC360AuditHistory(data.auditHistory || [], c);
 
     // Default to Khata tab
@@ -16318,15 +16647,70 @@ function renderCustomer360View(data) {
     if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
+function filterC360Khata() {
+    if (!c360ActiveCustomerData) return;
+    const q = (document.getElementById('c360KhataSearch')?.value || '').toLowerCase().trim();
+    const tp = document.getElementById('c360KhataFilter')?.value || '';
+    const filtered = (window._c360RawKhata || []).filter(r => {
+        if (tp && r.EntryType !== tp) return false;
+        if (q) {
+            const hay = `${r.SNCode || ''} ${r.Description || ''} ${r.ReferenceNo || ''} ${r.PaymentMode || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360KhataTable(filtered, c360ActiveCustomerData.customer);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function filterC360BC() {
+    const q = (document.getElementById('c360BCSearch')?.value || '').toLowerCase().trim();
+    const svc = document.getElementById('c360BCFilter')?.value || '';
+    const filtered = (window._c360RawBC || []).filter(b => {
+        const st = String(b.ServiceType || '').toLowerCase();
+        if (svc === 'withdrawal' && !(st.includes('withdrawal') || st.includes('nikasi') || b.PaymentMode === 'Cash Out')) return false;
+        if (svc === 'deposit' && !(st.includes('deposit') || st.includes('jama') || b.PaymentMode === 'Cash In')) return false;
+        if (svc === 'transfer' && !(st.includes('transfer') || st.includes('dmt') || st.includes('aeps'))) return false;
+        if (q) {
+            const hay = `${b.SNCode || ''} ${b.ServiceType || ''} ${b.BankName || ''} ${b.RRN_UTR || ''} ${b.AccountNumber || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360BCTable(filtered);
+}
+
+function filterC360Invoices() {
+    const q = (document.getElementById('c360InvSearch')?.value || '').toLowerCase().trim();
+    const st = document.getElementById('c360InvFilter')?.value || '';
+    const filtered = (window._c360RawInvoices || []).filter(inv => {
+        if (st === 'Unpaid' && !['Unpaid', 'Due', 'Pending'].includes(inv.PaymentStatus)) return false;
+        else if (st && st !== 'Unpaid' && inv.PaymentStatus !== st) return false;
+        if (q) {
+            const hay = `${inv.SNCode || ''} ${inv.InvoiceNumber || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360InvoicesTable(filtered);
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+window.filterC360Khata = filterC360Khata;
+window.filterC360BC = filterC360BC;
+window.filterC360Invoices = filterC360Invoices;
+
 function switchC360Tab(tabName) {
-    const tabs = ['khata', 'bc', 'invoices', 'family', 'docs', 'csc', 'audit'];
+    const tabs = ['khata', 'bc', 'invoices', 'billpay', 'ucl', 'family', 'docs', 'csc', 'audit'];
     tabs.forEach(t => {
         const cap = (t) => {
-            if (t === 'bc') return 'BC';       // id="c360TabBC"
-            if (t === 'docs') return 'Docs';   // id="c360TabDocs"
-            if (t === 'csc') return 'CSC';     // id="c360TabCSC"
-            if (t === 'audit') return 'Audit'; // id="c360TabAudit"
-            return t.charAt(0).toUpperCase() + t.slice(1); // Khata, Invoices, Family
+            if (t === 'bc') return 'BC';
+            if (t === 'billpay') return 'BillPay';
+            if (t === 'ucl') return 'UCL';
+            if (t === 'docs') return 'Docs';
+            if (t === 'csc') return 'CSC';
+            if (t === 'audit') return 'Audit';
+            return t.charAt(0).toUpperCase() + t.slice(1);
         };
         const btn = document.getElementById(`c360Tab${cap(t)}`);
         const panel = document.getElementById(`c360Panel${cap(t)}`);
@@ -16549,6 +16933,8 @@ function c360UploadDoc() {
 }
 
 function renderC360KhataTable(entries, cust) {
+    const _kp = document.getElementById('c360KhataCountPill');
+    if (_kp) _kp.textContent = `${(entries || []).length} entries`;
     const tbody = document.getElementById('c360KhataTableBody');
     if (!tbody) return;
 
@@ -16642,7 +17028,6 @@ function renderC360KhataTable(entries, cust) {
                 <td style="font-weight: 500;">
                     <div>${escapeHtml(row.Description || '-')}</div>
                     <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-top: 2px;">
-                        ${row.SNCode ? `<span class="badge font-mono" style="font-size: 9.5px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 1px 4px; border-radius: 3px;">${escapeHtml(row.SNCode)}</span>` : ''}
                         ${row.ReferenceNo ? `<span style="font-size: 10px; color: var(--text-muted);">Ref: ${escapeHtml(row.ReferenceNo)}</span>` : ''}
                         ${row.BCID ? `<span class="badge font-mono" style="font-size: 9.5px; background: rgba(139, 92, 246, 0.15); color: #a78bfa; padding: 1px 4px; border-radius: 3px;">🏦 #BC-${row.BCID}</span>` : ''}
                         ${row.CSCAppID ? `<span class="badge font-mono" style="font-size: 9.5px; background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 1px 4px; border-radius: 3px;">📋 #CSC-${row.CSCAppID}</span>` : ''}
@@ -16660,6 +17045,8 @@ function renderC360KhataTable(entries, cust) {
 }
 
 function renderC360BCTable(txns) {
+    const _bp = document.getElementById('c360BCCountPill');
+    if (_bp) _bp.textContent = `${(Array.isArray(txns) ? txns.length : (txns ? 1 : 0))} txns`;
     const tbody = document.getElementById('c360BCTableBody');
     if (!tbody) return;
 
@@ -16733,7 +17120,7 @@ function renderC360BCTable(txns) {
         try { window._c360BCTxns = txns; } catch (e) { }
     } catch (err) {
         console.error('BC table render error:', err);
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 24px; color: #f87171;">Row dikhane me error: ${escapeHtml(err.message)}<br><span style="font-size:12px;color:#94a3b8;">${txns.length} transaction(s) mili hain — page refresh karke dobara dekhein.</span></td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: #f87171;">Row dikhane me error: ${escapeHtml(err.message)}<br><span style="font-size:12px;color:#94a3b8;">${txns.length} transaction(s) mili hain — page refresh karke dobara dekhein.</span></td></tr>`;
     }
     if (typeof lucide !== 'undefined') { try { lucide.createIcons(); } catch (e) { } }
 }
@@ -16752,6 +17139,8 @@ function openC360SlipByIndex(btn) {
 }
 
 function renderC360InvoicesTable(invs) {
+    const _ip = document.getElementById('c360InvCountPill');
+    if (_ip) _ip.textContent = `${(invs || []).length} bills`;
     const tbody = document.getElementById('c360InvoicesTableBody');
     if (!tbody) return;
 
@@ -16806,7 +17195,7 @@ function renderC360FamilyList(members) {
     if (!grid) return;
 
     if (!members || members.length <= 1) {
-        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 24px; color: #64748b; font-size: 13.5px;">Is customer ka koi doosra parivar sadasya linked nahi hai</div>`;
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 28px; color: var(--text-muted); font-size: 13px;"><div style="margin-bottom:10px;">Is customer ka koi doosra parivar sadasya linked nahi hai.</div><button type="button" class="btn-primary btn-sm" onclick="c360ManageFamily()">👨‍👩‍👧‍👦 Parivar Sadasya Link Karein</button></div>`;
         return;
     }
 
@@ -17016,6 +17405,200 @@ function closeCustomer360Modal() {
         focusUniversalSearch();
     }
 }
+
+function renderC360BillPayTable(records = []) {
+    const tbody = document.getElementById('c360BillPayTableBody');
+    const pill = document.getElementById('c360BPCountPill');
+    if (pill) pill.textContent = `${records.length} bills`;
+    if (!tbody) return;
+
+    if (!records || records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Is customer ka koi Bill ya Loan EMI payment darz nahi hai.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = records.map(bp => {
+        const due = parseFloat(bp.CustomerDue) || 0;
+        const stLower = String(bp.Status || 'Paid').toLowerCase();
+        const stCls = stLower === 'paid' ? 'badge-paid' : (stLower === 'partial' || due > 0 ? 'badge-warning' : 'badge-due');
+        return `
+            <tr>
+                <td class="cell-center" style="vertical-align: middle; text-align: center;">
+                    <button type="button" class="csc-sn-pill uni-sn-pill"
+                            onclick="openEditBillPaymentModal(${bp.PaymentID})"
+                            title="Universal Serial No: ${escapeHtml(bp.SNCode || ('SN-' + bp.GlobalSerialNo))} (Detail / Edit Dekhein)">
+                        <i data-lucide="zap" width="12" height="12"></i>
+                        <span>${escapeHtml(bp.SNCode || (bp.GlobalSerialNo ? 'SN-' + bp.GlobalSerialNo : '-'))}</span>
+                    </button>
+                </td>
+                <td style="white-space: nowrap;">
+                    <div>${formatIndianDate(bp.PaymentDate)}</div>
+                    ${bp.PaymentTime ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 1px;">${escapeHtml(String(bp.PaymentTime).slice(0, 8))}</div>` : ''}
+                </td>
+                <td>
+                    <div><b>${escapeHtml(bp.BillCategory || 'Bill')}</b></div>
+                    <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(bp.ProviderName || '-')}</div>
+                </td>
+                <td>
+                    <code class="font-mono" style="font-size: 11.5px; font-weight: 700;">${escapeHtml(bp.ConsumerNumber || bp.BillNumber || '-')}</code>
+                    ${bp.TxnReference ? `<div style="font-size: 10.5px; color: var(--text-muted);">Ref: ${escapeHtml(bp.TxnReference)}</div>` : ''}
+                </td>
+                <td class="c360-num" style="font-size: 13px;">₹${Number(bp.BillAmount || bp.TotalBillAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                <td class="c360-num amt-pos" style="font-size: 13px;">
+                    <div>+₹${Number(bp.TotalCollected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    ${due > 0 ? `<div style="font-size: 10.5px; color: var(--universal-amt-neg); font-weight: 700;">Due: −₹${due.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>` : ''}
+                </td>
+                <td><span class="badge ${stCls}" style="font-size: 11px;">${escapeHtml(bp.Status || 'Paid')}</span></td>
+                <td style="text-align: right; white-space: nowrap;">
+                    <button type="button" class="btn-ghost btn-sm" onclick="openEditBillPaymentModal(${bp.PaymentID})" title="Bill Detail / Edit Karein" style="padding: 4px 8px; color: #0284c7;">
+                        <i data-lucide="eye" width="13" height="13"></i> Dekhein
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function filterC360BillPay() {
+    const q = (document.getElementById('c360BPSearch')?.value || '').toLowerCase().trim();
+    const flt = document.getElementById('c360BPFilter')?.value || '';
+    const filtered = (window._c360RawBillPay || []).filter(bp => {
+        if (flt === 'Paid' && bp.Status !== 'Paid') return false;
+        if (flt === 'Partial' && !((parseFloat(bp.CustomerDue) || 0) > 0 || bp.Status === 'Partial')) return false;
+        if (['Electricity', 'EMI', 'Recharge'].includes(flt) && !String(bp.BillCategory || '').toLowerCase().includes(flt.toLowerCase())) return false;
+        if (q) {
+            const hay = `${bp.SNCode || ''} ${bp.BillCategory || ''} ${bp.ProviderName || ''} ${bp.ConsumerNumber || ''} ${bp.TxnReference || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360BillPayTable(filtered);
+}
+window.filterC360BillPay = filterC360BillPay;
+
+function renderC360UCLTable(records = []) {
+    const tbody = document.getElementById('c360UCLTableBody');
+    const pill = document.getElementById('c360UCLCountPill');
+    if (pill) pill.textContent = `${records.length} updates`;
+    if (!tbody) return;
+
+    if (!records || records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Is customer ka koi Aadhaar UCL update darz nahi hai.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = records.map(u => {
+        const due = parseFloat(u.BalanceAmount) || 0;
+        const stLower = String(u.Status || 'Generated').toLowerCase();
+        const stCls = (stLower.includes('complet') || stLower.includes('generat')) ? 'badge-paid' : (stLower.includes('reject') ? 'badge-due' : 'badge-warning');
+        return `
+            <tr>
+                <td class="cell-center" style="vertical-align: middle; text-align: center;">
+                    <button type="button" class="csc-sn-pill uni-sn-pill"
+                            onclick="openEditUCLModal(${u.UCLID})"
+                            title="Universal Serial No: ${escapeHtml(u.SNCode || ('SN-' + u.GlobalSerialNo))} (UCL Detail / Edit Dekhein)">
+                        <i data-lucide="fingerprint" width="12" height="12"></i>
+                        <span>${escapeHtml(u.SNCode || (u.GlobalSerialNo ? 'SN-' + u.GlobalSerialNo : '-'))}</span>
+                    </button>
+                </td>
+                <td style="white-space: nowrap;">${formatIndianDate(u.UpdateDate)}</td>
+                <td>
+                    <div><b>${escapeHtml(u.UpdateType || 'Demographics Update')}</b></div>
+                    ${u.BiometricsUpdate && u.BiometricsUpdate !== 'No' ? `<div style="font-size: 10.5px; color: #a78bfa;">Biometrics: ${escapeHtml(u.BiometricsUpdate)}</div>` : ''}
+                </td>
+                <td>
+                    <code class="font-mono" style="font-size: 11px; color: #38bdf8;">${escapeHtml(u.SID || '-')}</code>
+                </td>
+                <td style="white-space: nowrap;">
+                    <div class="font-mono" style="font-size: 11.5px;">${escapeHtml(u.AadhaarMasked || (u.AadhaarLast4 ? 'XXXX-XXXX-' + u.AadhaarLast4 : '-'))}</div>
+                    ${u.PACCode ? `<div style="font-size: 10.5px; color: #10b981; font-weight: 700;">PAC: ${escapeHtml(u.PACCode)}</div>` : ''}
+                </td>
+                <td class="c360-num" style="font-size: 13px;">
+                    <div>₹${Number(u.TotalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    ${due > 0 ? `<div style="font-size: 10.5px; color: var(--universal-amt-neg); font-weight: 700;">Due: ₹${due.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>` : ''}
+                </td>
+                <td><span class="badge ${stCls}" style="font-size: 11px;">${escapeHtml(u.Status || 'Generated')}</span></td>
+                <td style="text-align: right; white-space: nowrap;">
+                    <button type="button" class="btn-ghost btn-sm" onclick="openEditUCLModal(${u.UCLID})" title="UCL Record Edit / Receipt Dekhein" style="padding: 4px 8px; color: #6366f1;">
+                        <i data-lucide="eye" width="13" height="13"></i> Dekhein
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function filterC360UCL() {
+    const q = (document.getElementById('c360UCLSearch')?.value || '').toLowerCase().trim();
+    const flt = (document.getElementById('c360UCLFilter')?.value || '').toLowerCase();
+    const filtered = (window._c360RawUCL || []).filter(u => {
+        if (flt === 'due' && (parseFloat(u.BalanceAmount) || 0) <= 0) return false;
+        else if (flt && flt !== 'due' && String(u.Status || '').toLowerCase() !== flt) return false;
+        if (q) {
+            const hay = `${u.SNCode || ''} ${u.SID || ''} ${u.UpdateType || ''} ${u.PACCode || ''} ${u.AadhaarLast4 || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360UCLTable(filtered);
+}
+window.filterC360UCL = filterC360UCL;
+
+function c360QuickBillPay() {
+    if (!c360ActiveCustomerId || !c360ActiveCustomerData) return;
+    const c = c360ActiveCustomerData.customer;
+    if (typeof openNewBillPaymentModal === 'function') {
+        openNewBillPaymentModal({
+            CustomerID: c.CustomerID,
+            CustomerName: c.CustomerName,
+            CustomerPhone: c.Phone || ''
+        });
+    }
+}
+window.c360QuickBillPay = c360QuickBillPay;
+
+async function c360QuickUCL() {
+    if (!c360ActiveCustomerId || !c360ActiveCustomerData) return;
+    const c = c360ActiveCustomerData.customer;
+    if (typeof openNewUCLModal === 'function') {
+        await openNewUCLModal();
+        const sel = document.getElementById('uclCustomerSelect');
+        if (sel) {
+            sel.value = String(c.CustomerID);
+            if (sel._ssInstance) sel._ssInstance.syncFromNative();
+        }
+        const nameEl = document.getElementById('uclCustName');
+        if (nameEl) nameEl.value = c.CustomerName || '';
+        const phoneEl = document.getElementById('uclCustPhone');
+        if (phoneEl && c.Phone) phoneEl.value = c.Phone;
+        const aadhEl = document.getElementById('uclCustAadhaar');
+        if (aadhEl && c.AadhaarNumber) aadhEl.value = c.AadhaarNumber;
+    }
+}
+window.c360QuickUCL = c360QuickUCL;
+
+function c360EditProfile() {
+    if (!c360ActiveCustomerId) return;
+    openCustomerModal(c360ActiveCustomerId);
+}
+function c360QuickBill() {
+    if (!c360ActiveCustomerId) return;
+    createBillForCustomer(c360ActiveCustomerId);
+}
+function c360ManageFamily() {
+    if (!c360ActiveCustomerId) return;
+    openFamilyModal(c360ActiveCustomerId);
+}
+function c360QuickKhataType(entryType) {
+    if (!c360ActiveCustomerId) return;
+    openKhataEntryModal(entryType || 'Got', c360ActiveCustomerId);
+}
+window.c360EditProfile = c360EditProfile;
+window.c360QuickBill = c360QuickBill;
+window.c360ManageFamily = c360ManageFamily;
+window.c360QuickKhataType = c360QuickKhataType;
 
 function c360QuickKhata() {
     if (!c360ActiveCustomerId) return;
@@ -18077,7 +18660,8 @@ function viewDocument(docId) {
     if (title) title.textContent = doc ? (doc.OriginalName || doc.FileName) : ('Document #' + docId);
     if (meta && doc) meta.textContent = (typeof docLinkedLabel === 'function' ? docLinkedLabel(doc) : '') + ' • ' + formatFileSize(doc.FileSize) + (doc.Description ? ' • ' + doc.Description : '');
     if (body) {
-        const ext = ((doc && doc.FileType) || '').toLowerCase();
+        const docCat = getDocCategory(doc);
+        const ext = getDocExt(doc);
         const url = API + '/documents/' + docId + '/view';
         if (doc && (doc.IsExternal === true || doc.IsExternal === 1 || /^(https?):\/\//i.test(doc.FilePath || ''))) {
             body.innerHTML = '<div style="padding:40px 20px;text-align:center;">'
@@ -18087,11 +18671,11 @@ function viewDocument(docId) {
                 + '<div style="display:flex;gap:8px;justify-content:center;margin-top:14px;">'
                 + '<a class="btn-success btn-sm" href="' + escapeHtml(doc.FilePath) + '" target="_blank" rel="noopener noreferrer">Open Link</a> '
                 + '<button class="btn-secondary btn-sm" onclick="downloadDocument(' + docId + ')">Download</button></div></div>';
-        } else if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'].includes(ext)) {
+        } else if (docCat === 'image') {
             body.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:16px;">'
                 + '<img src="' + url + '" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);" alt="preview">'
                 + '</div>';
-        } else if (ext === '.pdf' || ext === '.txt') {
+        } else if (docCat === 'pdf' || ext === '.txt') {
             body.innerHTML = '<iframe src="' + url + '" style="width:100%;height:100%;border:none;background:#fff;" title="Document Preview"></iframe>';
         } else {
             body.innerHTML = '<div style="padding:40px 20px;text-align:center;"><div style="font-size:54px;">📄</div><h3 style="color:#f8fafc;margin:8px 0;">' + escapeHtml(doc ? (doc.OriginalName || doc.FileName) : '') + '</h3><p style="color:#94a3b8;font-size:13px;">Preview uplabdh nahi hai (Word/Excel). Download ya Print karein.</p><div style="display:flex;gap:8px;justify-content:center;margin-top:14px;"><button class="btn-success btn-sm" onclick="downloadDocument(' + docId + ')">Download</button> <button class="btn-secondary btn-sm" onclick="printDocument(' + docId + ')">Print</button></div></div>';
@@ -18137,14 +18721,28 @@ function changeDocPageSize(val) {
 window.changeDocPageSize = changeDocPageSize;
 
 function renderDocumentsVault() {
+    updateDocTypePillCounts();
     const rows = getFilteredDocuments();
 
-    // Latest first sorting: CreatedAt DESC, DocumentID DESC
+    const sortBy = document.getElementById('docSortSelect')?.value || 'newest';
     rows.sort((a, b) => {
+        if (sortBy === 'name_asc') {
+            return String(a.OriginalName || '').localeCompare(String(b.OriginalName || ''), 'en');
+        }
+        if (sortBy === 'size_desc') {
+            return (Number(b.FileSize) || 0) - (Number(a.FileSize) || 0);
+        }
+        if (sortBy === 'size_asc') {
+            return (Number(a.FileSize) || 0) - (Number(b.FileSize) || 0);
+        }
         const dA = parseApiDate(a.CreatedAt);
         const dB = parseApiDate(b.CreatedAt);
         const da = dA ? dA.getTime() : 0;
         const db = dB ? dB.getTime() : 0;
+        if (sortBy === 'oldest') {
+            if (da !== db) return da - db;
+            return (a.DocumentID || 0) - (b.DocumentID || 0);
+        }
         if (db !== da) return db - da;
         return (b.DocumentID || 0) - (a.DocumentID || 0);
     });
@@ -18158,7 +18756,11 @@ function renderDocumentsVault() {
     const pagedRows = rows.slice(startIdx, startIdx + docPageSize);
 
     const grid = document.getElementById('docGrid');
+    const tableWrap = document.getElementById('docTableWrap');
     const tbody = document.getElementById('docTableBody');
+    if (grid) grid.style.display = (docViewMode === 'list') ? 'none' : '';
+    if (tableWrap) tableWrap.style.display = (docViewMode === 'grid') ? 'none' : '';
+
     if (grid) {
         if (!rows.length) {
             grid.innerHTML = '<div class="doc-empty"><div style="font-size:44px;">📂</div><b>Koi document nahi mila</b><br><span style="font-size:12px;color:var(--text-muted);">Nayi file upload karein ya filter badlein.</span><br><button class="btn-primary btn-sm" onclick="openDocUploadModal()" style="margin-top:10px;">Upload Karein</button></div>';
@@ -18167,16 +18769,17 @@ function renderDocumentsVault() {
                 const ic = docIconFor(d);
                 const docDate = parseApiDate(d.CreatedAt);
                 const dt = docDate ? docDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
-                return '<div class="doc-card"><div class="doc-thumb ' + ic.cls + '" onclick="viewDocument(' + d.DocumentID + ')" title="Preview kholein">' + ic.icon + '</div>'
+                return '<div class="doc-card"><div class="doc-thumb ' + ic.cls + '" onclick="viewDocument(' + d.DocumentID + ')" title="Preview kholein">' + docThumbHtml(d) + '</div>'
                     + '<div class="doc-card-body" onclick="viewDocument(' + d.DocumentID + ')"><div class="doc-name" title="' + escapeHtml(d.OriginalName) + '">' + escapeHtml(d.OriginalName) + '</div>'
                     + '<div class="doc-sub">' + escapeHtml(docLinkedLabel(d)) + '</div>'
+                    + (d.Description ? '<div class="doc-desc-line" title="' + escapeHtml(d.Description) + '">' + escapeHtml(d.Description) + '</div>' : '')
                     + '<div class="doc-meta"><span>' + formatFileSize(d.FileSize) + '</span><span>•</span><span>' + dt + '</span></div></div>'
                     + '<div class="doc-actions" onclick="event.stopPropagation()">'
                     + '<button class="btn-icon" title="View" onclick="viewDocument(' + d.DocumentID + ')">👁️</button>'
                     + '<button class="btn-icon" title="Print" onclick="printDocument(' + d.DocumentID + ')">🖨️</button>'
                     + '<button class="btn-icon" title="Download" onclick="downloadDocument(' + d.DocumentID + ')">⬇️</button>'
                     + '<button class="btn-icon" title="Rename" onclick="renameDocument(' + d.DocumentID + ')">✏️</button>'
-                    + '<button class="btn-icon" title="Delete" style="color:var(--accent-red);" onclick="deleteDocument(' + d.DocumentID + ')">🗑️</button>'
+                    + '<button class="btn-icon" title="Note / Delete" onclick="toggleDocActionMenu(event, ' + d.DocumentID + ')">⋮</button>'
                     + '</div></div>';
             }).join('');
         }
@@ -18286,7 +18889,14 @@ function toggleDocActionMenu(e, docId) {
                 <span class="cad-icon cyan"><i data-lucide="edit-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary">Naam Badlein (Rename)</span>
-                    <span class="cad-secondary">File ka title ya description badlein</span>
+                    <span class="cad-secondary">File ka naam badlein</span>
+                </div>
+            </button>
+            <button type="button" class="cad-item" id="docOptNote">
+                <span class="cad-icon amber"><i data-lucide="file-pen-line"></i></span>
+                <div class="cad-label">
+                    <span class="cad-primary">Note / Vivran Likhein</span>
+                    <span class="cad-secondary">Document ka description update karein</span>
                 </div>
             </button>
             <div class="cad-divider"></div>
@@ -18316,6 +18926,10 @@ function toggleDocActionMenu(e, docId) {
         closeDocActionMenu();
         renameDocument(d.DocumentID);
     });
+    menu.querySelector('#docOptNote')?.addEventListener('click', () => {
+        closeDocActionMenu();
+        editDocumentDescription(d.DocumentID);
+    });
     menu.querySelector('#docOptDelete')?.addEventListener('click', () => {
         closeDocActionMenu();
         deleteDocument(d.DocumentID);
@@ -18338,6 +18952,7 @@ window.closeDocActionMenu = closeDocActionMenu;
 /* DOCS VAULT P1: state + list + filters */
 let allDocumentsData = [];
 let docTypeFilter = 'all';
+let docViewMode = 'grid';
 let currentViewDocId = null;
 let c360DocsCache = [];
 function formatFileSize(bytes) {
@@ -18348,18 +18963,57 @@ function formatFileSize(bytes) {
     if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
     return (b / 1048576).toFixed(2) + ' MB';
 }
+function getDocExt(doc) {
+    if (!doc) return '';
+    const ft = String(doc.FileType || '').trim().toLowerCase();
+    if (ft.startsWith('.') && ft.length <= 8) return ft;
+    const nm = String(doc.OriginalName || doc.FileName || '').toLowerCase();
+    const m = nm.match(/\.[a-z0-9]{2,6}$/);
+    return m ? m[0] : (ft.includes('/') ? '.' + ft.split('/')[1].split(';')[0] : '');
+}
+function getDocCategory(doc) {
+    if (!doc) return 'other';
+    const ft = String(doc.FileType || '').toLowerCase();
+    const ext = getDocExt(doc);
+    if (ft.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'].includes(ext)) return 'image';
+    if (ft === 'application/pdf' || ext === '.pdf') return 'pdf';
+    if (ft.includes('spreadsheet') || ft.includes('excel') || ['.xls', '.xlsx'].includes(ext)) return 'excel';
+    if (ft.includes('word') || ft.startsWith('text/') || ['.doc', '.docx', '.txt', '.rtf', '.csv'].includes(ext)) return 'document';
+    if (ft.includes('presentation') || ft.includes('powerpoint') || ['.ppt', '.pptx'].includes(ext)) return 'presentation';
+    const cat = String(doc.Category || '').toLowerCase();
+    if (['image', 'pdf', 'excel', 'document', 'presentation'].includes(cat)) return cat;
+    return 'other';
+}
 function docIconFor(doc) {
-    const cat = (doc.Category || '').toLowerCase();
-    const ext = (doc.FileType || '').toLowerCase();
+    const cat = getDocCategory(doc);
     if (cat === 'image') return { icon: '🖼️', cls: 'doc-ic-img' };
-    if (cat === 'pdf' || ext === '.pdf') return { icon: '📕', cls: 'doc-ic-pdf' };
+    if (cat === 'pdf') return { icon: '📕', cls: 'doc-ic-pdf' };
     if (cat === 'excel') return { icon: '📊', cls: 'doc-ic-xls' };
     if (cat === 'document') return { icon: '📄', cls: 'doc-ic-doc' };
-    if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg'].includes(ext)) return { icon: '🖼️', cls: 'doc-ic-img' };
-    if (['.xls', '.xlsx', '.csv'].includes(ext)) return { icon: '📊', cls: 'doc-ic-xls' };
-    if (['.doc', '.docx', '.txt', '.rtf'].includes(ext)) return { icon: '📄', cls: 'doc-ic-doc' };
-    if (['.ppt', '.pptx'].includes(ext)) return { icon: '📽️', cls: 'doc-ic-ppt' };
+    if (cat === 'presentation') return { icon: '📽️', cls: 'doc-ic-ppt' };
     return { icon: '📦', cls: 'doc-ic-other' };
+}
+function docEntityBadgeLabel(doc) {
+    if (!doc) return '';
+    const et = String(doc.EntityType || '').trim();
+    if (!et && !doc.CustomerID) return 'SHOP';
+    if (!et) return 'CUSTOMER';
+    return et.toUpperCase();
+}
+function docThumbHtml(doc) {
+    const ic = docIconFor(doc);
+    const cat = getDocCategory(doc);
+    const ext = getDocExt(doc).replace('.', '').toUpperCase() || cat.toUpperCase();
+    const modLbl = docEntityBadgeLabel(doc);
+    const badges = '<span class="doc-thumb-badge left">' + escapeHtml(modLbl) + '</span>'
+        + '<span class="doc-thumb-badge right">' + escapeHtml(ext) + '</span>';
+    const isExternal = (doc.IsExternal === true || doc.IsExternal === 1 || /^https?:\/\//i.test(doc.FilePath || ''));
+    if (cat === 'image' && !isExternal) {
+        const src = API + '/documents/' + doc.DocumentID + '/view';
+        return badges + '<img class="doc-thumb-img" src="' + src + '" alt="' + escapeHtml(doc.OriginalName || 'Document') + '" loading="lazy" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'inline-flex\';">'
+            + '<span style="display:none;font-size:36px;">' + ic.icon + '</span>';
+    }
+    return badges + '<span>' + ic.icon + '</span>';
 }
 function docLinkedLabel(doc) {
     if (doc.CustomerID && doc.CustomerName) return '👤 ' + doc.CustomerName + ' (#' + doc.CustomerID + ')';
@@ -18442,18 +19096,76 @@ function filterDocumentsList() {
     docCurrentPage = 1;
     renderDocumentsVault();
 }
-function getFilteredDocuments() {
+function setDocViewMode(mode, btn) {
+    docViewMode = mode || 'grid';
+    document.querySelectorAll('.doc-view-toggle .doc-vt-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    renderDocumentsVault();
+}
+function resetDocFilters() {
+    const searchEl = document.getElementById('docSearchInput');
+    const custEl = document.getElementById('docCustomerFilter');
+    const entEl = document.getElementById('docEntityFilter');
+    const sortEl = document.getElementById('docSortSelect');
+    if (searchEl) searchEl.value = '';
+    if (custEl) {
+        custEl.value = 'all';
+        if (custEl._ssInstance?.syncFromNative) try { custEl._ssInstance.syncFromNative(); } catch (_) { }
+    }
+    if (entEl) entEl.value = 'all';
+    if (sortEl) sortEl.value = 'newest';
+    docTypeFilter = 'all';
+    docCurrentPage = 1;
+    document.querySelectorAll('#docTypePills .pill-btn').forEach((b, idx) => b.classList.toggle('active', idx === 0));
+    renderDocumentsVault();
+}
+function getBaseFilteredDocuments() {
     const q = (document.getElementById('docSearchInput')?.value || '').toLowerCase().trim();
     const custF = document.getElementById('docCustomerFilter')?.value || 'all';
+    const entF = (document.getElementById('docEntityFilter')?.value || 'all').toLowerCase();
     return (allDocumentsData || []).filter(d => {
-        if (docTypeFilter !== 'all' && (d.Category || 'other') !== docTypeFilter) return false;
         if (custF === 'shop' && d.CustomerID) return false;
         if (custF !== 'all' && custF !== 'shop' && String(d.CustomerID) !== String(custF)) return false;
+        if (entF !== 'all') {
+            const et = String(d.EntityType || '').toLowerCase();
+            if (entF === 'shop') {
+                if (d.CustomerID && et !== 'shop') return false;
+            } else if (entF === 'customer') {
+                if (!d.CustomerID && et !== 'customer') return false;
+            } else if (!et.includes(entF)) {
+                return false;
+            }
+        }
         if (q) {
-            const hay = ((d.OriginalName || '') + ' ' + (d.Description || '') + ' ' + (d.CustomerName || '')).toLowerCase();
+            const hay = ((d.OriginalName || '') + ' ' + (d.Description || '') + ' ' + (d.CustomerName || '') + ' ' + (d.EntityType || '')).toLowerCase();
             if (!hay.includes(q)) return false;
         }
         return true;
+    });
+}
+function updateDocTypePillCounts() {
+    const base = getBaseFilteredDocuments();
+    const counts = { all: base.length, image: 0, pdf: 0, document: 0, excel: 0, other: 0 };
+    base.forEach(d => {
+        const cat = getDocCategory(d);
+        if (counts[cat] !== undefined) counts[cat]++;
+        else counts.other++;
+    });
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('docPillCntAll', counts.all);
+    set('docPillCntImg', counts.image);
+    set('docPillCntPdf', counts.pdf);
+    set('docPillCntDoc', counts.document);
+    set('docPillCntXls', counts.excel);
+    set('docPillCntOther', counts.other);
+}
+function getFilteredDocuments() {
+    const base = getBaseFilteredDocuments();
+    if (docTypeFilter === 'all') return base;
+    return base.filter(d => {
+        const cat = getDocCategory(d);
+        if (docTypeFilter === 'other') return !['image', 'pdf', 'document', 'excel'].includes(cat);
+        return cat === docTypeFilter;
     });
 }
 
@@ -21373,81 +22085,124 @@ function exportCSCToCSV() {
 }
 
 // 9. Customer 360 Profile Integration
-async function loadC360CSC(customerId) {
+function renderC360CSCRows(apps = []) {
+    const tbody = document.getElementById('c360CSCTableBody');
+    const pill = document.getElementById('c360CSCCountPill');
+    if (pill) pill.textContent = `${apps.length} forms`;
+    if (!tbody) return;
+
+    if (!apps || apps.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">Is customer ka koi CSC aavedan nahi mila.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = apps.map(a => {
+        const due = parseFloat(a.DueAmount) || 0;
+        const stLower = String(a.Status || 'Pending').toLowerCase();
+        let stCls = 'badge-warning';
+        if (stLower.includes('deliver') || stLower.includes('complet') || stLower.includes('ready')) stCls = 'badge-paid';
+        else if (stLower.includes('reject') || stLower.includes('cancel')) stCls = 'badge-due';
+
+        return `
+            <tr>
+                <td class="cell-center" style="vertical-align: middle; text-align: center;">
+                    <button type="button"
+                            class="csc-sn-pill uni-sn-pill"
+                            onclick="openCSCDetailModal(${a.AppID})"
+                            title="Universal Serial No: ${escapeHtml(a.SNCode || ('SN-' + a.GlobalSerialNo))} (Click karke Poori Detail Dekhein)">
+                        <i data-lucide="file-text" width="12" height="12"></i>
+                        <span>${escapeHtml(a.SNCode || (a.GlobalSerialNo ? 'SN-' + a.GlobalSerialNo : '-'))}</span>
+                    </button>
+                </td>
+                <td>
+                    <div>${formatIndianDate(a.ApplyDate)}</div>
+                    <div style="font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 3px; margin-top: 1px;">
+                        ${formatTime(a.CreatedAt) ? `<i data-lucide="clock" width="10" height="10"></i> ${formatTime(a.CreatedAt)}` : ''}
+                    </div>
+                </td>
+                <td><b>${escapeHtml(a.ServiceType)}</b></td>
+                <td class="font-mono" style="color: #38bdf8; font-weight: 700; cursor: pointer;" onclick="openCSCDetailModal(${a.AppID})" title="Poori detail dekhne ke liye click karein">
+                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.25);">
+                        <i data-lucide="eye" width="11" height="11"></i> ${escapeHtml(a.AckNumber || '-')}
+                    </span>
+                </td>
+                <td><span class="badge ${stCls}" style="font-size: 11px;">${escapeHtml(a.Status || 'Pending')}</span></td>
+                <td>${a.ExpectedDate ? formatIndianDate(a.ExpectedDate) : '-'}</td>
+                <td>
+                    ₹${Number(a.TotalFee || 0).toLocaleString('en-IN')}
+                    ${due > 0 ? `<div style="color: #f87171; font-weight:700; font-size:11px;">Due: ₹${due.toLocaleString('en-IN')}</div>` : ''}
+                </td>
+                <td class="font-mono" style="color: #10b981; font-weight: 600;">${escapeHtml(a.CertificateDocNo || '-')}</td>
+                <td style="text-align: right;">
+                    <div style="display: flex; gap: 5px; justify-content: flex-end; align-items: center;">
+                        <button class="btn-ghost btn-sm" onclick="openCSCDetailModal(${a.AppID})" title="Poori Detail Dekhein" style="color: #38bdf8; padding: 4px 8px;">
+                            <i data-lucide="eye" width="13" height="13"></i>
+                        </button>
+                        <button type="button" class="table-menu-trigger-btn csc-menu-trigger-btn" onclick="toggleCSCActionMenu(event, ${a.AppID})" title="Sabhi Kriya (3 Dots Menu)">
+                            <i data-lucide="more-vertical" width="14" height="14"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (typeof refreshIcons === 'function') refreshIcons(tbody);
+    else if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function filterC360CSC() {
+    const q = (document.getElementById('c360CSCSearch')?.value || '').toLowerCase().trim();
+    const st = (document.getElementById('c360CSCFilter')?.value || '').toLowerCase();
+    const filtered = (window._c360CscApps || []).filter(a => {
+        if (st && String(a.Status || '').toLowerCase() !== st) return false;
+        if (q) {
+            const hay = `${a.SNCode || ''} ${a.ServiceType || ''} ${a.AckNumber || ''} ${a.CertificateDocNo || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+    renderC360CSCRows(filtered);
+}
+window.filterC360CSC = filterC360CSC;
+
+async function loadC360CSC(customerId, preloadedApps = null) {
     const tbody = document.getElementById('c360CSCTableBody');
     const badge = document.getElementById('c360TabCountCSC');
     if (!tbody) return;
 
+    if (Array.isArray(preloadedApps)) {
+        window._c360CscApps = preloadedApps;
+        if (badge) badge.textContent = preloadedApps.length;
+        renderC360CSCRows(preloadedApps);
+    }
+
     try {
         const res = await fetch(`${API}/csc?customerId=${customerId}`);
         const json = await res.json();
-        const apps = (json.success && Array.isArray(json.data)) ? json.data : [];
+        const fetched = (json.success && Array.isArray(json.data)) ? json.data : [];
+        // Merge preloaded (includes phone-matched) + customerId fetched uniquely by AppID
+        const byId = new Map();
+        (Array.isArray(preloadedApps) ? preloadedApps : []).forEach(a => byId.set(a.AppID, a));
+        fetched.forEach(a => byId.set(a.AppID, a));
+        const apps = Array.from(byId.values()).sort((a, b) => (Number(b.AppID) || 0) - (Number(a.AppID) || 0));
+
         window._c360CscApps = apps;
-
         if (badge) badge.textContent = apps.length;
-
-        if (apps.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">Is customer ka koi CSC aavedan abhi darz nahi hai.</td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = apps.map(a => {
-            const due = parseFloat(a.DueAmount) || 0;
-            return `
-                <tr>
-                    <td class="cell-center" style="vertical-align: middle; text-align: center;">
-                        <button type="button" 
-                                class="csc-sn-pill uni-sn-pill" 
-                                onclick="openCSCDetailModal(${a.AppID})" 
-                                title="Universal Serial No: ${escapeHtml(a.SNCode || ('SN-' + a.GlobalSerialNo))} (Click karke Poori Detail Dekhein)">
-                            <i data-lucide="file-text" width="12" height="12"></i>
-                            <span>${escapeHtml(a.SNCode || (a.GlobalSerialNo ? 'SN-' + a.GlobalSerialNo : '-'))}</span>
-                        </button>
-                    </td>
-                    <td>
-                        <div>${formatIndianDate(a.ApplyDate)}</div>
-                        <div style="font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 3px; margin-top: 1px;">
-                            ${formatTime(a.CreatedAt) ? `<i data-lucide="clock" width="10" height="10"></i> ${formatTime(a.CreatedAt)}` : ''}
-                        </div>
-                    </td>
-                    <td>
-                        <b>${escapeHtml(a.ServiceType)}</b>
-                    </td>
-                    <td class="font-mono" style="color: #38bdf8; font-weight: 700; cursor: pointer;" onclick="openCSCDetailModal(${a.AppID})" title="Poori detail dekhne ke liye click karein">
-                        <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.25);">
-                            <i data-lucide="eye" width="11" height="11"></i> ${escapeHtml(a.AckNumber || '-')}
-                        </span>
-                    </td>
-                    <td><span class="badge" style="font-size: 11px;">${escapeHtml(a.Status || 'Pending')}</span></td>
-                    <td>${a.ExpectedDate ? formatIndianDate(a.ExpectedDate) : '-'}</td>
-                    <td>
-                        ₹${Number(a.TotalFee || 0).toLocaleString('en-IN')}
-                        ${due > 0 ? `<div style="color: #f87171; font-weight:700; font-size:11px;">Due: ₹${due.toLocaleString('en-IN')}</div>` : ''}
-                    </td>
-                    <td class="font-mono" style="color: #34d399;">${escapeHtml(a.CertificateDocNo || '-')}</td>
-                    <td style="text-align: right;">
-                        <div style="display: flex; gap: 5px; justify-content: flex-end; align-items: center;">
-                            <button class="btn-ghost btn-sm" onclick="openCSCDetailModal(${a.AppID})" title="Poori Detail Dekhein" style="color: #38bdf8; padding: 4px 8px;">
-                                <i data-lucide="eye" width="13" height="13"></i>
-                            </button>
-                            <button type="button" class="table-menu-trigger-btn csc-menu-trigger-btn" onclick="toggleCSCActionMenu(event, ${a.AppID})" title="Sabhi Kriya (3 Dots Menu)">
-                                <i data-lucide="more-vertical" width="14" height="14"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-
-        refreshIcons(tbody);
+        renderC360CSCRows(apps);
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 16px; color: #ef4444;">Error loading CSC records: ${escapeHtml(e.message)}</td></tr>`;
+        if (!Array.isArray(preloadedApps)) {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 16px; color: #ef4444;">Error loading CSC records: ${escapeHtml(e.message)}</td></tr>`;
+        }
     }
 }
 
 function openNewCSCModalForCurrentCustomer() {
-    if (typeof current360CustomerId !== 'undefined' && current360CustomerId) {
-        openNewCSCModal(current360CustomerId);
+    const cid = (typeof c360ActiveCustomerId !== 'undefined' && c360ActiveCustomerId)
+        ? c360ActiveCustomerId
+        : (typeof current360CustomerId !== 'undefined' ? current360CustomerId : null);
+    if (cid) {
+        openNewCSCModal(cid);
     } else {
         openNewCSCModal();
     }
@@ -24279,6 +25034,7 @@ async function loadReports() {
         }
     }
     populateReportFilterDropdowns();
+    syncReportsContextualFilters(currentReportModule);
     await Promise.all([
         loadReportKPIs(),
         loadReportData()
@@ -24337,10 +25093,12 @@ function updateReportTypeFilterOptions() {
 
     if (currentReportModule === 'all') {
         typeSel.innerHTML = `
-            <option value="all">-- Sabhi Modules & Types --</option>
+            <option value="all">-- Sabhi Modules &amp; Types --</option>
             <option value="Cashbook">Cashbook (Income/Expense)</option>
             <option value="CSC Application">CSC Center Applications</option>
             <option value="BC Banking">BC Banking (AEPS/ATM)</option>
+            <option value="BillPay">Bill &amp; EMI Pay</option>
+            <option value="UCL">Aadhaar UCL Updates</option>
             <option value="Udhaar (Debit)">Khata Udhaar (Debit)</option>
             <option value="Jama (Credit)">Khata Jama (Credit)</option>
             <option value="Income">Income (Aamadani)</option>
@@ -24356,6 +25114,7 @@ function updateReportTypeFilterOptions() {
             <option value="Loan Given">Loan Diya</option>
             <option value="Loan Received">Loan Liya</option>
             <option value="Loan Repay">Loan Wapas</option>
+            <option value="Loan Recovery">Wapas Mila (Recovery)</option>
         `;
     } else if (currentReportModule === 'csc') {
         typeSel.innerHTML = buildCSCServiceOptions(allCSCServices, '-- Sabhi CSC Services --', 'all');
@@ -24372,6 +25131,26 @@ function updateReportTypeFilterOptions() {
             <option value="Balance Inquiry">Balance Inquiry</option>
             <option value="QR Pay">QR Pay</option>
         `;
+    } else if (currentReportModule === 'billpay') {
+        typeSel.innerHTML = `
+            <option value="all">-- Sabhi Bill Categories --</option>
+            <option value="Electricity">Bijli (Electricity)</option>
+            <option value="EMI">Loan EMI</option>
+            <option value="Mobile">Mobile Recharge</option>
+            <option value="DTH">DTH Recharge</option>
+            <option value="Gas">Gas / Cylinder</option>
+            <option value="Water">Water / Jal</option>
+            <option value="Broadband">Broadband / WiFi</option>
+        `;
+    } else if (currentReportModule === 'ucl') {
+        typeSel.innerHTML = `
+            <option value="all">-- Sabhi UCL Update Types --</option>
+            <option value="Demographics">Demographics Update</option>
+            <option value="Address">Address Update</option>
+            <option value="DOB">DOB Update</option>
+            <option value="Mobile">Mobile / Email Link</option>
+            <option value="Biometric">Biometrics Update</option>
+        `;
     } else if (currentReportModule === 'khata') {
         typeSel.innerHTML = `
             <option value="all">-- Sabhi Khata Entries --</option>
@@ -24383,7 +25162,8 @@ function updateReportTypeFilterOptions() {
             <option value="all">-- Sabhi Loan Entries --</option>
             <option value="Loan Given">Loan Diya</option>
             <option value="Loan Received">Loan Liya</option>
-            <option value="Loan Repay">Loan Wapas</option>
+            <option value="Loan Repay">Karz Chukta</option>
+            <option value="Loan Recovery">Wapas Mila (Recovery)</option>
         `;
     } else if (currentReportModule === 'invoices') {
         typeSel.innerHTML = `
@@ -24444,6 +25224,20 @@ async function loadReportKPIs() {
             bcEl.textContent = formatMoney(d.bc?.BCTotalVolume || 0);
             const sub = document.getElementById('repKpiBCSub');
             if (sub) sub.textContent = `Kamai: ${formatMoney(d.bc?.BCNetProfit || d.bc?.BCTotalCommission || 0)} (${d.bc?.BCCount || 0} Trx)`;
+        }
+
+        const bpEl = document.getElementById('repKpiBP');
+        if (bpEl) {
+            bpEl.textContent = formatMoney(d.billPayments?.BPTotalCollected || 0);
+            const sub = document.getElementById('repKpiBPSub');
+            if (sub) sub.textContent = `${d.billPayments?.BPCount || 0} Bills | Profit: ${formatMoney(d.billPayments?.BPNetProfit || 0)}`;
+        }
+
+        const uclEl = document.getElementById('repKpiUCL');
+        if (uclEl) {
+            uclEl.textContent = formatMoney(d.ucl?.UCLTotalAmount || 0);
+            const sub = document.getElementById('repKpiUCLSub');
+            if (sub) sub.textContent = `${d.ucl?.UCLCount || 0} Updates | Due: ${formatMoney(d.ucl?.UCLDueAmount || 0)}`;
         }
 
         if (udhEl) {
@@ -24651,7 +25445,7 @@ function updateReportTableStats(total, sumAmount, sumProfit) {
 
     const sumChip = document.getElementById('repTableSumChip');
     if (sumChip) {
-        const curModule = document.getElementById('reportModuleFilter')?.value || 'all';
+        const curModule = (typeof currentReportModule !== 'undefined' && currentReportModule) ? currentReportModule : 'all';
         const label = curModule === 'all'
             ? 'Kul Karobar (Gross Volume)'
             : (curModule === 'transactions' ? 'Kul Len-Den' :
@@ -24659,7 +25453,7 @@ function updateReportTableStats(total, sumAmount, sumProfit) {
                     curModule === 'csc' ? 'Kul CSC Shulk' :
                         curModule === 'khata' ? 'Kul Khata Rashi' :
                             curModule === 'invoices' ? 'Kul Bill Rashi' :
-                                curModule === 'billpay' ? 'Kul Bill Bhugtan' : 'Kul Rashi');
+                                curModule === 'billpay' ? 'Kul Bill Bhugtan' : (curModule === 'ucl' ? 'Kul UCL Fee' : (curModule === 'loans' ? 'Kul Loan Rashi' : 'Kul Rashi')));
         sumChip.textContent = `${label}: ${formatMoney(sumAmount || 0)}`;
         sumChip.title = curModule === 'all'
             ? 'Sabhi modules ka milakar kul len-den volume (Turnover)'
@@ -24702,6 +25496,33 @@ function changeReportsPage(delta) {
     }
 }
 
+function syncReportsContextualFilters(mod) {
+    const catWrap = document.getElementById('repCategoryFilterWrap');
+    const custWrap = document.getElementById('repCustomerFilterWrap');
+    const accWrap = document.getElementById('repAccountFilterWrap');
+    const showCategory = (mod === 'all' || mod === 'transactions');
+    const showCustomer = (mod !== 'loans' && mod !== 'accounts');
+    const showAccount = (mod !== 'accounts');
+    if (catWrap) {
+        catWrap.style.display = showCategory ? '' : 'none';
+        if (!showCategory) {
+            const catSel = document.getElementById('repCategoryFilter');
+            if (catSel && catSel.value !== 'all') catSel.value = 'all';
+        }
+    }
+    if (custWrap) {
+        custWrap.style.display = showCustomer ? '' : 'none';
+        if (!showCustomer) {
+            const custSel = document.getElementById('repCustomerFilter');
+            if (custSel && custSel.value !== 'all') {
+                custSel.value = 'all';
+                if (custSel._ssInstance?.syncFromNative) try { custSel._ssInstance.syncFromNative(); } catch (_) { }
+            }
+        }
+    }
+    if (accWrap) accWrap.style.display = showAccount ? '' : 'none';
+}
+
 function switchReportModule(mod, btn) {
     currentReportModule = mod;
     reportCurrentPage = 1;
@@ -24722,6 +25543,8 @@ function switchReportModule(mod, btn) {
         if (tableHost) tableHost.style.display = 'block';
         if (filtersCard) filtersCard.style.display = 'block';
         if (chartsView) chartsView.style.display = 'none';
+
+        syncReportsContextualFilters(mod);
         updateReportTypeFilterOptions();
         loadReportData();
     }
@@ -25051,6 +25874,8 @@ async function loadReportCharts() {
                         <td style="text-align: right; color: #ef4444;">₹${Number(m.CashbookExpense || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style="text-align: right; color: #06b6d4;">₹${Number(m.CSCProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style="text-align: right; color: #3b82f6;">₹${Number(m.BCCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td style="text-align: right; color: #f59e0b;">₹${Number(m.BPCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <td style="text-align: right; color: #8b5cf6;">₹${Number(m.UCLProfit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style="text-align: right; font-weight: 700; color: #34d399;">₹${Number(m.TotalIncome || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style="text-align: right; font-weight: 700; color: #f87171;">₹${Number(m.TotalExpense || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                         <td style="text-align: right; font-weight: 800; color: ${profit >= 0 ? '#10b981' : '#ef4444'};">
@@ -25060,7 +25885,7 @@ async function loadReportCharts() {
                 `;
             }).join('');
 
-            auditTbody.innerHTML = auditRows || '<tr><td colspan="8" style="text-align:center; padding: 16px;">No audit records found</td></tr>';
+            auditTbody.innerHTML = auditRows || '<tr><td colspan="10" style="text-align:center; padding: 16px;">No audit records found</td></tr>';
         }
     } catch (err) {
         console.error('Error rendering report charts:', err);

@@ -1,10 +1,10 @@
 ' CSC & BC Apna Hisaab - open app silently
 ' 1) Server band ho to hidden background me start karta hai
-' 2) Server ready hone ka intezaar karta hai (browser me "site can't be reached" na aaye)
-' 3) Phir browser kholta hai. DB connect hone tak app khud "Please wait" screen dikhata hai.
+' 2) Server ready hone ka intezaar karta hai (max 45 sec, hang nahi hoga)
+' 3) Phir browser kholta hai.
 Option Explicit
 
-Dim fso, sh, baseDir, url
+Dim fso, sh, baseDir, url, tries
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
@@ -15,14 +15,18 @@ If Not ServerReady(url) Then
     sh.Run "cmd /c """ & baseDir & "\server-supervisor.bat""", 0, False
 End If
 
+tries = 0
 Do While Not ServerReady(url)
+    tries = tries + 1
+    If tries >= 60 Then
+        MsgBox "Server 45 second me start nahi ho paya. Kripya START.bat ya SETUP.bat dubara chalayein, ya logs\server-run.log dekhein.", vbExclamation, "CSC & BC Apna Hisaab"
+        WScript.Quit 1
+    End If
     WScript.Sleep 750
 Loop
 
 sh.Run url, 1, False
 
-' Server up hai ya nahi - HTTP se seedha check (DB down ho to bhi server "ready" hai,
-' kyunki tab app khud "Please wait" page dikhata hai).
 Function ServerReady(u)
     Dim x
     ServerReady = False
