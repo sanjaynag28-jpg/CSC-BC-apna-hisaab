@@ -218,15 +218,10 @@ router.get('/client-errors', async (req, res) => {
 // DELETE /api/admin/client-errors - Clear client error logs
 router.delete('/client-errors', async (req, res) => {
     try {
-        await query('TRUNCATE TABLE ClientErrorLogs');
+        await query('DELETE FROM ClientErrorLogs');
         res.json({ success: true, message: 'Sabhi client error logs saaf ho gaye.' });
     } catch (err) {
-        try {
-            await query('DELETE FROM ClientErrorLogs');
-            res.json({ success: true, message: 'Sabhi client error logs saaf ho gaye.' });
-        } catch (delErr) {
-            res.status(500).json({ success: false, error: delErr.message });
-        }
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

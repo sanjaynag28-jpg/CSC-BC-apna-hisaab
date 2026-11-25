@@ -1,8 +1,8 @@
 {
-  "version": "1.0.89",
+  "version": "1.0.90",
   "critical": true,
   "releasedAt": "2026-11-25",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Fix cross-PC fresh install (--ignore-scripts prebuilt N-API SQLite/Sharp without Python/VS + ZIP URI interpolation)"
+  "notes": "Settings full audit fix: replace T-SQL MERGE/DBCC/TRUNCATE with SQLite-safe upsert & reset, fix CSC service create OUTPUT syntax"
 }

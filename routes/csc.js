@@ -389,7 +389,7 @@ router.post('/services', async (req, res) => {
 
         const insertRes = await query(`
             INSERT INTO CSCServices (ServiceName, GovtFee, OperatorFee, DefaultDays, Icon, IsActive, SortOrder, CreatedAt, UpdatedAt, UserID)
-            OUTPUT INSERTED.*, (INSERTED.GovtFee + INSERTED.OperatorFee) AS TotalFee
+            OUTPUT INSERTED.*
             VALUES (@name, @gFee, @opFee, @days, @iconName, 1, @nextSort, GETDATE(), GETDATE(), @userId)
         `, {
             name,
@@ -401,10 +401,13 @@ router.post('/services', async (req, res) => {
             userId
         });
 
+        const insertedRow = insertRes.recordset[0] || {};
+        insertedRow.TotalFee = Number(insertedRow.GovtFee || 0) + Number(insertedRow.OperatorFee || 0);
+
         res.json({
             success: true,
             message: 'Nayi CSC service kamyabi se add ho gayi! ✅',
-            data: insertRes.recordset[0]
+            data: insertedRow
         });
     } catch (err) {
         console.error('Error creating CSC service:', err);

@@ -18,7 +18,10 @@ const DEFAULT_SETTINGS = {
 router.get('/', async (req, res) => {
     try {
         const userId = req.user.UserID;
-        const result = await query('SELECT SettingKey, SettingValue, SettingGroup, Description, UpdatedAt FROM SystemSettings');
+        const result = await query(
+            'SELECT SettingKey, SettingValue, SettingGroup, Description, UpdatedAt FROM SystemSettings WHERE IFNULL(UserID, 1) = @userId',
+            { userId }
+        );
         const map = { ...DEFAULT_SETTINGS };
 
         if (result && result.recordset) {
@@ -54,7 +57,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/settings - Dukaan profile aur system settings save / update karein (Tenant aware)
+// POST /api/settings - Dukaan profile aur system settings save / update karein (Tenant aware, SQLite safe)
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.UserID;
@@ -65,47 +68,69 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Koi settings data provide nahi kiya gaya' });
         }
 
-        // 1. Update user profile and SettingsJson for the active tenant
-        const shopName = payload.ShopName || null;
-        const shopPhone = payload.ShopPhone || null;
-        await query(`
-            UPDATE Users 
-            SET SettingsJson = @json,
-                ShopName = COALESCE(@shopName, ShopName),
-                MobileNumber = COALESCE(@shopPhone, MobileNumber),
-                UpdatedAt = GETDATE()
-            WHERE UserID = @userId
-        `, { userId, json: JSON.stringify(payload), shopName, shopPhone });
+        const isSuperAdmin = req.user?.Role === 'SuperAdmin';
 
-        // 2. If SuperAdmin, also update SystemSettings table
-        if (req.user?.Role === 'SuperAdmin') {
-            for (const [key, rawVal] of entries) {
-                const val = String(rawVal ?? '');
-                const group = key.startsWith('Shop') ? 'ShopProfile' : 'General';
-                const desc = key.startsWith('Shop') ? `Dukaan / Counter branding: ${key}` : `System setting: ${key}`;
-
-                await query(`
-                    MERGE SystemSettings AS target
-                    USING (SELECT @key AS SettingKey, @val AS SettingValue, @grp AS SettingGroup, @dsc AS Description) AS source
-                    ON target.SettingKey = source.SettingKey
-                    WHEN MATCHED THEN
-                        UPDATE SET SettingValue = source.SettingValue, UpdatedAt = GETDATE()
-                    WHEN NOT MATCHED THEN
-                        INSERT (SettingKey, SettingValue, SettingGroup, Description, UpdatedAt)
-                        VALUES (source.SettingKey, source.SettingValue, source.SettingGroup, source.Description, GETDATE());
-                `, {
-                    key,
-                    val,
-                    grp: group,
-                    dsc: desc
-                });
+        const mergedSettings = await withTransaction(async (tQuery) => {
+            // Preserve existing SettingsJson keys if partial payload sent
+            let existingJson = {};
+            const curRes = await tQuery('SELECT SettingsJson FROM Users WHERE UserID = @userId', { userId });
+            if (curRes.recordset.length && curRes.recordset[0].SettingsJson) {
+                try {
+                    existingJson = JSON.parse(curRes.recordset[0].SettingsJson) || {};
+                } catch (_) { existingJson = {}; }
             }
-        }
+            const nextSettings = { ...existingJson, ...payload };
+
+            // 1. Update user profile and SettingsJson for the active tenant
+            const shopName = payload.ShopName ? String(payload.ShopName).trim() : null;
+            const shopPhone = payload.ShopPhone !== undefined ? String(payload.ShopPhone).trim() : null;
+            await tQuery(`
+                UPDATE Users 
+                SET SettingsJson = @json,
+                    ShopName = COALESCE(@shopName, ShopName),
+                    MobileNumber = COALESCE(@shopPhone, MobileNumber),
+                    UpdatedAt = GETDATE()
+                WHERE UserID = @userId
+            `, { userId, json: JSON.stringify(nextSettings), shopName, shopPhone });
+
+            // 2. If SuperAdmin, also upsert SystemSettings table (SQLite-compatible UPDATE/INSERT)
+            if (isSuperAdmin) {
+                for (const [key, rawVal] of entries) {
+                    const val = String(rawVal ?? '');
+                    const group = key.startsWith('Shop') ? 'ShopProfile' : 'General';
+                    const desc = key.startsWith('Shop') ? `Dukaan / Counter branding: ${key}` : `System setting: ${key}`;
+
+                    const existingRow = await tQuery(
+                        'SELECT SettingKey FROM SystemSettings WHERE SettingKey = @key',
+                        { key }
+                    );
+
+                    if (existingRow.recordset && existingRow.recordset.length > 0) {
+                        await tQuery(`
+                            UPDATE SystemSettings
+                            SET SettingValue = @val,
+                                SettingGroup = @grp,
+                                Description = @dsc,
+                                UpdatedAt = GETDATE(),
+                                UserID = COALESCE(UserID, @userId)
+                            WHERE SettingKey = @key
+                        `, { key, val, grp: group, dsc: desc, userId });
+                    } else {
+                        await tQuery(`
+                            INSERT INTO SystemSettings (SettingKey, SettingValue, SettingGroup, Description, UpdatedAt, UserID)
+                            VALUES (@key, @val, @grp, @dsc, GETDATE(), @userId)
+                        `, { key, val, grp: group, dsc: desc, userId });
+                    }
+                }
+            }
+
+            return nextSettings;
+        });
 
         res.json({
             success: true,
             message: 'Dukaan profile aur print settings kamyabi se save ho gayi!',
-            settings: payload
+            settings: mergedSettings
         });
     } catch (err) {
         console.error('Error saving settings:', err.message);
@@ -226,12 +251,15 @@ router.post('/reset-test-data', async (req, res) => {
             await tQuery('DELETE FROM Budgets');
             await tQuery('DELETE FROM Parties');
 
-            // 6. Delete documents
+            // 6. Delete documents & dynamic service records
             await tQuery('DELETE FROM Documents');
+            await tQuery('DELETE FROM ServiceRecords');
 
-            // 7. Delete CSC applications and Bill Payments
+            // 7. Delete CSC, BillPay, UCL & PAC entries (before Customers due to CustomerID FK)
             await tQuery('DELETE FROM CSCApplications');
             await tQuery('DELETE FROM BillPayments');
+            await tQuery('DELETE FROM UCLUpdates');
+            await tQuery('DELETE FROM PACEntries');
 
             // 7b. Delete Universal Transaction Registry
             await tQuery('DELETE FROM UniversalTxnRegistry');
@@ -246,17 +274,18 @@ router.post('/reset-test-data', async (req, res) => {
             // 10. Reset Accounts balance to 0
             await tQuery('UPDATE Accounts SET CurrentBalance = 0, OpeningBalance = 0');
 
-            // 11. Reseed Identity columns
+            // 11. Reset SQLite autoincrement sequences cleanly
             const identityTables = [
                 'Customers', 'KhataEntries', 'Invoices', 'InvoiceItems',
                 'BCTransactions', 'BCCounterSessions', 'Transactions',
-                'Documents', 'CSCApplications', 'BillPayments', 'UniversalTxnRegistry', 'AuditLogs'
+                'Documents', 'CSCApplications', 'BillPayments', 'UCLUpdates', 'PACEntries',
+                'ServiceRecords', 'UniversalTxnRegistry', 'AuditLogs'
             ];
             for (const tbl of identityTables) {
                 try {
-                    await tQuery(`DBCC CHECKIDENT ('${tbl}', RESEED, 0)`);
+                    await tQuery('DELETE FROM sqlite_sequence WHERE name = @tbl', { tbl });
                 } catch (e) {
-                    console.warn(`Reseed notice on ${tbl}:`, e.message);
+                    // sqlite_sequence may not exist yet on empty DBs
                 }
             }
 
