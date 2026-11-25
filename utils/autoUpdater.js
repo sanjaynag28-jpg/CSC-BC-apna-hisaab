@@ -716,7 +716,12 @@ function installDependenciesIfNeeded(force = false) {
         cwd: ROOT_DIR,
         stdio: 'ignore',
         timeout: 300000,
-        windowsHide: true
+        windowsHide: true,
+        env: {
+            ...process.env,
+            npm_config_ignore_scripts: 'true',
+            NODE_OPTIONS: '--dns-result-order=ipv4first'
+        }
     });
 
     const stillMissing = findMissingDependencies(packageJson.dependencies);

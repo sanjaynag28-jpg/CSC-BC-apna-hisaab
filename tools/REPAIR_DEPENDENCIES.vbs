@@ -10,7 +10,7 @@ If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
 
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = baseDir
-command = "cmd.exe /d /c npm.cmd install --omit=dev --no-audit --no-fund > """ & logPath & """ 2>&1"
+command = "cmd.exe /d /c npm.cmd install --omit=dev --ignore-scripts --no-audit --no-fund > """ & logPath & """ 2>&1"
 exitCode = sh.Run(command, 0, True)
 
 If exitCode = 0 Then

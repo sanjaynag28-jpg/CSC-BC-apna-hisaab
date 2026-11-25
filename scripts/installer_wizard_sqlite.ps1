@@ -376,7 +376,8 @@ $workerBlock = {
             foreach ($u in $Urls) {
                 try {
                     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
-                    Log-Msg "$Label download (round $round): $([Uri]$u).Host" 'DOWNLOAD'
+                    $uHost = try { ([Uri]$u).Host } catch { $u }
+                    Log-Msg "$Label download (round $round): $uHost" 'DOWNLOAD'
                     $got = Download-File -Url $u -OutFile $OutFile -Step $Step -FromPct $FromPct -ToPct $ToPct -Label $Label
                     if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes)) {
                         $mb = [Math]::Round((Get-Item $OutFile).Length / 1MB, 2)
@@ -398,7 +399,8 @@ $workerBlock = {
             foreach ($u in $Urls) {
                 try {
                     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
-                    Log-Msg "$Label DoH network bypass attempt: $([Uri]$u).Host" 'FIX'
+                    $uHost = try { ([Uri]$u).Host } catch { $u }
+                    Log-Msg "$Label DoH network bypass attempt: $uHost" 'FIX'
                     & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
                     if (-not ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes))) {
                         & $curlCmd.Source -fSL --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
@@ -573,10 +575,9 @@ $workerBlock = {
             $extr = Join-Path $env:TEMP "cmbc_sqlite_extr_$(Get-Random)"
             $ticks = [DateTime]::UtcNow.Ticks
             $zipUrls = @(
-                "$RepoZip?t=$ticks",
-                "$RepoZipAlt?t=$ticks",
-                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip?t=$ticks",
-                "https://codeload.github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/zip/refs/heads/sqlite?t=$ticks"
+                "${RepoZip}?t=${ticks}",
+                "${RepoZipAlt}?t=${ticks}",
+                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/sqlite.zip?t=${ticks}"
             )
             $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000
             if ($ok) {
@@ -742,15 +743,17 @@ $workerBlock = {
         $node = Find-Node
         if (-not $node) { $node = 'node' }
 
-        # Test if all core packages (express, better-sqlite3, exceljs, multer) load cleanly
-        $depTestJs = "try{require('express');require('better-sqlite3');require('exceljs');require('multer');console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}"
+        # Test if all core packages (express, better-sqlite3, sharp, exceljs, multer) load cleanly
+        $depTestJs = "try{const D=require('better-sqlite3');require('express');require('sharp');require('exceljs');require('multer');const db=new D(':memory:');db.close();console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}"
         $sqliteWorking = $false
         try {
+            Push-Location -LiteralPath $ProjectDir
             $testCmd = & $node -e $depTestJs 2>&1
+            Pop-Location
             if ($testCmd -like "*SQLITE_OK*") {
                 $sqliteWorking = $true
             }
-        } catch { }
+        } catch { try { Pop-Location } catch {} }
 
         if ($sqliteWorking -and -not $CleanMode) {
             Log-Msg "Saare npm packages (better-sqlite3 samet) 100% active aur verified hain." 'OK'
@@ -758,55 +761,77 @@ $workerBlock = {
             return $true
         }
 
-        Log-Msg "npm install chal raha hai (--omit=dev, IPv4-first)..." 'WARN'
+        Log-Msg "npm install chal raha hai (--omit=dev, --ignore-scripts, IPv4-first)..." 'WARN'
         Update-Step 4 'RUNNING' 40 "npm install..." "Fast npm install chal raha hai..."
         $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
         $npmExe = if ($cmd) { $cmd.Source } else { "C:\Program Files\nodejs\npm.cmd" }
         $prevNodeOpts = $env:NODE_OPTIONS
+        $prevIgnScripts = $env:npm_config_ignore_scripts
         $env:NODE_OPTIONS = "--dns-result-order=ipv4first"
+        $env:npm_config_ignore_scripts = "true"
 
-        # Run primary npm install with network-resilient retry flags
-        $npmArgs = "install --omit=dev --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=4000 --fetch-retry-maxtimeout=25000 --maxsockets=4 --no-audit --no-fund"
-        $p = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+        $npmOutLog = Join-Path $env:TEMP "cmbc_npm_out.log"
+        $npmErrLog = Join-Path $env:TEMP "cmbc_npm_err.log"
+
+        # Use --ignore-scripts so prebuilt N-API binaries (better-sqlite3, sharp) install cleanly WITHOUT requiring Python or Visual Studio C++ tools
+        $npmArgs = "install --omit=dev --ignore-scripts --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=4000 --fetch-retry-maxtimeout=25000 --maxsockets=4 --no-audit --no-fund"
+        $p = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
         $rc = Wait-ProcAlive -Proc $p -Step 4 -Label "npm install" -StartPct 40 -MaxPct 92
 
-        # Check again
-        try {
-            $testCmd = & $node -e $depTestJs 2>&1
-            if ($testCmd -like "*SQLITE_OK*") {
-                $env:NODE_OPTIONS = $prevNodeOpts
-                Log-Msg "npm install safalta se complete ho gaya. Saare core packages OK." 'OK'
-                Update-Step 4 'SUCCESS' 100 "NPM Ready" "Step 4 : NPM Packages Installed"
-                return $true
+        $checkInstalled = {
+            try {
+                Push-Location -LiteralPath $ProjectDir
+                $out = & $node -e $depTestJs 2>&1
+                Pop-Location
+                return $out
+            } catch {
+                try { Pop-Location } catch {}
+                return "FAIL:$($_.Exception.Message)"
             }
-        } catch { }
+        }
+
+        $chk1 = & $checkInstalled
+        if ($chk1 -like "*SQLITE_OK*") {
+            $env:NODE_OPTIONS = $prevNodeOpts
+            $env:npm_config_ignore_scripts = $prevIgnScripts
+            Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
+            Log-Msg "npm install safalta se complete ho gaya. Saare core packages OK." 'OK'
+            Update-Step 4 'SUCCESS' 100 "NPM Ready" "Step 4 : NPM Packages Installed"
+            return $true
+        } else {
+            $errTail = (Get-Content $npmErrLog -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | '
+            if ($errTail) { Log-Msg "Primary npm notice: $errTail" 'WARN' }
+        }
 
         # AI Self-Healing Fallback 1: Switch registry to npmmirror for FULL install
         Log-Msg "Network / ISP slow detect hua — npmmirror fallback active kiya ja raha hai..." 'FIX'
         Update-Step 4 'HEALING' 60 "AI Fixing NPM..." "Mirror registry se dependencies install ho rahi hain..."
         & $npmExe config set registry https://registry.npmmirror.com 2>$null
-        $p2 = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+        $p2 = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
         $rc2 = Wait-ProcAlive -Proc $p2 -Step 4 -Label "NPM Mirror Install" -StartPct 60 -MaxPct 95
 
         $okMirror = $false
-        try {
-            $testCmd2 = & $node -e $depTestJs 2>&1
-            if ($testCmd2 -like "*SQLITE_OK*") { $okMirror = $true }
-        } catch { }
+        $chk2 = & $checkInstalled
+        if ($chk2 -like "*SQLITE_OK*") { $okMirror = $true }
 
         if (-not $okMirror) {
             # AI Self-Healing Fallback 2: Corporate/College proxy SSL inspection fallback
             Log-Msg "SSL proxy bypass fallback try ho raha hai..." 'FIX'
-            $p3 = Start-Process -FilePath $npmExe -ArgumentList ($npmArgs + " --strict-ssl=false") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+            $p3 = Start-Process -FilePath $npmExe -ArgumentList ($npmArgs + " --strict-ssl=false") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
             $rc3 = Wait-ProcAlive -Proc $p3 -Step 4 -Label "NPM Proxy Bypass" -StartPct 75 -MaxPct 97
-            try {
-                $testCmd3 = & $node -e $depTestJs 2>&1
-                if ($testCmd3 -like "*SQLITE_OK*") { $okMirror = $true }
-            } catch { }
+            $chk3 = & $checkInstalled
+            if ($chk3 -like "*SQLITE_OK*") {
+                $okMirror = $true
+            } else {
+                $errTail3 = (Get-Content $npmErrLog -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | '
+                Log-Msg "NPM final verify output: $chk3 | $errTail3" 'WARN'
+            }
         }
 
         & $npmExe config set registry https://registry.npmjs.org 2>$null
         $env:NODE_OPTIONS = $prevNodeOpts
+        $env:npm_config_ignore_scripts = $prevIgnScripts
+        Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
 
         if ($okMirror) {
             Log-Msg "Saare packages mirror/bypass se safalta se ready ho gaye." 'OK'
@@ -814,6 +839,7 @@ $workerBlock = {
             return $true
         }
 
+        Update-Step 4 'FAILED' 90 "NPM Install Failed" "Step 4 : NPM packages install nahi ho sake"
         return $false
     }
 

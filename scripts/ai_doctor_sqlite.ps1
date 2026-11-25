@@ -326,7 +326,7 @@ function Repair-NpmAndDependencies {
     }
 
     if (Test-Path $npmExe) {
-        $p = Start-Process -FilePath $npmExe -ArgumentList "install --omit=dev --no-audit --no-fund" -WorkingDirectory $ProjectDir -PassThru -Wait
+        $p = Start-Process -FilePath $npmExe -ArgumentList "install --omit=dev --ignore-scripts --no-audit --no-fund" -WorkingDirectory $ProjectDir -PassThru -Wait
         $script:RepairsApplied++
         
         # Test again
@@ -339,7 +339,7 @@ function Repair-NpmAndDependencies {
         # Try mirror
         Write-AiLog "Retrying install via npmmirror..." 'FIX'
         & $npmExe config set registry https://registry.npmmirror.com
-        Start-Process -FilePath $npmExe -ArgumentList "install better-sqlite3 --omit=dev" -WorkingDirectory $ProjectDir -Wait
+        Start-Process -FilePath $npmExe -ArgumentList "install --omit=dev --ignore-scripts --no-audit --no-fund" -WorkingDirectory $ProjectDir -Wait
         & $npmExe config set registry https://registry.npmjs.org
     }
 }

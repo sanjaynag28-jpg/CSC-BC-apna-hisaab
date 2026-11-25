@@ -1,8 +1,8 @@
 {
-  "version": "1.0.88",
+  "version": "1.0.89",
   "critical": true,
   "releasedAt": "2026-11-25",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "UI compact polish (Reports, Documents, Transactions, Customers 360, Accounts, Parties) + BAT installer DoH/Firewall/Proxy hardening"
+  "notes": "Fix cross-PC fresh install (--ignore-scripts prebuilt N-API SQLite/Sharp without Python/VS + ZIP URI interpolation)"
 }
