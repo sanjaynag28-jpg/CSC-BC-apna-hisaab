@@ -1,8 +1,8 @@
 {
-  "version": "1.0.90",
+  "version": "1.0.91",
   "critical": true,
   "releasedAt": "2026-11-25",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Settings full audit fix: replace T-SQL MERGE/DBCC/TRUNCATE with SQLite-safe upsert & reset, fix CSC service create OUTPUT syntax"
+  "notes": "Auto-sync updated Shop Name across all old/new slips, UCL/BillPay/Reports parchis, passbooks, sidebar & multi-tab"
 }

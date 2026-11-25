@@ -613,6 +613,9 @@
                 else alert('Dukaan update ho gayi!');
                 closeEditShopModal();
                 loadTenantShops();
+                if (window.currentUser && Number(id) === Number(window.currentUser.UserID) && typeof loadShopSettings === 'function') {
+                    loadShopSettings();
+                }
             } else {
                 alert(data.error || 'Update failed');
             }

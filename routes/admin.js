@@ -172,21 +172,53 @@ router.put('/users/:id', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Dukaan ka naam aur malik ka naam zaroori hain.' });
         }
 
+        const cleanShop = shopName.trim();
+        const cleanOwner = ownerName.trim();
+        const cleanMobile = mobileNumber ? mobileNumber.trim() : null;
+
+        // Keep SettingsJson in sync with updated ShopName / ShopPhone
+        let nextSettingsJson = null;
+        try {
+            const curRes = await query('SELECT SettingsJson FROM Users WHERE UserID = @id', { id: targetId });
+            const curJson = (curRes.recordset.length && curRes.recordset[0].SettingsJson)
+                ? (JSON.parse(curRes.recordset[0].SettingsJson) || {})
+                : {};
+            curJson.ShopName = cleanShop;
+            if (cleanMobile !== null) curJson.ShopPhone = cleanMobile;
+            nextSettingsJson = JSON.stringify(curJson);
+        } catch (_) { nextSettingsJson = null; }
+
         await query(`
             UPDATE Users 
             SET ShopName = @shopName,
                 OwnerName = @ownerName,
                 MobileNumber = @mobileNumber,
                 Role = ISNULL(@role, Role),
+                SettingsJson = COALESCE(@settingsJson, SettingsJson),
                 UpdatedAt = GETDATE()
             WHERE UserID = @id
         `, {
             id: targetId,
-            shopName: shopName.trim(),
-            ownerName: ownerName.trim(),
-            mobileNumber: mobileNumber ? mobileNumber.trim() : null,
-            role: role || null
+            shopName: cleanShop,
+            ownerName: cleanOwner,
+            mobileNumber: cleanMobile,
+            role: role || null,
+            settingsJson: nextSettingsJson
         });
+
+        // If SuperAdmin (UserID 1), keep SystemSettings in sync as well
+        if (targetId === 1) {
+            const syncPairs = [['ShopName', cleanShop]];
+            if (cleanMobile !== null) syncPairs.push(['ShopPhone', cleanMobile]);
+            for (const [k, v] of syncPairs) {
+                const ex = await query('SELECT SettingKey FROM SystemSettings WHERE SettingKey = @k', { k });
+                if (ex.recordset.length > 0) {
+                    await query('UPDATE SystemSettings SET SettingValue = @v, UpdatedAt = GETDATE() WHERE SettingKey = @k', { k, v });
+                } else {
+                    await query(`INSERT INTO SystemSettings (SettingKey, SettingValue, SettingGroup, Description, UpdatedAt, UserID) VALUES (@k, @v, 'ShopProfile', 'Dukaan branding', GETDATE(), 1)`, { k, v });
+                }
+            }
+        }
 
         res.json({ success: true, message: 'Dukaan ki details safalta se update ho gayi!' });
     } catch (err) {

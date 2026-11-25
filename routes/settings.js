@@ -36,14 +36,14 @@ router.get('/', async (req, res) => {
         const userRes = await query('SELECT ShopName, MobileNumber, SettingsJson FROM Users WHERE UserID = @userId', { userId });
         if (userRes.recordset.length) {
             const u = userRes.recordset[0];
-            if (u.ShopName) map.ShopName = u.ShopName;
-            if (u.MobileNumber) map.ShopPhone = u.MobileNumber;
             if (u.SettingsJson) {
                 try {
                     const custom = JSON.parse(u.SettingsJson);
                     Object.assign(map, custom);
                 } catch (e) { }
             }
+            if (u.ShopName) map.ShopName = u.ShopName;
+            if (u.MobileNumber) map.ShopPhone = u.MobileNumber;
         }
 
         res.json({

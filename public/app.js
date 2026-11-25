@@ -684,6 +684,11 @@ async function refreshAllActiveViews(source = '') {
             tasks.push(updateAllSidebarBadges());
         }
 
+        // Sync latest shop branding if change came from another tab/device or settings action
+        if ((source === 'multi_tab_sync' || source === 'sse' || source === 'settings_shop_update' || source === 'settings_shop_reset') && typeof loadShopSettings === 'function') {
+            tasks.push(loadShopSettings());
+        }
+
         await Promise.allSettled(tasks);
     } catch (e) {
         console.warn('Real-time auto-refresh warning:', e.message);
@@ -4616,8 +4621,10 @@ function printTransactionsLedger() {
             <td style="text-align:right;font-weight:700;">${sign}${formatMoney(t.Amount)}</td>
         </tr>`;
     }).join('');
+    const b = getShopBranding();
     const html = `<div style="font-family:Segoe UI,Arial,sans-serif;padding:10px;">
-        <h2 style="margin:0 0 4px 0;">Len-Den Register (Cashbook Sheet)</h2>
+        <div style="font-size:13px;font-weight:800;color:#0284c7;text-transform:uppercase;">${escapeHtml(b.name)}${b.phone ? ' • 📞 ' + escapeHtml(b.phone) : ''}</div>
+        <h2 style="margin:2px 0 4px 0;">Len-Den Register (Cashbook Sheet)</h2>
         <p style="margin:0 0 12px 0;font-size:12px;color:#475569;">Avadhi: ${escapeHtml(sd)} se ${escapeHtml(ed)} | Kul Entries (Page): ${list.length}</p>
         <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
             <thead><tr style="background:#f1f5f9;">
@@ -6292,10 +6299,12 @@ function printPartyPassbook() {
         `;
     }).join('');
 
+    const b = getShopBranding();
     const sheetHtml = `
         <div class="sheet">
             <div class="header" style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px;">
-                <h1 style="margin: 0 0 4px 0; font-size: 18px; text-transform: uppercase;">Khata Passbook Statement</h1>
+                <div style="font-size: 13px; font-weight: 800; color: #0284c7; text-transform: uppercase;">${escapeHtml(b.name)}${b.phone ? ' • 📞 ' + escapeHtml(b.phone) : ''}</div>
+                <h1 style="margin: 2px 0 4px 0; font-size: 18px; text-transform: uppercase;">Khata Passbook Statement</h1>
                 <p style="margin: 2px 0; font-size: 12px; color: #334155;"><b>${escapeHtml(currentPartyLedgerName)}</b> (Party ID #${currentPartyLedgerId}) ${party.Phone ? `• 📞 ${escapeHtml(party.Phone)}` : ''}</p>
                 <p style="margin: 2px 0; font-size: 11px; color: #64748b;">Tareekh: ${new Date().toLocaleDateString('en-IN')}</p>
             </div>
@@ -10062,6 +10071,7 @@ function universalPrint(target, options = {}) {
 window.universalPrint = universalPrint;
 
 function executeUnifiedPrint(targetType, chosenFormat = null) {
+    if (typeof applyShopBrandingToDOM === 'function') applyShopBrandingToDOM();
     const format = chosenFormat || currentPrintFormat || 'a4';
     universalPrint(targetType, { format: format });
 }
@@ -15296,11 +15306,13 @@ async function printCustomerPassbook(customerId, initialFormat = 'a4') {
         });
         const bal = parseFloat(cust.CurrentBalance) || 0;
 
+        const b = getShopBranding();
         const sheetHtml = `
             <div class="statement-box">
                 <div class="header" style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px;">
                     <div>
-                        <h2 style="margin: 0; font-size: 18px; font-weight: 800;">💰 CUSTOMER KHATABOOK PASSBOOK</h2>
+                        <div style="font-size: 13px; font-weight: 800; color: #0284c7; text-transform: uppercase;">${escapeHtml(b.name)}${b.phone ? ' • 📞 ' + escapeHtml(b.phone) : ''}</div>
+                        <h2 style="margin: 2px 0 0; font-size: 18px; font-weight: 800;">💰 CUSTOMER KHATABOOK PASSBOOK</h2>
                         <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Statement Date: ${new Date().toLocaleDateString('en-IN')}</div>
                     </div>
                     <div style="text-align: right;">
@@ -18068,15 +18080,74 @@ let currentShopSettings = {
     ShopCSPCode: 'BC-001 / CSP-KENDRA',
     ShopFooterMsg: 'Thank you for visiting! Phir Padhaarein.'
 };
+window.currentShopSettings = currentShopSettings;
+
+/**
+ * Keep currentShopSettings, window globals, localStorage user cache, and sidebar header synchronized.
+ */
+function syncShopBrandingState(nextSettings, replaceAll = false) {
+    currentShopSettings = replaceAll
+        ? { ...nextSettings }
+        : { ...currentShopSettings, ...nextSettings };
+    window.currentShopSettings = currentShopSettings;
+    window.currentShopProfile = {
+        shopName: currentShopSettings.ShopName,
+        shopSubtitle: currentShopSettings.ShopSubtitle,
+        shopPhone: currentShopSettings.ShopPhone,
+        shopAddress: currentShopSettings.ShopAddress
+    };
+
+    try { localStorage.setItem('app_shop_settings', JSON.stringify(currentShopSettings)); } catch (e) { }
+
+    if (window.currentUser && typeof window.currentUser === 'object') {
+        if (currentShopSettings.ShopName) window.currentUser.ShopName = currentShopSettings.ShopName;
+        if (currentShopSettings.ShopPhone !== undefined) window.currentUser.MobileNumber = currentShopSettings.ShopPhone;
+        window.currentUser.Settings = { ...(window.currentUser.Settings || {}), ...currentShopSettings };
+        window.currentUser.SettingsJson = JSON.stringify(window.currentUser.Settings);
+        try {
+            const rawStr = JSON.stringify(window.currentUser);
+            localStorage.setItem('user', rawStr);
+            localStorage.setItem('cm_last_active_user', rawStr);
+        } catch (e) { }
+    }
+
+    const activeShopEl = document.getElementById('activeShopName');
+    if (activeShopEl && currentShopSettings.ShopName) {
+        activeShopEl.textContent = currentShopSettings.ShopName;
+    }
+}
 
 function initCachedShopSettings() {
     try {
         const cached = localStorage.getItem('app_shop_settings');
         if (cached) {
             const parsed = JSON.parse(cached);
-            currentShopSettings = { ...currentShopSettings, ...parsed };
+            syncShopBrandingState(parsed);
+            return;
         }
     } catch (e) { }
+    window.currentShopSettings = currentShopSettings;
+}
+
+/**
+ * Returns normalized live shop branding fields for slips, receipts, passbooks, and prints.
+ */
+function getShopBranding(fallbackName = 'AAPKI DUKAAN / HISAB BC', fallbackSub = 'Grahak Seva Kendra • Cash Management Counter') {
+    const s = (typeof currentShopSettings !== 'undefined' && currentShopSettings)
+        ? currentShopSettings
+        : (window.currentShopSettings || {});
+    const u = window.currentUser || {};
+    let userSettings = {};
+    try {
+        if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson;
+    } catch (_) { }
+    const name = (s.ShopName || userSettings.ShopName || u.ShopName || fallbackName).trim();
+    const subtitle = (s.ShopSubtitle || userSettings.ShopSubtitle || fallbackSub).trim();
+    const phone = (s.ShopPhone || userSettings.ShopPhone || u.MobileNumber || '').trim();
+    const address = (s.ShopAddress || userSettings.ShopAddress || '').trim();
+    const contact = [phone ? `Phone: ${phone}` : '', address].filter(Boolean).join(' • ');
+    const footer = (s.ShopFooterMsg || userSettings.ShopFooterMsg || 'Thank you for visiting! Phir Padhaarein.').trim();
+    return { name, subtitle, phone, address, contact, footer, cspCode: s.ShopCSPCode || '', gstin: s.ShopGSTIN || '' };
 }
 
 async function loadShopSettings() {
@@ -18084,8 +18155,7 @@ async function loadShopSettings() {
         const res = await fetch(`${API}/settings`);
         const json = await res.json();
         if (json.success && json.settings) {
-            currentShopSettings = { ...currentShopSettings, ...json.settings };
-            try { localStorage.setItem('app_shop_settings', JSON.stringify(currentShopSettings)); } catch (e) { }
+            syncShopBrandingState(json.settings);
         }
     } catch (err) {
         console.warn('Shop settings load fallback to local cache:', err.message);
@@ -18186,8 +18256,7 @@ async function saveShopSettingsFromUI(e) {
         const json = await res.json();
         if (!json.success) throw new Error(json.error || 'Settings save failed');
 
-        currentShopSettings = { ...currentShopSettings, ...payload };
-        try { localStorage.setItem('app_shop_settings', JSON.stringify(currentShopSettings)); } catch (err) { }
+        syncShopBrandingState(payload);
 
         populateShopSettingsUI();
         applyShopBrandingToDOM();
@@ -18217,8 +18286,7 @@ async function resetShopSettingsToDefault() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(defaults)
             });
-            currentShopSettings = { ...defaults };
-            try { localStorage.setItem('app_shop_settings', JSON.stringify(currentShopSettings)); } catch (e) { }
+            syncShopBrandingState(defaults, true);
             populateShopSettingsUI();
             applyShopBrandingToDOM();
             showToast('Default Dukaan Profile reset ho gaya!', 'success', 'Dukaan Settings');
@@ -23644,16 +23712,10 @@ async function openBillReceiptModal(paymentId) {
             } catch (_) { }
         }
 
-        const s = window.currentShopSettings || {};
-        const u = window.currentUser || {};
-        let userSettings = {};
-        try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) { }
-
-        const shopName = s.ShopName || userSettings.ShopName || u.ShopName || 'CSC & BC Kendra';
-        const shopSubtitle = s.ShopSubtitle || userSettings.ShopSubtitle || 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra';
-        const shopPhone = s.ShopPhone || userSettings.ShopPhone || u.MobileNumber || '';
-        const shopAddress = s.ShopAddress || userSettings.ShopAddress || '';
-        const shopContact = [shopPhone ? `Phone: ${shopPhone}` : '', shopAddress].filter(Boolean).join(' • ');
+        const b = getShopBranding('CSC & BC Kendra', 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra');
+        const shopName = b.name;
+        const shopSubtitle = b.subtitle;
+        const shopContact = b.contact;
 
         area.innerHTML = `
             <div class="bp-compact-slip" style="font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif; font-size: 11.5px; line-height: 1.4; color: #000; width: 100%;">
@@ -23779,16 +23841,10 @@ function shareBillReceiptWhatsApp() {
     const totalAmt = Number(r.TotalCollected || (r.BillAmount + r.CustomerCharge) || 0).toLocaleString('en-IN');
     const pDate = r.PaymentDate ? new Date(r.PaymentDate).toLocaleDateString('en-GB') : '';
 
-    const s = window.currentShopSettings || {};
-    const u = window.currentUser || {};
-    let userSettings = {};
-    try { if (u.SettingsJson) userSettings = typeof u.SettingsJson === 'string' ? JSON.parse(u.SettingsJson) : u.SettingsJson; } catch (_) { }
-    const shopName = s.ShopName || userSettings.ShopName || u.ShopName || 'CSC & BC Kendra';
-    const shopSubtitle = s.ShopSubtitle || userSettings.ShopSubtitle || 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra';
-    const shopPhone = s.ShopPhone || userSettings.ShopPhone || u.MobileNumber || '';
-    const shopAddress = s.ShopAddress || userSettings.ShopAddress || '';
-
-    const shopContactLine = [shopPhone ? `Phone: ${shopPhone}` : '', shopAddress].filter(Boolean).join(' • ');
+    const b = getShopBranding('CSC & BC Kendra', 'Grahak Seva Kendra, CSC Center , AADHAAR Sewa Kendra');
+    const shopName = b.name;
+    const shopSubtitle = b.subtitle;
+    const shopContactLine = b.contact;
     const text = `*⚡ BILL & EMI PAYMENT RECEIPT*\n` +
         `*${shopName}*\n` +
         `_${shopSubtitle}_\n` +
@@ -24692,13 +24748,15 @@ async function printUCLSlip(id) {
         const printContent = document.getElementById('uclSlipPrintContent');
         if (!printContent) return;
 
-        const shopName = (typeof currentShopProfile !== 'undefined' && currentShopProfile?.shopName) || 'CSC AADHAAR SEVA KENDRA';
+        const b = getShopBranding('CSC AADHAAR SEVA KENDRA', 'AADHAAR UCL UPDATE ACKNOWLEDGEMENT');
 
         printContent.innerHTML = `
             <div id="uclPrintSlipInner" style="font-family: monospace, sans-serif; background: #fff; color: #000; padding: 18px; border: 1.5px solid #000; border-radius: 8px;">
                 <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 12px;">
-                    <div style="font-size: 17px; font-weight: 800; text-transform: uppercase;">${escapeHtml(shopName)}</div>
-                    <div style="font-size: 13px; font-weight: 700;">AADHAAR UCL UPDATE ACKNOWLEDGEMENT</div>
+                    <div style="font-size: 17px; font-weight: 800; text-transform: uppercase;">${escapeHtml(b.name)}</div>
+                    ${b.subtitle ? `<div style="font-size: 11px; font-weight: 600; margin-top: 2px;">${escapeHtml(b.subtitle)}</div>` : ''}
+                    ${b.contact ? `<div style="font-size: 10.5px; margin-top: 2px;">${escapeHtml(b.contact)}</div>` : ''}
+                    <div style="font-size: 13px; font-weight: 700; margin-top: 4px;">AADHAAR UCL UPDATE ACKNOWLEDGEMENT</div>
                     <div style="font-size: 11px; margin-top: 2px;">पावती रसीद / ग्राहक पर्ची</div>
                 </div>
 
@@ -26038,10 +26096,12 @@ function printReportDetailVoucher() {
     const vStatus = escapeHtml(item.Status || 'Success');
     const vAmount = escapeHtml(Number(item.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
+    const b = getShopBranding('CASH MANAGEMENT & BC CENTER', 'Official Computerized Transaction Receipt');
     const voucherHtml = `
         <div class="voucher-card">
-            <div class="shop-title">CASH MANAGEMENT & BC CENTER</div>
-            <div class="shop-sub">Official Computerized Transaction Receipt</div>
+            <div class="shop-title">${escapeHtml(b.name)}</div>
+            <div class="shop-sub">${escapeHtml(b.subtitle)}</div>
+            ${b.contact ? `<div style="font-size:10px;text-align:center;color:#475569;margin-bottom:6px;">${escapeHtml(b.contact)}</div>` : ''}
             <div class="row"><span class="lbl">Record / Ref No:</span><span class="val">#${vRecordID} (${vRefNumber})</span></div>
             <div class="row"><span class="lbl">Date & Time:</span><span class="val">${vRecordDate} ${escapeHtml(voucherTime)}</span></div>
             <div class="row"><span class="lbl">Module:</span><span class="val">${vModule}</span></div>
@@ -26089,10 +26149,12 @@ function printReportsSheet() {
 
     const sumAmt = reportSummaryData?.totalAmount || allReportRecords.reduce((s, r) => s + (parseFloat(r.Amount) || 0), 0);
 
+    const b = getShopBranding();
     const sheetHtml = `
         <div class="sheet" style="width: 100%;">
             <div class="header" style="border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px;">
-                <h2 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 800;">${safeTitle}</h2>
+                <div style="font-size: 13px; font-weight: 800; color: #0284c7; text-transform: uppercase;">${escapeHtml(b.name)}${b.phone ? ' • 📞 ' + escapeHtml(b.phone) : ''}</div>
+                <h2 style="margin: 2px 0 0; color: #0f172a; font-size: 18px; font-weight: 800;">${safeTitle}</h2>
                 <p style="margin: 3px 0 0; font-size: 11.5px; color: #475569;">${safeSub}</p>
             </div>
             <table>
