@@ -1,8 +1,8 @@
 {
-  "version": "1.0.97",
+  "version": "1.0.98",
   "critical": true,
   "releasedAt": "2026-11-26",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Fix file:// splash URL query encoding (?port= instead of %3Fport= in Chrome & Edge) + Offline-Splash Guard + 100% Auto-Start + Scroll-Persistent 3-Dot Menus"
+  "notes": "Fix premature Port 4001 fallback (wait for port release & auto-restore Port 4000 whenever free) + Chrome/Edge Splash + 100% Auto-Start + Scroll-Persistent 3-Dot Menus"
 }

@@ -140,6 +140,19 @@ test('open_browser.ps1 never uses UriBuilder on file:// URLs (prevents %3F ERR_F
     assert.match(ob, /\$\{fileUri\}\?port=\$Port/);
 });
 
+test('port 4000 is retained across brief kills and auto-restored if a fallback port like 4001 was written while 4000 is free', () => {
+    const sl = fs.readFileSync(path.join(root, 'scripts', 'silent-launch.ps1'), 'utf8');
+    const wiz = fs.readFileSync(path.join(root, 'scripts', 'installer_wizard_sqlite.ps1'), 'utf8');
+    const doc = fs.readFileSync(path.join(root, 'scripts', 'ai_doctor_sqlite.ps1'), 'utf8');
+    const au = fs.readFileSync(path.join(root, 'utils', 'autoUpdater.js'), 'utf8');
+    assert.match(sl, /\$autoFallbackPorts = @\(4001/);
+    assert.match(sl, /IsOurApp/);
+    assert.match(wiz, /default Port 4000 restore kiya gaya/);
+    assert.match(doc, /default Port 4000 restore kiya gaya/);
+    assert.match(au, /async function restoreCanonicalPortIfFree\(\)/);
+});
+
+
 
 
 

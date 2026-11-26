@@ -68,8 +68,8 @@ function Test-ServerHealth {
     try {
         $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$CheckPort/api/health?_t=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())")
         $req.Proxy = $null
-        $req.Timeout = 500
-        $req.ReadWriteTimeout = 500
+        $req.Timeout = 1500
+        $req.ReadWriteTimeout = 1500
         $req.Method = 'GET'
         $resp = $req.GetResponse()
         $code = [int]$resp.StatusCode
@@ -77,19 +77,35 @@ function Test-ServerHealth {
         $body = $sr.ReadToEnd()
         $sr.Close()
         $resp.Close()
-        return @{ Listening = $true; Ready = ($code -eq 200 -and $body -match '"dbReady"\s*:\s*true') }
+        return @{ Listening = $true; Ready = ($code -eq 200 -and $body -match '"dbReady"\s*:\s*true'); IsOurApp = ($body -match '"bootId"|"startupStage"|"dbReady"') }
     } catch [System.Net.WebException] {
         if ($_.Exception.Response) {
+            $body = ''
+            try {
+                $sr = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+                $body = $sr.ReadToEnd()
+                $sr.Close()
+            } catch { }
             try { $_.Exception.Response.Close() } catch { }
-            return @{ Listening = $true; Ready = $false }
+            return @{ Listening = $true; Ready = $false; IsOurApp = ($body -match '"bootId"|"startupStage"|"dbReady"') }
         }
-        return @{ Listening = $false; Ready = $false }
+        return @{ Listening = $false; Ready = $false; IsOurApp = $false }
     } catch {
-        return @{ Listening = $false; Ready = $false }
+        return @{ Listening = $false; Ready = $false; IsOurApp = $false }
     }
 }
 
 $port = Read-ConfiguredPort
+
+# If an earlier timing hiccup put .env on an alternate fallback port (e.g. 4001)
+# while Port 4000 is actually free & healthy-free, check 4000 too before opening splash!
+$autoFallbackPorts = @(4001, 4545, 4040, 4800, 5050, 8090)
+if ($autoFallbackPorts -contains $port) {
+    $h4000 = Test-ServerHealth -CheckPort 4000
+    if ($h4000.Listening -and $h4000.IsOurApp) {
+        $port = 4000
+    }
+}
 
 # Step 1: On logon/open, IMMEDIATELY launch Chrome (or Edge fallback) with live splash
 # before anything else so the user never sees "This site can't be reached"!
@@ -236,19 +252,44 @@ try {
     }
 
     # Check if an orphan project node.exe holds the port without answering health
+    $killedOrphan = $false
     try {
         $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
         foreach ($c in $conns) {
             if ($c.OwningProcess -le 4) { continue }
+            $pObj = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
             $w = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)" -ErrorAction SilentlyContinue
-            if ($w -and $w.CommandLine -and ($w.CommandLine -like '*server.js*' -or $w.CommandLine -like "*$ProjectDir*")) {
+            $isProj = ($w -and $w.CommandLine -and ($w.CommandLine -like '*server.js*' -or $w.CommandLine -like "*$ProjectDir*"))
+            if ($isProj -or ($pObj -and $pObj.ProcessName -ieq 'node' -and -not ($w -and $w.CommandLine))) {
                 Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Milliseconds 500
+                $killedOrphan = $true
+            }
+        }
+        if ($killedOrphan) {
+            for ($wTry = 0; $wTry -lt 12; $wTry++) {
+                Start-Sleep -Milliseconds 250
+                if (Test-PortBindableLocal -TestP $port) { break }
             }
         }
     } catch { }
 
+    # Prefer restoring canonical Port 4000 automatically if an earlier hiccup wrote 4001/4545 while 4000 is actually free
+    if (($autoFallbackPorts -contains $port) -and (Test-PortBindableLocal -TestP 4000)) {
+        $port = 4000
+        $envPath = Join-Path $ProjectDir '.env'
+        if (Test-Path -LiteralPath $envPath) {
+            $txt = (Get-Content -LiteralPath $envPath -Raw -ErrorAction SilentlyContinue).TrimStart([char]0xFEFF)
+            if ($txt -match '(?m)^\s*PORT\s*=') { $txt = [regex]::Replace($txt, '(?m)^\s*PORT\s*=.*$', "PORT=4000") }
+            else { $txt = "PORT=4000`r`n" + $txt }
+            [System.IO.File]::WriteAllText($envPath, $txt, $utf8NoBom)
+        }
+    }
+
     if (-not (Test-PortBindableLocal -TestP $port)) {
+        # Re-check if our own server started listening while we waited!
+        $recheck = Test-ServerHealth -CheckPort $port
+        if ($recheck.Listening -and $recheck.IsOurApp) { exit 0 }
+
         foreach ($candPort in @(4000, 4001, 4545, 4040, 4800, 5050, 8090)) {
             if (Test-PortBindableLocal -TestP $candPort) {
                 $port = $candPort

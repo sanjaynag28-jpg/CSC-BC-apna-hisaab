@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # CSC & BC Apna Hisaab - SQLite Edition Master Setup & Health Wizard
 # 100% Automatic 1-Click Setup | Real-Time LIVE Progress (MB, Speed, Percent)
 # Super-Fast Zero SQL Server Install | 100% Free AI Live Self-Healing & Diagnostics
@@ -358,6 +358,19 @@ $workerBlock = {
                 Start-Sleep -Milliseconds 800
             }
         } catch { }
+
+        # Wait cleanly up to 3s for killed Node socket to release before assuming conflict
+        for ($waitIdx = 0; $waitIdx -lt 12; $waitIdx++) {
+            if (Test-PortBindable -Port $targetPort) { break }
+            Start-Sleep -Milliseconds 250
+        }
+
+        # If an earlier fallback port (4001/4545...) was saved but canonical Port 4000 is now free, restore 4000!
+        if ((@(4001, 4545, 4040, 4800, 5050, 8090) -contains $targetPort) -and (Test-PortBindable -Port 4000)) {
+            $sync.ResolvedPort = 4000
+            Log-Msg "Port 4000 free mila — default Port 4000 restore kiya gaya!" 'FIX'
+            return 4000
+        }
 
         if (Test-PortBindable -Port $targetPort) {
             $sync.ResolvedPort = $targetPort

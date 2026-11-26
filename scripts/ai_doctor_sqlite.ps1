@@ -1,4 +1,4 @@
-<#
+﻿<#
     scripts/ai_doctor_sqlite.ps1
     ============================================================================
     CSC & BC Apna Hisaab - SQLite Edition AI Live Self-Healing Doctor v2.0
@@ -510,6 +510,16 @@ function Heal-EnvAndPort {
             }
         }
     } catch { }
+
+    # Wait up to 3 seconds for socket release before switching off Port 4000
+    for ($wi = 0; $wi -lt 12; $wi++) {
+        if (Test-PortFree -Port $port) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    if ((@(4001, 4545, 4040, 4800, 5050, 8090) -contains $port) -and (Test-PortFree -Port 4000)) {
+        Write-AiLog "Port 4000 free mila — default Port 4000 restore kiya gaya!" 'FIX'
+        $port = 4000
+    }
 
     if (-not (Test-PortFree -Port $port)) {
         foreach ($cand in @(4000, 4001, 4545, 4040, 4800, 5050, 8090)) {

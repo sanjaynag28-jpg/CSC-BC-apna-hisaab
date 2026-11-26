@@ -1028,8 +1028,39 @@ function buildStandaloneRelaunch() {
     };
 }
 
-function triggerCleanRestart(options = {}) {
+async function restoreCanonicalPortIfFree() {
+    try {
+        const envPath = path.join(ROOT_DIR, '.env');
+        if (!fs.existsSync(envPath)) return false;
+        const raw = fs.readFileSync(envPath, 'utf8').replace(/^\uFEFF/, '');
+        const m = raw.match(/^\s*PORT\s*=\s*(\d+)/m);
+        const curPort = m ? parseInt(m[1], 10) : 4000;
+        const autoFallbackPorts = new Set([4001, 4545, 4040, 4800, 5050, 8090]);
+        if (!autoFallbackPorts.has(curPort)) return false;
+
+        const net = require('net');
+        const free4000 = await new Promise((resolve) => {
+            const srv = net.createServer();
+            srv.once('error', () => resolve(false));
+            srv.once('listening', () => { srv.close(() => resolve(true)); });
+            srv.listen(4000, '0.0.0.0');
+        });
+        if (!free4000) return false;
+
+        const nextEnv = raw.replace(/^\s*PORT\s*=.*$/m, 'PORT=4000');
+        fs.writeFileSync(envPath, nextEnv, 'utf8');
+        logUpdate(`Restored .env PORT from ${curPort} back to canonical 4000.`);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+async function triggerCleanRestart(options = {}) {
     const supervisorChanged = Boolean(options && options.supervisorChanged);
+    try {
+        await restoreCanonicalPortIfFree();
+    } catch (_) { }
     try {
         const stopSentinel = path.join(LOG_DIR, '.stop_supervisor');
         if (fs.existsSync(stopSentinel)) fs.unlinkSync(stopSentinel);
@@ -1361,7 +1392,7 @@ async function runSilentAutoUpdate(options = {}) {
 
             const supervisorChanged = Boolean(supHashBefore && supHashBefore !== fileHash(path.join(ROOT_DIR, 'server-supervisor.bat')));
             if (restartOnUpdate && !isCli) {
-                triggerCleanRestart({ supervisorChanged });
+                await triggerCleanRestart({ supervisorChanged });
             }
 
             setProgress('completed', 100, `Successfully updated to v${state.currentVersion}!`);
