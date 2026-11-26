@@ -13,6 +13,13 @@
             var t = localStorage.getItem('cash_mgmt_theme') || 'dark';
             document.documentElement.setAttribute('data-theme', t);
 
+            // Offline Splash Guard: ensures bookmarked/pinned tabs never show "This site can't be reached"
+            if ('serviceWorker' in navigator && window.location.protocol.indexOf('http') === 0) {
+                try {
+                    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(function () { });
+                } catch (_) { }
+            }
+
             // Pre-route to active page on initial HTML parse to prevent flashing dashboard
             try {
                 var hash = (window.location.hash || '').replace('#', '').trim();

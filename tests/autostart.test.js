@@ -123,4 +123,15 @@ test('positionActionMenuViewport never clips off-screen on mid/bottom rows in 72
     assert.ok(scTop >= 10 && scTop + 460 <= 710, `scrolled menu must remain visible on screen (${scTop})`);
 });
 
+test('Offline-Splash Service Worker intercepts only failed navigations without caching app assets', () => {
+    const sw = fs.readFileSync(path.join(root, 'public', 'sw.js'), 'utf8');
+    const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+    const splash = fs.readFileSync(path.join(root, 'public', 'startup-wait.html'), 'utf8');
+    assert.match(sw, /if\s*\(req\.mode\s*!==\s*'navigate'\)\s*return;/);
+    assert.match(sw, /caches\.match\(SPLASH_URL\)/);
+    assert.match(html, /serviceWorker\.register\('\/sw\.js'/);
+    assert.match(splash, /window\.location\.reload\(\)/);
+});
+
+
 

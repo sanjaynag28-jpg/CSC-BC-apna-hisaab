@@ -1,8 +1,8 @@
 {
-  "version": "1.0.95",
+  "version": "1.0.96",
   "critical": true,
   "releasedAt": "2026-11-26",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "100% Auto-Start + Chrome/Edge Live Animated Splash (Zero Connection Refused) + Scroll-Persistent Viewport-Safe 3-Dot Action Menus across all modules"
+  "notes": "Offline-Splash Service Worker Guard (Zero ERR_CONNECTION_REFUSED even on bookmarks/reloads) + 100% Auto-Start + Chrome/Edge Splash + Scroll-Persistent 3-Dot Menus"
 }

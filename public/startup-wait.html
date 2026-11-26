@@ -520,7 +520,15 @@
                 subEl.textContent = 'Aapka Apna Hisaab dashboard abhi khul raha hai...';
                 detailEl.textContent = 'Port ' + targetPort + ' ready hai — redirect ho raha hai...';
                 setTimeout(function () {
-                    window.location.replace(getApiBase() + '/');
+                    if (!isFileMode && location.protocol && location.protocol.indexOf('http') === 0) {
+                        if (location.pathname === '/startup-wait.html') {
+                            window.location.replace(getApiBase() + '/' + (location.hash || ''));
+                        } else {
+                            window.location.reload();
+                        }
+                    } else {
+                        window.location.replace(getApiBase() + '/');
+                    }
                 }, 260);
             }
 
