@@ -999,10 +999,20 @@ function setBeforeRestartHandler(fn) {
 // process spawn karte hain jo 2 second wait karke naya server start karta hai.
 function buildStandaloneRelaunch() {
     const inline = [
+        'const fs = require("fs");',
+        'const path = require("path");',
         'const { spawn } = require("child_process");',
+        'const cwd = process.cwd();',
+        'const supBat = path.join(cwd, "server-supervisor.bat");',
         'setTimeout(() => {',
-        '  const child = spawn(process.execPath, ["server.js"], { cwd: process.cwd(), detached: true, stdio: "ignore", windowsHide: true });',
-        '  child.unref();',
+        '  if (process.platform === "win32" && fs.existsSync(supBat)) {',
+        '    const cmd = process.env.ComSpec || "cmd.exe";',
+        '    const child = spawn(cmd, ["/d", "/c", supBat], { cwd, detached: true, stdio: "ignore", windowsHide: true });',
+        '    child.unref();',
+        '  } else {',
+        '    const child = spawn(process.execPath, ["server.js"], { cwd, detached: true, stdio: "ignore", windowsHide: true });',
+        '    child.unref();',
+        '  }',
         '}, 2000);'
     ].join(' ');
     return {
@@ -1018,6 +1028,11 @@ function buildStandaloneRelaunch() {
 }
 
 function triggerCleanRestart() {
+    try {
+        const stopSentinel = path.join(LOG_DIR, '.stop_supervisor');
+        if (fs.existsSync(stopSentinel)) fs.unlinkSync(stopSentinel);
+    } catch (_) { }
+
     const runGracefulExit = async () => {
         if (beforeRestartHandler) {
             try {
@@ -1044,8 +1059,8 @@ function triggerCleanRestart() {
         return;
     }
 
-    // 2. Standalone Node process: flush HTTP/SQLite WAL first, spawn delayed detached relaunch, then exit
-    logUpdate('Respawning standalone server process with updated code...');
+    // 2. Standalone Node process: flush HTTP/SQLite WAL first, spawn supervised/delayed relaunch, then exit
+    logUpdate('Respawning server process (supervised) with updated code...');
     setTimeout(async () => {
         if (beforeRestartHandler) {
             try {

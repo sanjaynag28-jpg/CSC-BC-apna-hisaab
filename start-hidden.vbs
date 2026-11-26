@@ -1,7 +1,7 @@
 ' CSC & BC Apna Hisaab - silent server launcher (SQLite Edition)
 ' Startup par pehle update/dependency repair, phir hidden supervisor.
 Option Explicit
-Dim fso, sh, baseDir, stopFile, nodeExe
+Dim fso, sh, baseDir, stopFile, nodeExe, port, url
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
@@ -12,15 +12,74 @@ On Error Resume Next
 If fso.FileExists(stopFile) Then fso.DeleteFile stopFile, True
 On Error GoTo 0
 
-nodeExe = FindNodeExe(sh, baseDir)
-If nodeExe <> "" Then
-    If Not fso.FileExists(baseDir & "\node_modules\better-sqlite3\package.json") And Not fso.FileExists(baseDir & "\logs\.updating") Then
-        On Error Resume Next
-        sh.Run "cmd.exe /c """"" & nodeExe & """ """ & baseDir & "\utils\autoUpdater.js"" --silent >nul 2>&1""", 0, True
-        On Error GoTo 0
+port = ReadEnvPort(baseDir & "\.env", "4000")
+url = "http://localhost:" & port
+
+If Not ServerReady(url) Then
+    nodeExe = FindNodeExe(sh, baseDir)
+    If nodeExe <> "" Then
+        If Not fso.FileExists(baseDir & "\node_modules\better-sqlite3\package.json") And Not fso.FileExists(baseDir & "\logs\.updating") Then
+            On Error Resume Next
+            sh.Run "cmd.exe /c """"" & nodeExe & """ """ & baseDir & "\utils\autoUpdater.js"" --silent >nul 2>&1""", 0, True
+            On Error GoTo 0
+        End If
     End If
+    sh.Run "cmd.exe /c """"" & baseDir & "\server-supervisor.bat""""", 0, False
 End If
-sh.Run "cmd.exe /c """"" & baseDir & "\server-supervisor.bat""""", 0, False
+
+Function ReadEnvPort(envPath, defaultPort)
+    Dim f, line, hashPos, k, v
+    ReadEnvPort = defaultPort
+    On Error Resume Next
+    If Not fso.FileExists(envPath) Then Exit Function
+    Set f = fso.OpenTextFile(envPath, 1, False)
+    Do While Not f.AtEndOfStream
+        line = Trim(f.ReadLine)
+        If Left(line, 1) = Chr(239) Then line = Mid(line, 4)
+        If line <> "" And Left(line, 1) <> "#" Then
+            hashPos = InStr(line, "=")
+            If hashPos > 1 Then
+                k = UCase(Trim(Left(line, hashPos - 1)))
+                If k = "PORT" Then
+                    v = Trim(Mid(line, hashPos + 1))
+                    If InStr(v, "#") > 0 Then v = Trim(Left(v, InStr(v, "#") - 1))
+                    v = Replace(Replace(v, """", ""), "'", "")
+                    If IsNumeric(v) And CLng(v) > 0 And CLng(v) <= 65535 Then
+                        ReadEnvPort = CStr(CLng(v))
+                        Exit Do
+                    End If
+                End If
+            End If
+        End If
+    Loop
+    f.Close
+    On Error GoTo 0
+End Function
+
+Function ServerReady(u)
+    Dim x
+    ServerReady = False
+    On Error Resume Next
+    Set x = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    If Err.Number <> 0 Then
+        Err.Clear
+        Set x = CreateObject("MSXML2.XMLHTTP")
+    End If
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        Exit Function
+    End If
+    x.setTimeouts 1000, 1000, 1000, 1000
+    Err.Clear
+    x.open "GET", u & "/api/health", False
+    If Err.Number = 0 Then x.send
+    If Err.Number = 0 Then
+        If x.status = 200 Then ServerReady = True
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
 
 Function FindNodeExe(shellObj, projDir)
     Dim candidates, i, p

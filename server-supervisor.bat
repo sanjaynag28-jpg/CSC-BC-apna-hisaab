@@ -87,10 +87,26 @@ set "IDLE=0"
 set "SRV_RC=%errorlevel%"
 if exist "logs\.stop_supervisor" exit /b 0
 
+:: Wait briefly if updater is applying files before restarting
+if exist "logs\.updating" (
+    set "FAIL_STREAK=0"
+    ping -n 3 127.0.0.1 >nul
+    goto loop
+)
+
+:: If another instance already bound the port, treat as handoff (not a crash)
+netstat -ano | findstr /R /C:":%CHECK_PORT% .*LISTENING" >nul 2>&1
+if not errorlevel 1 (
+    set "FAIL_STREAK=0"
+    goto loop
+)
+
 if not "%SRV_RC%"=="0" (
     set /a FAIL_STREAK+=1
 ) else (
     set "FAIL_STREAK=0"
+    ping -n 3 127.0.0.1 >nul
+    goto loop
 )
 if %FAIL_STREAK% GEQ 5 (
     echo [%date% %time%] Server 5 baar lagatar fail hua (Exit %SRV_RC%). Loop roka ja raha hai - AI_DOCTOR_SQLITE.bat chalayein.>> "logs\server-run.log"
