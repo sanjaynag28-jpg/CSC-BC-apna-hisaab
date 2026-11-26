@@ -33,6 +33,7 @@ public/uploads/*
 
 # Logs & Runtime Temp Files
 logs/
+config/node-path.txt
 *.log
 npm-debug.log*
 .auto-update-tmp/
@@ -64,6 +65,7 @@ scratch/*
 scripts/*
 !scripts/installer_wizard.ps1
 !scripts/installer_wizard_sqlite.ps1
+!scripts/silent-launch.ps1
 !scripts/ai_doctor_sqlite.ps1
 !scripts/verify_sqlite_apis.js
 !scripts/test_all_endpoints.js

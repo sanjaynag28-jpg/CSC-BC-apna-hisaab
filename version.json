@@ -1,8 +1,8 @@
 {
-  "version": "1.0.94",
+  "version": "1.0.95",
   "critical": true,
   "releasedAt": "2026-11-26",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "100% Auto-Start Guarantee: Windows Task Scheduler (Boot + Logon), WSH-disabled CMD/PowerShell fallback, fast supervised post-update restart across all PCs"
+  "notes": "100% Auto-Start + Chrome/Edge Live Animated Splash (Zero Connection Refused) + Scroll-Persistent Viewport-Safe 3-Dot Action Menus across all modules"
 }

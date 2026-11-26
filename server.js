@@ -57,14 +57,17 @@
     } catch (_) { }
 })();
 
+process.env.CMBC_DEFER_DB_INIT = '1';
+
 const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
-const { getPool, isDbAlive, query, sql, getActiveTransactions } = require('./database/db');
+const { getPool, initDatabase, isDbAlive, query, sql, getActiveTransactions } = require('./database/db');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
 const { createIdempotencyMiddleware } = require('./utils/idempotencyMiddleware');
+const { writeStartupStatus } = require('./utils/startupStatus');
 
 // Global safety crash guards: an uncaught exception exits so the external supervisor can restart.
 let uncaughtCount = 0;
@@ -88,9 +91,21 @@ const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 const DB_STARTUP_MAX_ATTEMPTS = 30;
-let dbStartupReady = true;
-let dbStartupStage = 'ready';
+let dbStartupReady = false;
+let routesReady = false;
+let dbStartupStage = 'booting';
 let dbStartupAttempt = 1;
+let startupProgressPct = 20;
+let startupDetail = 'Server engine start ho raha hai...';
+
+writeStartupStatus({
+    pct: startupProgressPct,
+    step: 2,
+    stage: dbStartupStage,
+    title: 'App Server Start Ho Raha Hai...',
+    detail: startupDetail,
+    port: PORT
+});
 
 const os = require('os');
 const currentHostname = (os.hostname() || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
@@ -126,6 +141,16 @@ app.use((req, res, next) => {
         return res.status(403).json({ success: false, error: 'Host not allowed' });
     }
     const origin = req.headers.origin;
+    const isHealthProbe = req.path === '/api/health';
+    if (isHealthProbe && origin === 'null') {
+        res.header('Access-Control-Allow-Origin', 'null');
+        res.header('Vary', 'Origin');
+        res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Access-Control-Request-Private-Network');
+        res.header('Access-Control-Allow-Private-Network', 'true');
+        if (req.method === 'OPTIONS') return res.sendStatus(204);
+        return next();
+    }
     if (!isAllowedOrigin(origin)) {
         return res.status(403).json({ success: false, error: 'Origin not allowed' });
     }
@@ -139,13 +164,15 @@ app.use((req, res, next) => {
     }
     next();
 });
-app.use(cors({
-    origin: function (origin, callback) {
-        if (isAllowedOrigin(origin)) return callback(null, true);
-        return callback(new Error('Origin not allowed by CORS'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Access-Control-Request-Private-Network']
+app.use(cors((req, callback) => {
+    const origin = req.headers.origin;
+    const allowed = isAllowedOrigin(origin) || (req.path === '/api/health' && origin === 'null');
+    if (!allowed) return callback(new Error('Origin not allowed by CORS'));
+    return callback(null, {
+        origin: true,
+        methods: ['GET', 'POST', 'PUT, PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Access-Control-Request-Private-Network']
+    });
 }));
 // Active request tracking — auto-update sirf tab chalega jab koi request in-flight na ho.
 // SSE (/api/live-events) ko count nahi karte warna stream hamesha "busy" rahega.
@@ -185,17 +212,32 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-// 2. Dedicated Health Check Endpoint
+const startupWaitPage = (() => {
+    try {
+        return fs.readFileSync(path.join(__dirname, 'public', 'startup-wait.html'), 'utf8');
+    } catch (e) {
+        return null;
+    }
+})();
+
+// 2. Dedicated Health Check Endpoint (always responsive from instant HTTP bind)
 app.get('/api/health', async (req, res) => {
     const uptimeSeconds = Math.round((Date.now() - serverStartTime) / 1000);
     const version = getAppVersion();
-    if (!dbStartupReady) {
+    if (!routesReady || !dbStartupReady) {
+        const stageStep = dbStartupStage === 'routes' ? 5
+            : (dbStartupStage === 'schema' || dbStartupStage === 'schema_repair' || dbStartupStage === 'seeding') ? 4
+            : dbStartupStage === 'opening_db' ? 3 : 2;
         return res.status(503).json({
             success: false,
             status: dbStartupStage === 'waiting' ? 'WAITING' : 'CONNECTING',
             dbReady: false,
             isDatabaseDown: true,
             startupStage: dbStartupStage,
+            progressPct: startupProgressPct,
+            step: stageStep,
+            detail: startupDetail,
+            port: PORT,
             connectionAttempt: dbStartupAttempt,
             maxAttempts: DB_STARTUP_MAX_ATTEMPTS,
             version,
@@ -212,6 +254,9 @@ app.get('/api/health', async (req, res) => {
             dbReady: true,
             database: process.env.DB_NAME || 'CashManagement',
             startupStage: 'ready',
+            progressPct: 100,
+            step: 5,
+            port: PORT,
             version,
             bootId: SERVER_BOOT_ID,
             uptimeSeconds,
@@ -224,12 +269,41 @@ app.get('/api/health', async (req, res) => {
             dbReady: false,
             isDatabaseDown: true,
             startupStage: 'reconnecting',
+            progressPct: 50,
+            port: PORT,
             version,
             bootId: SERVER_BOOT_ID,
             uptimeSeconds,
             error: 'Database connection is DOWN.'
         });
     }
+});
+
+// Early Startup Splash Gate: Port binds immediately so browsers never hit ERR_CONNECTION_REFUSED;
+// HTML navigation shows animated loading progress until SQLite DB & all routes finish mounting.
+app.use((req, res, next) => {
+    if (routesReady && dbStartupReady) return next();
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/extension')) {
+        const accept = String(req.headers.accept || '');
+        if ((accept.includes('text/html') || req.path === '/' || req.path === '/index.html') && startupWaitPage) {
+            res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            res.set('Pragma', 'no-cache');
+            res.set('Expires', '0');
+            return res.type('html').status(200).send(startupWaitPage.replace(/__VERSION__/g, getAppVersion()));
+        }
+    }
+    if (req.path.startsWith('/api')) {
+        return res.status(503).json({
+            success: false,
+            isDatabaseDown: true,
+            status: 'BOOTING',
+            startupStage: dbStartupStage,
+            progressPct: startupProgressPct,
+            detail: startupDetail,
+            error: 'Server abhi start ho raha hai — kuch second me ready hoga.'
+        });
+    }
+    return next();
 });
 
 // ============================================================================
@@ -671,11 +745,17 @@ if (autoUpdater && autoUpdater.state) {
     };
 }
 
-// Dynamic Application Version Tracking (Stable Release Version)
+// Dynamic Application Version Tracking (reads version.json without blocking startup)
+let _autoUpdaterRef = null;
+function getAutoUpdater() {
+    if (!_autoUpdaterRef) _autoUpdaterRef = require('./utils/autoUpdater');
+    return _autoUpdaterRef;
+}
+
 function getAppVersion() {
     try {
-        const localVer = autoUpdater.getLocalVersionInfo().version || '1.0.0';
-        return localVer;
+        const vJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8'));
+        return vJson.version || '1.0.0';
     } catch (e) {
         return '1.0.0';
     }
@@ -789,21 +869,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ---------------------------------------------------------------------------
-// STARTUP "PLEASE WAIT" GATE
-// Server turant listen karta hai, isliye browser me "site can't be reached"
-// nahi aata. Par jab tak SQL Server ready na ho, HTML page par friendly
-// "Please wait" screen dikhti hai jo khud refresh hoti hai. DB ready hote hi
-// normal app khul jata hai. (User ko kuch samajhne/karne ki zaroorat nahi.)
-// ---------------------------------------------------------------------------
-const startupWaitPage = (() => {
-    try {
-        return fs.readFileSync(path.join(__dirname, 'public', 'startup-wait.html'), 'utf8');
-    } catch (e) {
-        return null;
-    }
-})();
-
+// Runtime DB-down guard for HTML navigation (after startup finishes)
 app.use(async (req, res, next) => {
     if (req.method !== 'GET') return next();
     if (req.path.startsWith('/api') || req.path.startsWith('/extension')) return next();
@@ -884,199 +950,278 @@ app.get('/api/system/version-reports', (req, res) => {
     }
 });
 
-// Auth & Admin Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/license', require('./routes/license'));
-app.use('/api/idempotency', require('./routes/idempotency'));
+function yieldStartupTick() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
 
-// License Enforcement Guard for Mutating Requests (Data is NEVER locked for viewing)
-app.use('/api', (req, res, next) => {
-    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-        return next();
-    }
-    const p = req.path || '';
-    if (p.startsWith('/license') || p.startsWith('/auth') || p.startsWith('/logs') || p.startsWith('/system') || p.startsWith('/settings')) {
-        return next();
-    }
-    try {
-        const lm = require('./utils/licenseManager');
-        const status = lm.getLicenseStatus();
-        if (status && status.isExpired) {
-            return res.status(403).json({
+let deferredRoutesMounted = false;
+async function mountDeferredRoutesAndFinalize() {
+    if (deferredRoutesMounted) return;
+    deferredRoutesMounted = true;
+
+    // Auth & Admin Routes
+    app.use('/api/auth', require('./routes/auth'));
+    app.use('/api/admin', require('./routes/admin'));
+    app.use('/api/license', require('./routes/license'));
+    app.use('/api/idempotency', require('./routes/idempotency'));
+    await yieldStartupTick();
+
+    // License Enforcement Guard for Mutating Requests (Data is NEVER locked for viewing)
+    app.use('/api', (req, res, next) => {
+        if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+            return next();
+        }
+        const p = req.path || '';
+        if (p.startsWith('/license') || p.startsWith('/auth') || p.startsWith('/logs') || p.startsWith('/system') || p.startsWith('/settings')) {
+            return next();
+        }
+        try {
+            const lm = require('./utils/licenseManager');
+            const status = lm.getLicenseStatus();
+            if (status && status.isExpired) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'LICENSE_EXPIRED',
+                    error: 'लाइसेंस समाप्त हो चुका है। कृपया सेटिंग्स में जाकर नया लाइसेंस एक्टिवेट करें अथवा संजय जी से संपर्क करें।',
+                    license: status
+                });
+            }
+        } catch (_) { }
+        next();
+    });
+
+    // Authenticated User Trigger for 1-Click Auto-Updater from Dashboard
+    app.post('/api/system/apply-update', async (req, res) => {
+        const isAdmin = isStrictLoopback(req) || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1 || req.user.Role === 'Admin'));
+        if (!isAdmin) {
+            return res.status(403).json({ success: false, error: 'Kripya Admin account se login karke update karein.' });
+        }
+        if (getActiveTransactions() > 0) {
+            return res.status(409).json({
                 success: false,
-                code: 'LICENSE_EXPIRED',
-                error: 'लाइसेंस समाप्त हो चुका है। कृपया सेटिंग्स में जाकर नया लाइसेंस एक्टिवेट करें अथवा संजय जी से संपर्क करें।',
-                license: status
+                skipped: true,
+                reason: 'Ek database transaction abhi chal raha hai — data suraksha ke liye 2 second me dubara try karein.'
             });
         }
-    } catch (_) { }
-    next();
-});
+        const force = Boolean(req.body && req.body.force !== false);
+        const result = await autoUpdater.runSilentAutoUpdate({ force, restartOnUpdate: true });
+        res.json(result);
+    });
 
-// Authenticated User Trigger for 1-Click Auto-Updater from Dashboard
-app.post('/api/system/apply-update', async (req, res) => {
-    const isAdmin = isStrictLoopback(req) || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1 || req.user.Role === 'Admin'));
-    if (!isAdmin) {
-        return res.status(403).json({ success: false, error: 'Kripya Admin account se login karke update karein.' });
-    }
-    if (getActiveTransactions() > 0) {
-        return res.status(409).json({
-            success: false,
-            skipped: true,
-            reason: 'Ek database transaction abhi chal raha hai — data suraksha ke liye 2 second me dubara try karein.'
-        });
-    }
-    const force = Boolean(req.body && req.body.force !== false);
-    const result = await autoUpdater.runSilentAutoUpdate({ force, restartOnUpdate: true });
-    res.json(result);
-});
+    // API Routes (loaded in yielding batches so Port 4000 stays live during cold boot)
+    app.use('/api/logs', require('./routes/logs'));
+    app.use('/api/accounts', require('./routes/accounts'));
+    app.use('/api/transactions', require('./routes/transactions'));
+    app.use('/api/parties', require('./routes/parties'));
+    app.use('/api/categories', require('./routes/categories'));
+    app.use('/api/budgets', require('./routes/budgets'));
+    app.use('/api/bills', require('./routes/bills'));
+    startupProgressPct = 82;
+    startupDetail = 'Core accounting & ledger routes load ho rahi hain...';
+    writeStartupStatus({ pct: 82, step: 5, stage: 'routes', title: 'Modules Load Ho Rahe Hain...', detail: startupDetail, port: PORT, version: getAppVersion() });
+    await yieldStartupTick();
 
-// API Routes
-app.use('/api/logs', require('./routes/logs'));
-app.use('/api/accounts', require('./routes/accounts'));
-app.use('/api/transactions', require('./routes/transactions'));
-app.use('/api/parties', require('./routes/parties'));
-app.use('/api/categories', require('./routes/categories'));
-app.use('/api/budgets', require('./routes/budgets'));
-app.use('/api/bills', require('./routes/bills'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/bc', require('./routes/bc'));
-app.use('/api/customers', require('./routes/customers'));
-app.use('/api/invoices', require('./routes/invoices'));
-app.use('/api/khatabook', require('./routes/khatabook'));
-app.use('/api/database', require('./routes/database'));
-app.use('/api/search', require('./routes/search'));
-app.use('/api/recyclebin', require('./routes/recyclebin'));
-app.use('/api/documents', require('./routes/documents'));
-app.use('/api/csc', require('./routes/csc'));
-app.use('/api/service', require('./routes/service_records'));
-app.use('/api/bill-payments', require('./routes/bill_payments'));
-app.use('/api/ucl', require('./routes/ucl'));
-app.use('/api/pac', require('./routes/pac'));
-app.use('/api/recurring', require('./routes/recurring'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/history', require('./routes/history'));
+    app.use('/api/reports', require('./routes/reports'));
+    app.use('/api/bc', require('./routes/bc'));
+    app.use('/api/customers', require('./routes/customers'));
+    app.use('/api/invoices', require('./routes/invoices'));
+    app.use('/api/khatabook', require('./routes/khatabook'));
+    app.use('/api/database', require('./routes/database'));
+    app.use('/api/search', require('./routes/search'));
+    app.use('/api/recyclebin', require('./routes/recyclebin'));
+    app.use('/api/documents', require('./routes/documents'));
+    startupProgressPct = 88;
+    startupDetail = 'CSC, Khata aur Billing modules taiyaar ho rahe hain...';
+    writeStartupStatus({ pct: 88, step: 5, stage: 'routes', title: 'Modules Load Ho Rahe Hain...', detail: startupDetail, port: PORT, version: getAppVersion() });
+    await yieldStartupTick();
 
-// Live Sidebar Badges API — counts across all modules in a single instant query
-app.get('/api/badges', async (req, res) => {
-    try {
-        const { query } = require('./database/db');
-        const userId = req.user.UserID;
-        const sql = `
-            SELECT 
-                (SELECT COUNT(*) FROM Transactions WHERE UserID = @userId) AS transactions,
-                (SELECT COUNT(*) FROM Accounts WHERE IsActive = 1 AND UserID = @userId) AS accounts,
-                (SELECT COUNT(*) FROM Parties WHERE UserID = @userId) AS parties,
-                (SELECT COUNT(*) FROM Customers WHERE IsActive = 1 AND UserID = @userId) AS customers,
-                (SELECT COUNT(*) FROM Invoices WHERE UserID = @userId) AS invoices,
-                (SELECT COUNT(*) FROM KhataEntries WHERE UserID = @userId) AS khatabook,
-                (SELECT COUNT(*) FROM Documents WHERE UserID = @userId) AS documents,
-                (SELECT COUNT(*) FROM CSCApplications WHERE IsActive = 1 AND UserID = @userId) AS csc,
-                (SELECT COUNT(*) FROM Budgets WHERE UserID = @userId) AS budgets,
-                (SELECT COUNT(*) FROM Bills WHERE UserID = @userId) AS bills,
-                (SELECT COUNT(*) FROM Categories WHERE IsActive = 1 AND UserID = @userId) AS categories,
-                (SELECT COUNT(*) FROM AuditLogs WHERE UserID = @userId) AS history,
-                (
-                    (SELECT COUNT(*) FROM Customers WHERE IsActive = 0 AND UserID = @userId) +
-                    (SELECT COUNT(*) FROM Accounts WHERE IsActive = 0 AND UserID = @userId) +
-                    (SELECT COUNT(*) FROM Categories WHERE IsActive = 0 AND UserID = @userId)
-                ) AS recyclebin
-        `;
-        const result = await query(sql, { userId });
-        const base = result.recordset[0] || {};
+    app.use('/api/csc', require('./routes/csc'));
+    app.use('/api/service', require('./routes/service_records'));
+    app.use('/api/bill-payments', require('./routes/bill_payments'));
+    app.use('/api/ucl', require('./routes/ucl'));
+    app.use('/api/pac', require('./routes/pac'));
+    app.use('/api/recurring', require('./routes/recurring'));
+    app.use('/api/settings', require('./routes/settings'));
+    app.use('/api/history', require('./routes/history'));
+    startupProgressPct = 94;
+    startupDetail = 'OCR, Utility Bill aur Settings active ho rahe hain...';
+    writeStartupStatus({ pct: 94, step: 5, stage: 'routes', title: 'Services Activate Ho Rahi Hain...', detail: startupDetail, port: PORT, version: getAppVersion() });
+    await yieldStartupTick();
 
-        // UCL/PAC/BillPay counts: alag se try karo taaki purane PCs par error na aaye.
-        let ucl = 0;
-        let pac = 0;
-        let billpayments = 0;
+    // Live Sidebar Badges API — counts across all modules in a single instant query
+    app.get('/api/badges', async (req, res) => {
         try {
-            const uclRes = await query('SELECT COUNT(*) AS c FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId', { userId });
-            ucl = uclRes.recordset?.[0]?.c || 0;
-        } catch (_) { ucl = 0; }
-        try {
-            const pacRes = await query("SELECT COUNT(*) AS c FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId", { userId });
-            pac = pacRes.recordset?.[0]?.c || 0;
-        } catch (_) { pac = 0; }
-        try {
-            const bpRes = await query('SELECT COUNT(*) AS c FROM BillPayments WHERE ISNULL(IsDeleted, 0) = 0 AND UserID = @userId', { userId });
-            billpayments = bpRes.recordset?.[0]?.c || 0;
-        } catch (_) { billpayments = 0; }
+            const { query } = require('./database/db');
+            const userId = req.user.UserID;
+            const sql = `
+                SELECT 
+                    (SELECT COUNT(*) FROM Transactions WHERE UserID = @userId) AS transactions,
+                    (SELECT COUNT(*) FROM Accounts WHERE IsActive = 1 AND UserID = @userId) AS accounts,
+                    (SELECT COUNT(*) FROM Parties WHERE UserID = @userId) AS parties,
+                    (SELECT COUNT(*) FROM Customers WHERE IsActive = 1 AND UserID = @userId) AS customers,
+                    (SELECT COUNT(*) FROM Invoices WHERE UserID = @userId) AS invoices,
+                    (SELECT COUNT(*) FROM KhataEntries WHERE UserID = @userId) AS khatabook,
+                    (SELECT COUNT(*) FROM Documents WHERE UserID = @userId) AS documents,
+                    (SELECT COUNT(*) FROM CSCApplications WHERE IsActive = 1 AND UserID = @userId) AS csc,
+                    (SELECT COUNT(*) FROM Budgets WHERE UserID = @userId) AS budgets,
+                    (SELECT COUNT(*) FROM Bills WHERE UserID = @userId) AS bills,
+                    (SELECT COUNT(*) FROM Categories WHERE IsActive = 1 AND UserID = @userId) AS categories,
+                    (SELECT COUNT(*) FROM AuditLogs WHERE UserID = @userId) AS history,
+                    (
+                        (SELECT COUNT(*) FROM Customers WHERE IsActive = 0 AND UserID = @userId) +
+                        (SELECT COUNT(*) FROM Accounts WHERE IsActive = 0 AND UserID = @userId) +
+                        (SELECT COUNT(*) FROM Categories WHERE IsActive = 0 AND UserID = @userId)
+                    ) AS recyclebin
+            `;
+            const result = await query(sql, { userId });
+            const base = result.recordset[0] || {};
 
-        res.json({ success: true, data: { ...base, ucl, pac, billpayments } });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+            let ucl = 0;
+            let pac = 0;
+            let billpayments = 0;
+            try {
+                const uclRes = await query('SELECT COUNT(*) AS c FROM UCLUpdates WHERE IsDeleted = 0 AND UserID = @userId', { userId });
+                ucl = uclRes.recordset?.[0]?.c || 0;
+            } catch (_) { ucl = 0; }
+            try {
+                const pacRes = await query("SELECT COUNT(*) AS c FROM PACEntries WHERE IsDeleted = 0 AND Status = 'Available' AND UserID = @userId", { userId });
+                pac = pacRes.recordset?.[0]?.c || 0;
+            } catch (_) { pac = 0; }
+            try {
+                const bpRes = await query('SELECT COUNT(*) AS c FROM BillPayments WHERE ISNULL(IsDeleted, 0) = 0 AND UserID = @userId', { userId });
+                billpayments = bpRes.recordset?.[0]?.c || 0;
+            } catch (_) { billpayments = 0; }
 
-// Network Info API for Mobile QR and LAN connection
-app.get('/api/network-info', (req, res) => {
-    const os = require('os');
-    const nets = os.networkInterfaces();
-    let lanIp = '127.0.0.1';
-    for (const n of Object.keys(nets)) {
-        for (const net of nets[n]) {
-            if (net.family === 'IPv4' && !net.internal && (net.address.startsWith('192.168.') || net.address.startsWith('10.'))) {
-                lanIp = net.address;
-                break;
+            res.json({ success: true, data: { ...base, ucl, pac, billpayments } });
+        } catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    });
+
+    // Network Info API for Mobile QR and LAN connection
+    app.get('/api/network-info', (req, res) => {
+        const os = require('os');
+        const nets = os.networkInterfaces();
+        let lanIp = '127.0.0.1';
+        for (const n of Object.keys(nets)) {
+            for (const net of nets[n]) {
+                if (net.family === 'IPv4' && !net.internal && (net.address.startsWith('192.168.') || net.address.startsWith('10.'))) {
+                    lanIp = net.address;
+                    break;
+                }
             }
         }
-    }
-    res.json({
-        success: true,
-        ip: lanIp,
-        port: PORT,
-        url: `http://${lanIp}:${PORT}`,
-        hostname: os.hostname(),
-        mDnsUrl: `http://${os.hostname().toLowerCase()}.local:${PORT}`
+        res.json({
+            success: true,
+            ip: lanIp,
+            port: PORT,
+            url: `http://${lanIp}:${PORT}`,
+            hostname: os.hostname(),
+            mDnsUrl: `http://${os.hostname().toLowerCase()}.local:${PORT}`
+        });
     });
-});
 
-// Unknown /api paths ko JSON 404 do (SPA fallback se pehle - warna frontend ko HTML milega)
-app.use('/api', (req, res) => {
-    res.status(404).json({ success: false, error: 'API route nahi mila' });
-});
-
-// SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache + Dynamic Versioning)
-app.get(/.*/, (req, res) => {
-    serveIndexHtml(req, res);
-});
-
-// Global Error Handler - har error JSON me do, HTML nahi, aur logs file me save karo
-app.use((err, req, res, next) => {
-    if (res.headersSent) return next(err);
-    console.error('❌ API Error:', req.method, req.originalUrl, '-', err.message);
-
-    try {
-        const sLogsDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(sLogsDir)) fs.mkdirSync(sLogsDir, { recursive: true });
-        const sLogEntry = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${err.message}\nStack: ${err.stack || 'N/A'}\n\n`;
-        fs.appendFile(path.join(sLogsDir, 'server_errors.log'), sLogEntry, () => { });
-    } catch (e) { }
-
-    const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
-    res.status(status).json({
-        success: false,
-        error: err.message || 'Server error aa gaya',
-        ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+    // Unknown /api paths ko JSON 404 do (SPA fallback se pehle - warna frontend ko HTML milega)
+    app.use('/api', (req, res) => {
+        res.status(404).json({ success: false, error: 'API route nahi mila' });
     });
-});
 
-// Background SQLite database connection manager
+    // SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache + Dynamic Versioning)
+    app.get(/.*/, (req, res) => {
+        serveIndexHtml(req, res);
+    });
+
+    // Global Error Handler - har error JSON me do, HTML nahi, aur logs file me save karo
+    app.use((err, req, res, next) => {
+        if (res.headersSent) return next(err);
+        console.error('❌ API Error:', req.method, req.originalUrl, '-', err.message);
+
+        try {
+            const sLogsDir = path.join(__dirname, 'logs');
+            if (!fs.existsSync(sLogsDir)) fs.mkdirSync(sLogsDir, { recursive: true });
+            const sLogEntry = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${err.message}\nStack: ${err.stack || 'N/A'}\n\n`;
+            fs.appendFile(path.join(sLogsDir, 'server_errors.log'), sLogEntry, () => { });
+        } catch (e) { }
+
+        const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+        res.status(status).json({
+            success: false,
+            error: err.message || 'Server error aa gaya',
+            ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {})
+        });
+    });
+
+    routesReady = true;
+}
+
+// Background SQLite database & deferred route initialization manager
 async function connectDbInBackground() {
     try {
-        dbStartupStage = 'connecting';
+        dbStartupStage = 'opening_db';
+        startupProgressPct = 32;
+        startupDetail = 'SQLite embedded database open ho raha hai...';
+        writeStartupStatus({ pct: 32, step: 3, stage: 'opening_db', title: 'Database Khul Raha Hai...', detail: startupDetail, port: PORT, version: getAppVersion() });
+        await yieldStartupTick();
+
+        await initDatabase((stage, pct, detail) => {
+            dbStartupStage = stage;
+            startupProgressPct = pct;
+            startupDetail = detail;
+            writeStartupStatus({
+                pct,
+                step: stage === 'opening_db' ? 3 : 4,
+                stage,
+                title: stage === 'seeding' ? 'Defaults Verify Ho Rahe Hain...' : 'Schema & Integrity Verify Ho Rahi Hai...',
+                detail,
+                port: PORT,
+                version: getAppVersion()
+            });
+        });
+
+        dbStartupStage = 'routes';
+        startupProgressPct = 76;
+        startupDetail = 'Application routes aur security services load ho rahi hain...';
+        writeStartupStatus({ pct: 76, step: 5, stage: 'routes', title: 'Apna Hisaab Load Ho Raha Hai...', detail: startupDetail, port: PORT, version: getAppVersion() });
+        await yieldStartupTick();
+
+        await mountDeferredRoutesAndFinalize();
+
         const connected = await isDbAlive();
         if (connected) {
             console.log('✅ SQLite Database 100% Ready (Zero-Install Edition)!');
             dbStartupReady = true;
             dbStartupStage = 'ready';
+            startupProgressPct = 100;
+            startupDetail = 'Server 100% Live Hai! App khul raha hai...';
             dbAliveCache = { value: true, checkedAt: Date.now() };
+            writeStartupStatus({
+                pct: 100,
+                step: 5,
+                stage: 'ready',
+                title: 'Server 100% Live Hai!',
+                detail: startupDetail,
+                ok: true,
+                port: PORT,
+                version: getAppVersion()
+            });
             runRecurring();
             setInterval(runRecurring, 60 * 60 * 1000);
         }
     } catch (e) {
+        dbStartupStage = 'reconnecting';
+        startupDetail = `Database startup notice: ${e.message} (retrying...)`;
+        writeStartupStatus({
+            pct: startupProgressPct,
+            step: 3,
+            stage: 'error',
+            title: 'Database Retry Chal Raha Hai...',
+            detail: startupDetail,
+            error: e.message,
+            port: PORT,
+            version: getAppVersion()
+        });
         console.error('⚠️ SQLite DB startup notice:', e.message);
+        setTimeout(() => { connectDbInBackground(); }, 4000);
     }
 }
 
@@ -1166,6 +1311,16 @@ scheduleNightlyUpdate();
         httpServer.on('error', (listenErr) => {
             const code = listenErr && listenErr.code ? listenErr.code : 'UNKNOWN';
             console.error(`❌ Server listen error (${code}) on ${HOST}:${PORT}:`, listenErr.message);
+            writeStartupStatus({
+                pct: 25,
+                step: 2,
+                stage: 'error',
+                title: `Port ${PORT} Error (${code})`,
+                detail: `Port ${PORT} par problem aayi: ${listenErr.message}`,
+                error: listenErr.message,
+                port: PORT,
+                version: getAppVersion()
+            });
             try {
                 const errLogDir = path.join(__dirname, 'logs');
                 if (!fs.existsSync(errLogDir)) fs.mkdirSync(errLogDir, { recursive: true });

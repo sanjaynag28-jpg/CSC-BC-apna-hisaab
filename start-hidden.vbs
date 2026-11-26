@@ -1,7 +1,7 @@
-' CSC & BC Apna Hisaab - silent server launcher (SQLite Edition)
-' Startup par pehle update/dependency repair, phir hidden supervisor.
+' CSC & BC Apna Hisaab - silent boot/logon launcher (SQLite Edition)
+' Logon hone par bina console window ke server + Chrome/Edge loading splash start karta hai.
 Option Explicit
-Dim fso, sh, baseDir, stopFile, nodeExe, port, url
+Dim fso, sh, baseDir, stopFile, psExe, silentPs, nodeExe, port, url, psCmd, rc
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
@@ -12,6 +12,21 @@ On Error Resume Next
 If fso.FileExists(stopFile) Then fso.DeleteFile stopFile, True
 On Error GoTo 0
 
+psExe = sh.ExpandEnvironmentStrings("%WINDIR%") & "\System32\WindowsPowerShell\v1.0\powershell.exe"
+silentPs = baseDir & "\scripts\silent-launch.ps1"
+
+If fso.FileExists(psExe) And fso.FileExists(silentPs) Then
+    psCmd = """" & psExe & """ -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & silentPs & """ -ProjectDir """ & baseDir & """ -Mode logon"
+    On Error Resume Next
+    rc = sh.Run(psCmd, 0, False)
+    If Err.Number = 0 Then
+        On Error GoTo 0
+        WScript.Quit 0
+    End If
+    On Error GoTo 0
+End If
+
+' Pure VBS fallback if PowerShell is restricted by policy
 port = ReadEnvPort(baseDir & "\.env", "4000")
 url = "http://localhost:" & port
 
@@ -26,6 +41,29 @@ If Not ServerReady(url) Then
     End If
     sh.Run "cmd.exe /c """"" & baseDir & "\server-supervisor.bat""""", 0, False
 End If
+
+OpenSplashOrApp sh, fso, baseDir, port, ServerReady(url)
+
+Sub OpenSplashOrApp(shellObj, fileObj, projDir, p, isReady)
+    Dim target, splashFile
+    splashFile = projDir & "\public\startup-wait.html"
+    If isReady Or Not fileObj.FileExists(splashFile) Then
+        target = "http://localhost:" & p & "/"
+    Else
+        target = "file:///" & Replace(splashFile, "\", "/") & "?port=" & p
+    End If
+    On Error Resume Next
+    shellObj.Run """chrome.exe"" """ & target & """", 1, False
+    If Err.Number <> 0 Then
+        Err.Clear
+        shellObj.Run """msedge.exe"" """ & target & """", 1, False
+        If Err.Number <> 0 Then
+            Err.Clear
+            shellObj.Run """" & target & """", 1, False
+        End If
+    End If
+    On Error GoTo 0
+End Sub
 
 Function ReadEnvPort(envPath, defaultPort)
     Dim f, line, hashPos, k, v
@@ -70,7 +108,7 @@ Function ServerReady(u)
         On Error GoTo 0
         Exit Function
     End If
-    x.setTimeouts 1000, 1000, 1000, 1000
+    x.setTimeouts 500, 500, 500, 500
     Err.Clear
     x.open "GET", u & "/api/health", False
     If Err.Number = 0 Then x.send

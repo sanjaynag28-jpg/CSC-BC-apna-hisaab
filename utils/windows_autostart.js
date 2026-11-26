@@ -3,14 +3,15 @@
 /**
  * Windows self-heal: PC boot / logon par app ka silent auto-start.
  *
- * Har install par ye cheezein pakki karta hai (bina user ko kuch karne ke):
- *   1. Startup folder entry  -> login hote hi server hidden start
- *   2. Desktop shortcut      -> "CSC BC Apna Hissab" (double click = app open)
- *   3. Start Menu shortcut   -> Windows search se bhi khul jaye
+ * Har install / server boot par ye cheezein pakki karta hai:
+ *   1. Startup folder entry  -> login hote hi silent-launch (server + Chrome/Edge splash)
+ *   2. HKCU Run entry        -> Startup folder band ho to bhi login par auto-start
+ *   3. Task Scheduler Logon  -> GPO-resilient interactive logon auto-start (no admin needed)
+ *   4. Task Scheduler Boot   -> SYSTEM boot task (Admin ho to PC on hote hi start)
+ *   5. Desktop + Start Menu  -> Unified shortcut ("CSC & BC Apna Hisaab (SQLite)")
  *
- * Ye module admin rights ke bina chalta hai aur idempotent hai: jo pehle se
- * sahi hai use dobara nahi banata. Koi bhi step fail ho to sirf log hota hai,
- * app kabhi crash nahi hota.
+ * All entries use space-safe `-File "<ROOT>\scripts\silent-launch.ps1"` or VBS,
+ * completely immune to spaces/ampersands in Windows usernames or paths.
  */
 
 const fs = require('fs');
@@ -19,6 +20,7 @@ const { execFileSync } = require('child_process');
 
 const ROOT_DIR = path.join(__dirname, '..');
 const LOG_DIR = path.join(ROOT_DIR, 'logs');
+const CFG_DIR = path.join(ROOT_DIR, 'config');
 const LOG_FILE = path.join(LOG_DIR, 'auto-update.log');
 const STARTUP_ENTRY_VBS = 'CSC BC Apna Hisaab SQLite (Auto).vbs';
 const STARTUP_ENTRY_CMD = 'CSC BC Apna Hisaab SQLite (Auto).cmd';
@@ -30,6 +32,31 @@ function log(msg) {
     try {
         if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
         fs.appendFileSync(LOG_FILE, `[${new Date().toISOString()}] [autostart] ${msg}\n`, 'utf8');
+    } catch (_) { }
+}
+
+function isSystemServiceContext() {
+    try {
+        const user = String(process.env.USERNAME || '').toUpperCase();
+        const profile = String(process.env.USERPROFILE || '').toLowerCase();
+        return user === 'SYSTEM' || user === 'LOCAL SERVICE' || user === 'NETWORK SERVICE' ||
+            user.endsWith('$') || profile.includes('\\systemprofile');
+    } catch (_) {
+        return false;
+    }
+}
+
+function persistResolvedNodePath() {
+    try {
+        const major = parseInt(String(process.versions.node || '0').split('.')[0], 10);
+        if (major >= 22 && process.execPath && fs.existsSync(process.execPath)) {
+            if (!fs.existsSync(CFG_DIR)) fs.mkdirSync(CFG_DIR, { recursive: true });
+            const target = path.join(CFG_DIR, 'node-path.txt');
+            const cur = fs.existsSync(target) ? fs.readFileSync(target, 'utf8').trim() : '';
+            if (cur !== process.execPath) {
+                fs.writeFileSync(target, process.execPath, 'utf8');
+            }
+        }
     } catch (_) { }
 }
 
@@ -52,7 +79,7 @@ function isWshEnabled() {
                 timeout: 5000,
                 stdio: ['ignore', 'pipe', 'ignore']
             }).toString();
-            if (/Enabled\s+REG_DWORD\s+0x0\b/i.test(out)) return false;
+            if (/Enabled\s+REG_(?:DWORD|SZ)\s+(?:0x0\b|0\b)/i.test(out)) return false;
         } catch (_) { }
     }
     return true;
@@ -66,16 +93,26 @@ function runHiddenPs(psLines, timeoutMs = 45000) {
     ], { windowsHide: true, timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
 }
 
+function getSilentPsExe() {
+    return path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
+function buildSilentLaunchArgs(mode) {
+    const psScript = path.join(ROOT_DIR, 'scripts', 'silent-launch.ps1');
+    return `-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "${psScript}" -ProjectDir "${ROOT_DIR}" -Mode ${mode}`;
+}
+
 /**
- * Login par hidden server launcher (Startup folder VBS ya WSH-disabled fallback CMD).
+ * Login par hidden server launcher + Chrome/Edge splash (Startup folder VBS ya PS CMD fallback).
  */
 function ensureStartupEntry() {
     const startupDir = getStartupDir();
     if (!startupDir) return 'no-appdata';
 
     const hiddenVbs = path.join(ROOT_DIR, 'start-hidden.vbs');
+    const silentPs = path.join(ROOT_DIR, 'scripts', 'silent-launch.ps1');
     const supBat = path.join(ROOT_DIR, 'server-supervisor.bat');
-    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(supBat)) return 'missing-launcher';
+    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(silentPs) && !fs.existsSync(supBat)) return 'missing-launcher';
     if (!fs.existsSync(startupDir)) {
         try { fs.mkdirSync(startupDir, { recursive: true }); } catch (_) { return 'no-startup-dir'; }
     }
@@ -101,22 +138,28 @@ function ensureStartupEntry() {
                 return 'unchanged';
             }
             fs.writeFileSync(vbsPath, content, 'utf8');
-            log('Startup entry ready (VBS silent auto-start).');
+            log('Startup entry ready (VBS silent auto-start + Chrome/Edge splash).');
             return 'created';
         } catch (e) {
             return 'error:' + e.message;
         }
     }
 
-    // Fallback when Windows Script Host is disabled by GPO/Antivirus
-    const escapedBat = supBat.replace(/'/g, "''");
-    const escapedDir = ROOT_DIR.replace(/'/g, "''");
-    const cmdContent = [
-        '@echo off',
-        `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c','\"\"${escapedBat}\"\"' -WorkingDirectory '${escapedDir}' -WindowStyle Hidden"`,
-        'exit /b 0',
-        ''
-    ].join('\r\n');
+    // Space-safe CMD fallback when Windows Script Host is disabled
+    const psExe = getSilentPsExe();
+    const cmdContent = fs.existsSync(silentPs)
+        ? [
+            '@echo off',
+            `start "" /min "${psExe}" ${buildSilentLaunchArgs('logon')}`,
+            'exit /b 0',
+            ''
+        ].join('\r\n')
+        : [
+            '@echo off',
+            `cmd.exe /d /c "${supBat}"`,
+            'exit /b 0',
+            ''
+        ].join('\r\n');
     try {
         try { if (fs.existsSync(vbsPath)) fs.unlinkSync(vbsPath); } catch (_) { }
         if (fs.existsSync(cmdPath) && fs.readFileSync(cmdPath, 'utf8') === cmdContent) {
@@ -155,18 +198,24 @@ function ensureShortcuts() {
 
 /**
  * HKCU Run entry (backup auto-start): Startup folder kisi policy se band ho
- * jaye to bhi login par server start ho jaye. Admin ki zaroorat nahi.
+ * jaye to bhi login par server + browser splash start ho jaye. Admin ki zaroorat nahi.
  */
 function ensureRunKey() {
     const hiddenVbs = path.join(ROOT_DIR, 'start-hidden.vbs');
+    const silentPs = path.join(ROOT_DIR, 'scripts', 'silent-launch.ps1');
     const supBat = path.join(ROOT_DIR, 'server-supervisor.bat');
-    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(supBat)) return 'missing-launcher';
+    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(silentPs) && !fs.existsSync(supBat)) return 'missing-launcher';
 
     const wshOk = isWshEnabled() && fs.existsSync(hiddenVbs);
     const wscript = path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'wscript.exe');
+    const psExe = getSilentPsExe();
+
+    // Space-safe command string (no nested quotes!)
     const targetVal = wshOk
         ? `"${wscript}" "${hiddenVbs}"`
-        : `powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c','\"\"${supBat}\"\"' -WorkingDirectory '${ROOT_DIR.replace(/'/g, "''")}' -WindowStyle Hidden"`;
+        : (fs.existsSync(silentPs)
+            ? `"${psExe}" ${buildSilentLaunchArgs('logon')}`
+            : `"${supBat}"`);
 
     try {
         const q = execFileSync('reg.exe', [
@@ -189,7 +238,7 @@ function ensureRunKey() {
 
     try {
         runHiddenPs(ps);
-        log('Windows Run entry ready (login auto-start fallback).');
+        log('Windows Run entry ready (login auto-start backup).');
         return 'created';
     } catch (e) {
         return 'error:' + e.message;
@@ -198,62 +247,71 @@ function ensureRunKey() {
 
 /**
  * Windows Task Scheduler entry:
- *   1. Logon trigger (works without Admin rights, works even if Startup folder/Run is disabled)
+ *   1. Logon trigger (works without Admin rights, works even if Startup folder/Run/WSH is blocked)
  *   2. Startup boot trigger as SYSTEM (created automatically whenever running as Admin)
- *      so even on a reboot before user login, the server starts immediately!
+ *      so even on a reboot before user login, port 4000 starts immediately!
  */
-function ensureScheduledTask() {
+function ensureScheduledTask(options = {}) {
+    const bootOnly = Boolean(options && options.bootOnly);
     const hiddenVbs = path.join(ROOT_DIR, 'start-hidden.vbs');
+    const silentPs = path.join(ROOT_DIR, 'scripts', 'silent-launch.ps1');
     const supBat = path.join(ROOT_DIR, 'server-supervisor.bat');
-    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(supBat)) return 'missing-launcher';
+    if (!fs.existsSync(hiddenVbs) && !fs.existsSync(silentPs) && !fs.existsSync(supBat)) return 'missing-launcher';
 
-    const wshOk = isWshEnabled() && fs.existsSync(hiddenVbs);
+    const psExe = getSilentPsExe();
     const wscript = path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'wscript.exe');
-    const psExe = path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const escapedDir = ROOT_DIR.replace(/'/g, "''");
-    const escapedBat = supBat.replace(/'/g, "''");
+    const hasSilentPs = fs.existsSync(silentPs);
+    const logonExe = hasSilentPs ? psExe : (isWshEnabled() && fs.existsSync(hiddenVbs) ? wscript : (process.env.ComSpec || 'cmd.exe'));
+    const logonArg = hasSilentPs
+        ? buildSilentLaunchArgs('logon')
+        : (logonExe === wscript ? `"${hiddenVbs}"` : `/d /s /c ""${supBat}""`);
+    const bootExe = hasSilentPs ? psExe : (process.env.ComSpec || 'cmd.exe');
+    const bootArg = hasSilentPs ? buildSilentLaunchArgs('boot') : `/d /s /c ""${supBat}""`;
 
     const ps = [
         "$ErrorActionPreference = 'Stop'",
-        `$dir = '${escapedDir}'`,
-        `$bat = '${escapedBat}'`,
-        `$vbs = '${hiddenVbs.replace(/'/g, "''")}'`,
-        '$hiddenPsArg = \'-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList \'\'/c\'\',\'\'"\' + $bat + \'"\'\' -WorkingDirectory \'\'\' + $dir + \'\'\' -WindowStyle Hidden"\'',
-        wshOk
-            ? `$actExe = '${wscript.replace(/'/g, "''")}'; $actArg = '"' + $vbs + '"'`
-            : `$actExe = '${psExe.replace(/'/g, "''")}'; $actArg = $hiddenPsArg`,
+        `$dir = '${ROOT_DIR.replace(/'/g, "''")}'`,
+        `$logonExe = '${logonExe.replace(/'/g, "''")}'`,
+        `$logonArg = '${logonArg.replace(/'/g, "''")}'`,
+        `$bootExe = '${bootExe.replace(/'/g, "''")}'`,
+        `$bootArg = '${bootArg.replace(/'/g, "''")}'`,
         `$logonTask = '${LOGON_TASK_NAME}'`,
         `$bootTask = '${BOOT_TASK_NAME}'`,
         '$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',
-        '$resLogon = "skipped"',
+        `$bootOnly = ${bootOnly ? '$true' : '$false'}`,
+        '$resLogon = if ($bootOnly) { "skipped-system" } else { "skipped" }',
         '$resBoot = "not-admin"',
-        '# --- Logon task: works for ANY user (no admin needed) ---',
-        'try {',
-        '  $existing = Get-ScheduledTask -TaskName $logonTask -ErrorAction SilentlyContinue',
-        '  $needsWrite = $true',
-        '  if ($existing -and $existing.Actions -and $existing.Actions.Count -gt 0) {',
-        '    $a0 = $existing.Actions[0]',
-        '    if ($a0.Execute -ieq $actExe -and "$($a0.Arguments)" -eq $actArg -and $existing.State -ne "Disabled") { $needsWrite = $false; $resLogon = "unchanged" }',
-        '  }',
-        '  if ($needsWrite) {',
-        '    $action = New-ScheduledTaskAction -Execute $actExe -Argument $actArg -WorkingDirectory $dir',
-        '    $trigger = New-ScheduledTaskTrigger -AtLogOn -User ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)',
-        '    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -StartWhenAvailable -Hidden',
-        '    $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited',
-        '    Register-ScheduledTask -TaskName $logonTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null',
-        '    $resLogon = "created"',
-        '  }',
-        '} catch { $resLogon = "err:" + $_.Exception.Message }',
-        '# --- Boot task: Admin only ---',
+        'if (-not $bootOnly) {',
+        '  try {',
+        '    $currName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name',
+        '    $existing = Get-ScheduledTask -TaskName $logonTask -ErrorAction SilentlyContinue',
+        '    $needsWrite = $true',
+        '    if ($existing -and $existing.Actions -and $existing.Actions.Count -gt 0) {',
+        '      $a0 = $existing.Actions[0]',
+        '      if ($a0.Execute -ieq $logonExe -and "$($a0.Arguments)" -eq $logonArg -and $existing.State -ne "Disabled") { $needsWrite = $false; $resLogon = "unchanged" }',
+        '    }',
+        '    if ($needsWrite) {',
+        '      $action = New-ScheduledTaskAction -Execute $logonExe -Argument $logonArg -WorkingDirectory $dir',
+        '      $trigger = New-ScheduledTaskTrigger -AtLogOn -User $currName',
+        '      $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -StartWhenAvailable -Hidden',
+        '      $principal = New-ScheduledTaskPrincipal -UserId $currName -LogonType Interactive -RunLevel Limited',
+        '      Register-ScheduledTask -TaskName $logonTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null',
+        '      $resLogon = "created"',
+        '    }',
+        '  } catch { $resLogon = "err:" + $_.Exception.Message }',
+        '}',
         'if ($isAdmin) {',
         '  try {',
         '    $existingB = Get-ScheduledTask -TaskName $bootTask -ErrorAction SilentlyContinue',
         '    $needsBoot = $true',
-        '    if ($existingB -and $existingB.Actions -and $existingB.Actions.Count -gt 0 -and "$($existingB.Actions[0].Arguments)" -eq $hiddenPsArg -and $existingB.State -ne "Disabled") {',
-        '      $needsBoot = $false; $resBoot = "unchanged"',
+        '    if ($existingB -and $existingB.Actions -and $existingB.Actions.Count -gt 0) {',
+        '      $b0 = $existingB.Actions[0]',
+        '      if ($b0.Execute -ieq $bootExe -and "$($b0.Arguments)" -eq $bootArg -and $existingB.State -ne "Disabled") {',
+        '        $needsBoot = $false; $resBoot = "unchanged"',
+        '      }',
         '    }',
         '    if ($needsBoot) {',
-        `      $bAction = New-ScheduledTaskAction -Execute '${psExe.replace(/'/g, "''")}' -Argument $hiddenPsArg -WorkingDirectory $dir`,
+        '      $bAction = New-ScheduledTaskAction -Execute $bootExe -Argument $bootArg -WorkingDirectory $dir',
         '      $bTrigger = New-ScheduledTaskTrigger -AtStartup',
         '      $bSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -StartWhenAvailable -Hidden',
         '      $bPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest',
@@ -277,6 +335,21 @@ function ensureScheduledTask() {
 
 function ensureWindowsAutostart() {
     if (process.platform !== 'win32') return { skipped: true, reason: 'not-windows' };
+    persistResolvedNodePath();
+
+    // When started pre-logon as NT AUTHORITY\SYSTEM BootService, NEVER touch
+    // HKCU / Startup / Desktop / user Logon task (would corrupt systemprofile or overwrite user task).
+    if (isSystemServiceContext()) {
+        return {
+            systemContext: true,
+            wshEnabled: isWshEnabled(),
+            startupEntry: 'skipped-system',
+            shortcuts: 'skipped-system',
+            runKey: 'skipped-system',
+            scheduledTask: ensureScheduledTask({ bootOnly: true })
+        };
+    }
+
     return {
         wshEnabled: isWshEnabled(),
         startupEntry: ensureStartupEntry(),
@@ -292,7 +365,8 @@ module.exports = {
     ensureShortcuts,
     ensureRunKey,
     ensureScheduledTask,
-    isWshEnabled
+    isWshEnabled,
+    isSystemServiceContext
 };
 
 // Manual run: node utils/windows_autostart.js

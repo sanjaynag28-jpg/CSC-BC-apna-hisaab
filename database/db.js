@@ -14,13 +14,15 @@ if (!fs.existsSync(dataDir)) {
 
 const dbPath = path.join(dataDir, 'cash_management.db');
 let db = null;
+let dbSetupDone = false;
 let activeTransactions = 0;
 
 function getActiveTransactions() {
     return activeTransactions;
 }
 
-function getDb() {
+function getDb(options = {}) {
+    const skipSetup = Boolean(options && options.skipSetup);
     if (!db) {
         db = new Database(dbPath, { timeout: 7000 });
         db.pragma('journal_mode = WAL');
@@ -112,11 +114,13 @@ function getDb() {
             const n = Number(val);
             return isNaN(n) ? null : n;
         });
-
+    }
+    if (!skipSetup && !dbSetupDone) {
         // Auto-heal / Ensure schema & columns are up to date on boot
         try {
             const { setupSQLite } = require('./setup_sqlite');
             setupSQLite(db);
+            dbSetupDone = true;
         } catch (e) {
             console.warn('⚠️ [DB Init] auto-setup notice:', e.message);
         }
@@ -124,8 +128,25 @@ function getDb() {
     return db;
 }
 
-// Ensure database is initialized
-getDb();
+async function initDatabase(onProgress) {
+    const conn = getDb({ skipSetup: true });
+    if (!dbSetupDone) {
+        try {
+            const { setupSQLiteAsync } = require('./setup_sqlite');
+            await setupSQLiteAsync(conn, onProgress);
+            dbSetupDone = true;
+        } catch (e) {
+            console.warn('⚠️ [DB Init] async auto-setup notice:', e.message);
+            throw e;
+        }
+    }
+    return conn;
+}
+
+// Ensure database is initialized unless caller explicitly defers boot for instant HTTP bind
+if (process.env.CMBC_DEFER_DB_INIT !== '1') {
+    getDb();
+}
 
 // Mock mssql types
 const sql = {
@@ -574,6 +595,7 @@ async function getMasterPool() {
 
 module.exports = {
     getDb,
+    initDatabase,
     getActiveTransactions,
     getPool,
     getMasterPool,

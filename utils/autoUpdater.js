@@ -517,6 +517,7 @@ function acquireUpdateLock() {
                 }
                 if (stale) {
                     try { fs.unlinkSync(LOCK_FILE); } catch (_) { }
+                    try { fs.unlinkSync(UPDATING_FLAG_FILE); } catch (_) { }
                     continue;
                 }
                 return false;
@@ -1027,10 +1028,21 @@ function buildStandaloneRelaunch() {
     };
 }
 
-function triggerCleanRestart() {
+function triggerCleanRestart(options = {}) {
+    const supervisorChanged = Boolean(options && options.supervisorChanged);
     try {
         const stopSentinel = path.join(LOG_DIR, '.stop_supervisor');
         if (fs.existsSync(stopSentinel)) fs.unlinkSync(stopSentinel);
+    } catch (_) { }
+    try {
+        const { writeStartupStatus } = require('./startupStatus');
+        writeStartupStatus({
+            pct: 90,
+            step: 5,
+            stage: 'restarting',
+            title: 'Naya Update Restart Ho Raha Hai...',
+            detail: 'Update install ho gaya — server naye version ke saath start ho raha hai...'
+        });
     } catch (_) { }
 
     const runGracefulExit = async () => {
@@ -1045,11 +1057,19 @@ function triggerCleanRestart() {
         process.exit(0);
     };
 
-    // 0. Hidden supervisor mode: exit karo — supervisor khud naya code load karke restart karega
-    if (process.env.CMBC_SUPERVISOR === '1') {
+    // 0. Hidden supervisor mode: exit karo — supervisor khud naya code load karke restart karega.
+    // Agar server-supervisor.bat khud update hua hai to safe handoff flag lagao aur fresh supervisor spawn karo.
+    if (process.env.CMBC_SUPERVISOR === '1' && !supervisorChanged) {
         logUpdate('Supervisor mode: flushing DB & exiting so hidden supervisor restarts cleanly...');
         setTimeout(() => { runGracefulExit(); }, 600);
         return;
+    }
+
+    if (process.env.CMBC_SUPERVISOR === '1' && supervisorChanged) {
+        logUpdate('Supervisor script updated — performing clean handoff to new supervisor...');
+        try {
+            fs.writeFileSync(path.join(LOG_DIR, '.supervisor_relaunch'), String(Date.now()), 'utf8');
+        } catch (_) { }
     }
 
     // 1. If running under PM2, exit cleanly so PM2 auto-restarts with updated code
@@ -1059,7 +1079,7 @@ function triggerCleanRestart() {
         return;
     }
 
-    // 2. Standalone Node process: flush HTTP/SQLite WAL first, spawn supervised/delayed relaunch, then exit
+    // 2. Standalone Node process (or supervisor handoff): flush HTTP/SQLite WAL first, spawn supervised/delayed relaunch, then exit
     logUpdate('Respawning server process (supervised) with updated code...');
     setTimeout(async () => {
         if (beforeRestartHandler) {
@@ -1164,6 +1184,16 @@ function installDependenciesIfNeeded(force = false) {
         throw new Error(`Dependencies are still missing after npm install: ${stillMissing.join(', ')}`);
     }
 
+    // Verify native better-sqlite3 ABI compatibility post-install
+    try {
+        const Database = require('better-sqlite3');
+        const memDb = new Database(':memory:');
+        memDb.close();
+    } catch (nativeErr) {
+        logUpdate(`better-sqlite3 native verification notice: ${nativeErr.message}`);
+        throw new Error(`better-sqlite3 native driver load failed after npm install: ${nativeErr.message}`);
+    }
+
     logUpdate('npm dependencies are ready.');
     return true;
 }
@@ -1247,6 +1277,7 @@ async function runSilentAutoUpdate(options = {}) {
         setProgress('manifest', 15, `GitHub manifest verified. Target release: v${check.latestVersion}`);
 
         const pkgHashBefore = fileHash(PKG_FILE);
+        const supHashBefore = fileHash(path.join(ROOT_DIR, 'server-supervisor.bat'));
 
         try {
             // Step 1: Safe pre-update online SQLite DB backup
@@ -1328,8 +1359,9 @@ async function runSilentAutoUpdate(options = {}) {
             state.lastResult = 'updated';
             setProgress('restarting', 96, 'Restarting application engine into latest version...');
 
+            const supervisorChanged = Boolean(supHashBefore && supHashBefore !== fileHash(path.join(ROOT_DIR, 'server-supervisor.bat')));
             if (restartOnUpdate && !isCli) {
-                triggerCleanRestart();
+                triggerCleanRestart({ supervisorChanged });
             }
 
             setProgress('completed', 100, `Successfully updated to v${state.currentVersion}!`);

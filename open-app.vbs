@@ -1,48 +1,68 @@
 ' CSC & BC Apna Hisaab - open app silently (SQLite Edition)
-' 1) Server band ho to hidden background me start karta hai
-' 2) Server ready hone ka intezaar karta hai (max 45 sec, hang nahi hoga)
-' 3) Phir browser kholta hai.
+' 1) Turant Chrome (ya Edge fallback) me live animated loading screen ya app kholta hai
+'    (kabhi "This site can't be reached" nahi dikhta!)
+' 2) Saath-saath background me server-supervisor.bat ko safely start karta hai.
 Option Explicit
 
-Dim fso, sh, baseDir, url, port, tries, stopFile
+Dim fso, sh, baseDir, url, port, stopFile, psExe, silentPs, psCmd, splashFile, targetUrl
 Set fso = CreateObject("Scripting.FileSystemObject")
 baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = baseDir
 
-' Clear any previous STOP sentinel before starting
 stopFile = baseDir & "\logs\.stop_supervisor"
 On Error Resume Next
 If fso.FileExists(stopFile) Then fso.DeleteFile stopFile, True
 On Error GoTo 0
 
+psExe = sh.ExpandEnvironmentStrings("%WINDIR%") & "\System32\WindowsPowerShell\v1.0\powershell.exe"
+silentPs = baseDir & "\scripts\silent-launch.ps1"
+
+If fso.FileExists(psExe) And fso.FileExists(silentPs) Then
+    psCmd = """" & psExe & """ -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File """ & silentPs & """ -ProjectDir """ & baseDir & """ -Mode open"
+    On Error Resume Next
+    sh.Run psCmd, 0, False
+    If Err.Number = 0 Then
+        On Error GoTo 0
+        WScript.Quit 0
+    End If
+    On Error GoTo 0
+End If
+
+' Fallback if PowerShell is unavailable
 port = ReadEnvPort(baseDir & "\.env", "4000")
 url = "http://localhost:" & port
 
 If Not ServerReady(url) Then
     sh.Run "cmd.exe /c """"" & baseDir & "\server-supervisor.bat""""", 0, False
+    splashFile = baseDir & "\public\startup-wait.html"
+    If fso.FileExists(splashFile) Then
+        targetUrl = "file:///" & Replace(splashFile, "\", "/") & "?port=" & port
+    Else
+        targetUrl = url
+    End If
+Else
+    targetUrl = url & "/"
 End If
 
-tries = 0
-Do While Not ServerReady(url)
-    tries = tries + 1
-    If tries >= 60 Then
-        MsgBox "Server 45 second me start nahi ho paya (Port " & port & "). Kripya START.bat ya AI_DOCTOR_SQLITE.bat chalayein, ya logs\server-run.log dekhein.", vbExclamation, "CSC & BC Apna Hisaab"
-        WScript.Quit 1
-    End If
-    WScript.Sleep 750
-Loop
-
 On Error Resume Next
-sh.Run """" & url & """", 1, False
+sh.Run """chrome.exe"" """ & targetUrl & """", 1, False
 If Err.Number <> 0 Then
     Err.Clear
-    sh.Run "explorer.exe """ & url & """", 1, False
+    sh.Run """msedge.exe"" """ & targetUrl & """", 1, False
+    If Err.Number <> 0 Then
+        Err.Clear
+        sh.Run """" & targetUrl & """", 1, False
+        If Err.Number <> 0 Then
+            Err.Clear
+            sh.Run "explorer.exe """ & targetUrl & """", 1, False
+        End If
+    End If
 End If
 On Error GoTo 0
 
 Function ReadEnvPort(envPath, defaultPort)
-    Dim f, line, parts, k, v, hashPos
+    Dim f, line, k, v, hashPos
     ReadEnvPort = defaultPort
     On Error Resume Next
     If Not fso.FileExists(envPath) Then Exit Function
@@ -84,12 +104,10 @@ Function ServerReady(u)
         On Error GoTo 0
         Exit Function
     End If
-    x.setTimeouts 1000, 1000, 1000, 1000
+    x.setTimeouts 500, 500, 500, 500
     Err.Clear
     x.open "GET", u & "/api/health", False
-    If Err.Number = 0 Then
-        x.send
-    End If
+    If Err.Number = 0 Then x.send
     If Err.Number = 0 Then
         If x.status = 200 Then ServerReady = True
     End If

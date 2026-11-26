@@ -1347,10 +1347,29 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 8: Live Health Check & De-Elevated Browser Launch
+    # STEP 8: Live Health Check & Chrome/Edge Browser Launch
     # ========================================================================
     function Open-BrowserSafe {
-        param([string]$Url)
+        param([string]$Url, [int]$Port = 0)
+        $openHelper = Join-Path $ProjectDir 'utils\open_browser.ps1'
+        if (Test-Path -LiteralPath $openHelper) {
+            try {
+                $pArg = if ($Port -gt 0) { $Port } else { [int]$sync.ResolvedPort }
+                & $openHelper -ProjectDir $ProjectDir -Port $pArg
+                return
+            } catch { }
+        }
+        foreach ($cand in @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+        )) {
+            if ($cand -and (Test-Path -LiteralPath $cand)) {
+                try { Start-Process -FilePath $cand -ArgumentList @($Url) -ErrorAction Stop; return } catch { }
+            }
+        }
         try { Start-Process 'explorer.exe' -ArgumentList $Url -ErrorAction Stop; return } catch { }
         try { Start-Process $Url } catch { }
     }
@@ -1365,8 +1384,29 @@ $workerBlock = {
         if (-not (Test-Path -LiteralPath $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
         $stopSentinel = Join-Path $logsDir '.stop_supervisor'
         if (Test-Path -LiteralPath $stopSentinel) { Remove-Item -LiteralPath $stopSentinel -Force -ErrorAction SilentlyContinue }
+        $updSentinel = Join-Path $logsDir '.updating'
+        if (Test-Path -LiteralPath $updSentinel) { Remove-Item -LiteralPath $updSentinel -Force -ErrorAction SilentlyContinue }
+        $updLock = Join-Path $logsDir '.auto_update.lock'
+        if (Test-Path -LiteralPath $updLock) { Remove-Item -LiteralPath $updLock -Force -ErrorAction SilentlyContinue }
 
+        $prevPort = $appPort
         $appPort = Repair-PortConflict $appPort
+        if ($appPort -ne $prevPort) {
+            $envFile = Join-Path $ProjectDir '.env'
+            if (Test-Path -LiteralPath $envFile) {
+                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                $envTxt = (Get-Content -LiteralPath $envFile -Raw -ErrorAction SilentlyContinue).TrimStart([char]0xFEFF)
+                if ($envTxt -match '(?m)^\s*PORT\s*=') { $envTxt = [regex]::Replace($envTxt, '(?m)^\s*PORT\s*=.*$', "PORT=$appPort") }
+                else { $envTxt = "PORT=$appPort`r`n" + $envTxt }
+                [System.IO.File]::WriteAllText($envFile, $envTxt, $utf8NoBom)
+            }
+            try {
+                $rn = "CSC BC Apna Hisaab SQLite (Port $appPort)"
+                if (-not (Get-NetFirewallRule -DisplayName $rn -ErrorAction SilentlyContinue)) {
+                    New-NetFirewallRule -DisplayName $rn -Direction Inbound -LocalPort $appPort -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                }
+            } catch { }
+        }
         $sync.ResolvedPort = $appPort
         $appUrl = "http://localhost:$appPort"
 
@@ -1376,19 +1416,25 @@ $workerBlock = {
             Update-Step 8 'FAILED' 20 "Node Missing" "Step 8 : Node.js missing"
             return $false
         }
+        try {
+            $cfgDir = Join-Path $ProjectDir 'config'
+            if (-not (Test-Path -LiteralPath $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
+            [System.IO.File]::WriteAllText((Join-Path $cfgDir 'node-path.txt'), $node, (New-Object System.Text.UTF8Encoding($false)))
+        } catch { }
 
         $supBat = Join-Path $ProjectDir "server-supervisor.bat"
         if (Test-Path -LiteralPath $supBat) {
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$supBat`"`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+            Start-Process -FilePath "cmd.exe" -ArgumentList ('/d /s /c "' + "`"$supBat`"" + '"') -WorkingDirectory $ProjectDir -WindowStyle Hidden
         } else {
             $outLog = Join-Path $logsDir "server-run.log"
             $errLog = Join-Path $logsDir "server-err.log"
-            Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+            Start-Process -FilePath $node -ArgumentList ('"' + (Join-Path $ProjectDir 'server.js') + '"') -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
         }
 
         $testHealth = {
             try {
                 $req = [System.Net.HttpWebRequest]::Create("$appUrl/api/health")
+                $req.Proxy = $null
                 $req.Timeout = 1500
                 $req.Method = "GET"
                 $resp = $req.GetResponse()
@@ -1410,14 +1456,32 @@ $workerBlock = {
         if ($alive) {
             Log-Msg "Application 100% LIVE hai: $appUrl" 'OK'
             Update-Step 8 'SUCCESS' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-            Open-BrowserSafe $appUrl
+            Open-BrowserSafe $appUrl $appPort
             return $true
         }
 
-        # AI Self-Healing Restart Attempt
+        # AI Self-Healing Restart Attempt (clean up existing supervisor first so we don't duplicate)
         Log-Msg "Server response slow/fail — AI Self-Healing DB & Restart chal raha hai..." 'FIX'
         Update-Step 8 'HEALING' 85 "AI Diagnostics..." "Server reload aur schema verification..."
+        try {
+            Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -and $_.CommandLine -like '*server-supervisor.bat*' -and $_.CommandLine -like "*$ProjectDir*" } |
+                ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        } catch { }
+        $prevRetryPort = $appPort
         $appPort = Repair-PortConflict $appPort
+        if ($appPort -ne $prevRetryPort) {
+            $envFile = Join-Path $ProjectDir '.env'
+            if (Test-Path -LiteralPath $envFile) {
+                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                $envTxt = (Get-Content -LiteralPath $envFile -Raw -ErrorAction SilentlyContinue).TrimStart([char]0xFEFF)
+                if ($envTxt -match '(?m)^\s*PORT\s*=') { $envTxt = [regex]::Replace($envTxt, '(?m)^\s*PORT\s*=.*$', "PORT=$appPort") }
+                else { $envTxt = "PORT=$appPort`r`n" + $envTxt }
+                [System.IO.File]::WriteAllText($envFile, $envTxt, $utf8NoBom)
+            }
+            $sync.ResolvedPort = $appPort
+            $appUrl = "http://localhost:$appPort"
+        }
         $setupScript = Join-Path $ProjectDir 'setup-database.js'
         if (Test-Path -LiteralPath $setupScript) {
             Push-Location -LiteralPath $ProjectDir
@@ -1425,9 +1489,9 @@ $workerBlock = {
             Pop-Location
         }
         if (Test-Path -LiteralPath $supBat) {
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$supBat`"`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+            Start-Process -FilePath "cmd.exe" -ArgumentList ('/d /s /c "' + "`"$supBat`"" + '"') -WorkingDirectory $ProjectDir -WindowStyle Hidden
         } else {
-            Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+            Start-Process -FilePath $node -ArgumentList ('"' + (Join-Path $ProjectDir 'server.js') + '"') -WorkingDirectory $ProjectDir -WindowStyle Hidden
         }
 
         for ($i = 1; $i -le 12; $i++) {
@@ -1438,7 +1502,7 @@ $workerBlock = {
         if ($alive) {
             Log-Msg "Server AI auto-repair ke baad LIVE ho gaya: $appUrl" 'OK'
             Update-Step 8 'REPAIRED' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-            Open-BrowserSafe $appUrl
+            Open-BrowserSafe $appUrl $appPort
             return $true
         }
 

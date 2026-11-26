@@ -8,214 +8,232 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
 
-function autoRepairSchema(db, schemaSql) {
-    try {
-        const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([A-Za-z0-9_]+)["`]?\s*\(([\s\S]*?)\n\s*\);/gi;
-        let tm;
-        const schemaTables = new Map();
-        while ((tm = tableRegex.exec(schemaSql)) !== null) {
-            schemaTables.set(tm[1], {
-                createStmt: tm[0],
-                body: tm[2]
+function parseSchemaStatements(schemaSql) {
+    const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([A-Za-z0-9_]+)["`]?\s*\(([\s\S]*?)\n\s*\);/gi;
+    let tm;
+    const schemaTables = new Map();
+    while ((tm = tableRegex.exec(schemaSql)) !== null) {
+        schemaTables.set(tm[1], {
+            createStmt: tm[0],
+            body: tm[2]
+        });
+    }
+    return schemaTables;
+}
+
+function repairSingleTable(db, tName, tMeta) {
+    const tableExists = db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").get(tName).cnt > 0;
+    if (!tableExists) {
+        try { db.exec(tMeta.createStmt); } catch (_) { }
+        return;
+    }
+
+    const existingCols = db.prepare(`PRAGMA table_info("${tName}")`).all().map(r => r.name);
+    const existingColLower = new Set(existingCols.map(c => c.toLowerCase()));
+
+    const expectedCols = [];
+    for (const rawLine of tMeta.body.split('\n')) {
+        const line = rawLine.trim().replace(/,\s*$/, '');
+        if (!line || /^(--|CONSTRAINT\b|PRIMARY\s+KEY\b|FOREIGN\s+KEY\b|UNIQUE\b|CHECK\b)/i.test(line)) continue;
+        const colM = line.match(/^["`]?([A-Za-z0-9_]+)["`]?\s+([A-Za-z0-9_]+(?:\([^)]+\))?)([\s\S]*)$/);
+        if (colM) {
+            expectedCols.push({
+                name: colM[1],
+                type: colM[2],
+                rest: colM[3],
+                rawDef: line
             });
         }
+    }
 
-        // 1. First run full DDL to create any completely missing tables
+    const missingCols = expectedCols.filter(c => !existingColLower.has(c.name.toLowerCase()));
+    if (missingCols.length === 0) return;
+
+    let rowCount = 0;
+    try {
+        rowCount = db.prepare(`SELECT count(*) as cnt FROM "${tName}"`).get().cnt;
+    } catch (_) { }
+
+    const isPkMissing = missingCols.some(c => /PRIMARY\s+KEY/i.test(c.rest) || c.name === 'TransactionID' || c.name === 'GlobalSerialNo' || c.name === 'AccountID' || c.name === 'CustomerID');
+
+    if (rowCount === 0 || isPkMissing) {
+        const prevFk = db.pragma('foreign_keys', { simple: true });
+        db.pragma('foreign_keys = OFF');
         try {
-            db.exec(schemaSql);
-        } catch (_) { }
-
-        // 2. Validate columns for every table in the canonical schema
-        for (const [tName, tMeta] of schemaTables.entries()) {
-            const tableExists = db.prepare("SELECT count(*) as cnt FROM sqlite_master WHERE type='table' AND name=?").get(tName).cnt > 0;
-            if (!tableExists) {
-                try { db.exec(tMeta.createStmt); } catch (_) { }
-                continue;
-            }
-
-            const existingCols = db.prepare(`PRAGMA table_info("${tName}")`).all().map(r => r.name);
-            const existingColLower = new Set(existingCols.map(c => c.toLowerCase()));
-
-            const expectedCols = [];
-            for (const rawLine of tMeta.body.split('\n')) {
-                const line = rawLine.trim().replace(/,\s*$/, '');
-                if (!line || /^(--|CONSTRAINT\b|PRIMARY\s+KEY\b|FOREIGN\s+KEY\b|UNIQUE\b|CHECK\b)/i.test(line)) continue;
-                const colM = line.match(/^["`]?([A-Za-z0-9_]+)["`]?\s+([A-Za-z0-9_]+(?:\([^)]+\))?)([\s\S]*)$/);
-                if (colM) {
-                    expectedCols.push({
-                        name: colM[1],
-                        type: colM[2],
-                        rest: colM[3],
-                        rawDef: line
-                    });
-                }
-            }
-
-            const missingCols = expectedCols.filter(c => !existingColLower.has(c.name.toLowerCase()));
-
-            if (missingCols.length > 0) {
-                let rowCount = 0;
+            if (rowCount === 0) {
+                console.log(`⚡ [Auto-Repair] Table "${tName}" had 0 rows and missing columns. Re-creating clean table...`);
+                db.exec(`DROP TABLE IF EXISTS "${tName}"`);
+                db.exec(tMeta.createStmt);
+            } else {
+                console.log(`⚡ [Auto-Repair] Migrating table "${tName}" (${rowCount} rows) to canonical schema...`);
+                const tempTbl = `${tName}__repair_${Date.now()}`;
+                const tempCreate = tMeta.createStmt.replace(
+                    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?[A-Za-z0-9_]+["`]?/i,
+                    `CREATE TABLE "${tempTbl}"`
+                );
+                db.exec('BEGIN IMMEDIATE');
                 try {
-                    rowCount = db.prepare(`SELECT count(*) as cnt FROM "${tName}"`).get().cnt;
-                } catch (_) { }
+                    db.exec(`DROP TABLE IF EXISTS "${tempTbl}"`);
+                    db.exec(tempCreate);
 
-                const isPkMissing = missingCols.some(c => /PRIMARY\s+KEY/i.test(c.rest) || c.name === 'TransactionID' || c.name === 'GlobalSerialNo' || c.name === 'AccountID' || c.name === 'CustomerID');
+                    const tempCols = db.prepare(`PRAGMA table_info("${tempTbl}")`).all().map(r => r.name);
+                    const commonCols = existingCols.filter(c => tempCols.some(tc => tc.toLowerCase() === c.toLowerCase()));
 
-                if (rowCount === 0 || isPkMissing) {
-                    const prevFk = db.pragma('foreign_keys', { simple: true });
-                    db.pragma('foreign_keys = OFF');
-                    try {
-                        if (rowCount === 0) {
-                            console.log(`⚡ [Auto-Repair] Table "${tName}" had 0 rows and missing columns. Re-creating clean table...`);
-                            db.exec(`DROP TABLE IF EXISTS "${tName}"`);
-                            db.exec(tMeta.createStmt);
-                        } else {
-                            console.log(`⚡ [Auto-Repair] Migrating table "${tName}" (${rowCount} rows) to canonical schema...`);
-                            const tempTbl = `${tName}__repair_${Date.now()}`;
-                            const tempCreate = tMeta.createStmt.replace(
-                                /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?[A-Za-z0-9_]+["`]?/i,
-                                `CREATE TABLE "${tempTbl}"`
-                            );
-                            db.exec('BEGIN IMMEDIATE');
-                            try {
-                                db.exec(`DROP TABLE IF EXISTS "${tempTbl}"`);
-                                db.exec(tempCreate);
-
-                                const tempCols = db.prepare(`PRAGMA table_info("${tempTbl}")`).all().map(r => r.name);
-                                const commonCols = existingCols.filter(c => tempCols.some(tc => tc.toLowerCase() === c.toLowerCase()));
-
-                                if (commonCols.length > 0) {
-                                    const colList = commonCols.map(c => `"${c}"`).join(', ');
-                                    db.exec(`INSERT INTO "${tempTbl}" (${colList}) SELECT ${colList} FROM "${tName}" ORDER BY rowid`);
-                                }
-                                db.exec(`DROP TABLE "${tName}"`);
-                                db.exec(`ALTER TABLE "${tempTbl}" RENAME TO "${tName}"`);
-                                db.exec('COMMIT');
-                            } catch (migErr) {
-                                try { db.exec('ROLLBACK'); } catch (_) { }
-                                throw migErr;
-                            }
-                        }
-                    } finally {
-                        db.pragma(`foreign_keys = ${prevFk ? 'ON' : 'OFF'}`);
+                    if (commonCols.length > 0) {
+                        const colList = commonCols.map(c => `"${c}"`).join(', ');
+                        db.exec(`INSERT INTO "${tempTbl}" (${colList}) SELECT ${colList} FROM "${tName}" ORDER BY rowid`);
                     }
-                } else {
-                    for (const mc of missingCols) {
-                        const hasTimestampDefault = /DEFAULT\s*\(?\s*(?:datetime|date|time|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)/i.test(mc.rest);
-                        let safeRest = mc.rest
-                            .replace(/\bPRIMARY\s+KEY\b/gi, '')
-                            .replace(/\bAUTOINCREMENT\b/gi, '')
-                            .replace(/\bUNIQUE\b/gi, '')
-                            .replace(/\bNOT\s+NULL\b/gi, '');
-                        if (hasTimestampDefault) {
-                            const defIdx = safeRest.search(/\bDEFAULT\b/i);
-                            if (defIdx !== -1) {
-                                const tail = safeRest.slice(defIdx);
-                                const parenOpen = tail.match(/^DEFAULT\s*\(/i);
-                                if (parenOpen) {
-                                    let depth = 0;
-                                    let endPos = -1;
-                                    for (let pi = parenOpen[0].length - 1; pi < tail.length; pi++) {
-                                        if (tail[pi] === '(') depth++;
-                                        else if (tail[pi] === ')') {
-                                            depth--;
-                                            if (depth === 0) { endPos = pi + 1; break; }
-                                        }
-                                    }
-                                    if (endPos !== -1) {
-                                        safeRest = safeRest.slice(0, defIdx) + tail.slice(endPos);
-                                    }
-                                } else {
-                                    safeRest = safeRest.replace(/\bDEFAULT\s+(?:CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)\b/gi, '');
-                                }
+                    db.exec(`DROP TABLE "${tName}"`);
+                    db.exec(`ALTER TABLE "${tempTbl}" RENAME TO "${tName}"`);
+                    db.exec('COMMIT');
+                } catch (migErr) {
+                    try { db.exec('ROLLBACK'); } catch (_) { }
+                    throw migErr;
+                }
+            }
+        } finally {
+            db.pragma(`foreign_keys = ${prevFk ? 'ON' : 'OFF'}`);
+        }
+    } else {
+        for (const mc of missingCols) {
+            const hasTimestampDefault = /DEFAULT\s*\(?\s*(?:datetime|date|time|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)/i.test(mc.rest);
+            let safeRest = mc.rest
+                .replace(/\bPRIMARY\s+KEY\b/gi, '')
+                .replace(/\bAUTOINCREMENT\b/gi, '')
+                .replace(/\bUNIQUE\b/gi, '')
+                .replace(/\bNOT\s+NULL\b/gi, '');
+            if (hasTimestampDefault) {
+                const defIdx = safeRest.search(/\bDEFAULT\b/i);
+                if (defIdx !== -1) {
+                    const tail = safeRest.slice(defIdx);
+                    const parenOpen = tail.match(/^DEFAULT\s*\(/i);
+                    if (parenOpen) {
+                        let depth = 0;
+                        let endPos = -1;
+                        for (let pi = parenOpen[0].length - 1; pi < tail.length; pi++) {
+                            if (tail[pi] === '(') depth++;
+                            else if (tail[pi] === ')') {
+                                depth--;
+                                if (depth === 0) { endPos = pi + 1; break; }
                             }
                         }
-                        safeRest = safeRest.trim();
-                        const colDef = safeRest ? `"${mc.name}" ${mc.type} ${safeRest}` : `"${mc.name}" ${mc.type}`;
-                        try {
-                            db.exec(`ALTER TABLE "${tName}" ADD COLUMN ${colDef}`);
-                            if (hasTimestampDefault) {
-                                try {
-                                    db.exec(`UPDATE "${tName}" SET "${mc.name}" = datetime('now', 'localtime') WHERE "${mc.name}" IS NULL`);
-                                } catch (_) { }
-                            }
-                            console.log(`⚡ [Auto-Repair] Added missing column: ${tName}.${mc.name}`);
-                        } catch (altErr) {
-                            console.warn(`⚠️ [Auto-Repair] Column add skipped (${tName}.${mc.name}): ${altErr.message}`);
+                        if (endPos !== -1) {
+                            safeRest = safeRest.slice(0, defIdx) + tail.slice(endPos);
                         }
+                    } else {
+                        safeRest = safeRest.replace(/\bDEFAULT\s+(?:CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME)\b/gi, '');
                     }
                 }
             }
+            safeRest = safeRest.trim();
+            const colDef = safeRest ? `"${mc.name}" ${mc.type} ${safeRest}` : `"${mc.name}" ${mc.type}`;
+            try {
+                db.exec(`ALTER TABLE "${tName}" ADD COLUMN ${colDef}`);
+                if (hasTimestampDefault) {
+                    try {
+                        db.exec(`UPDATE "${tName}" SET "${mc.name}" = datetime('now', 'localtime') WHERE "${mc.name}" IS NULL`);
+                    } catch (_) { }
+                }
+                console.log(`⚡ [Auto-Repair] Added missing column: ${tName}.${mc.name}`);
+            } catch (altErr) {
+                console.warn(`⚠️ [Auto-Repair] Column add skipped (${tName}.${mc.name}): ${altErr.message}`);
+            }
         }
+    }
+}
 
-        // 3. Ensure all indexes exist
-        const indexRegex = /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+["`]?([A-Za-z0-9_]+)["`]?\s+ON\s+[\s\S]*?;/gi;
-        let im;
-        while ((im = indexRegex.exec(schemaSql)) !== null) {
-            try { db.exec(im[0]); } catch (_) { }
-        }
+function applyIndexesAndTriggers(db, schemaSql) {
+    const indexRegex = /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+["`]?([A-Za-z0-9_]+)["`]?\s+ON\s+[\s\S]*?;/gi;
+    let im;
+    while ((im = indexRegex.exec(schemaSql)) !== null) {
+        try { db.exec(im[0]); } catch (_) { }
+    }
 
-        // 4. Ensure all triggers exist
-        const triggerRegex = /CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS\s+[\s\S]*?END;/gi;
-        let trgM;
-        while ((trgM = triggerRegex.exec(schemaSql)) !== null) {
-            try { db.exec(trgM[0]); } catch (_) { }
+    const triggerRegex = /CREATE\s+TRIGGER\s+IF\s+NOT\s+EXISTS\s+[\s\S]*?END;/gi;
+    let trgM;
+    while ((trgM = triggerRegex.exec(schemaSql)) !== null) {
+        try { db.exec(trgM[0]); } catch (_) { }
+    }
+}
+
+function autoRepairSchema(db, schemaSql) {
+    try {
+        const schemaTables = parseSchemaStatements(schemaSql);
+        try { db.exec(schemaSql); } catch (_) { }
+        for (const [tName, tMeta] of schemaTables.entries()) {
+            repairSingleTable(db, tName, tMeta);
         }
+        applyIndexesAndTriggers(db, schemaSql);
     } catch (err) {
         console.warn('⚠️ [Auto-Repair] Schema validation notice:', err.message);
     }
 }
 
-function setupSQLite(existingDb) {
-    const dataDir = path.join(__dirname, 'data');
-    if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-    }
+function yieldEventLoop() {
+    return new Promise((resolve) => setImmediate(resolve));
+}
 
-    const dbPath = path.join(dataDir, 'cash_management.db');
-    const shouldClose = !existingDb;
-    const db = existingDb || new Database(dbPath, { timeout: 7000 });
-
+async function autoRepairSchemaAsync(db, schemaSql, onProgress) {
     try {
-        db.pragma('busy_timeout = 7000');
-        db.pragma('journal_mode = WAL');
-        db.pragma('synchronous = NORMAL');
-        db.pragma('foreign_keys = ON');
-
-        // 1. Run live schema auto-repair (30 tables & columns)
-        const schemaSql = fs.readFileSync(path.join(__dirname, 'sqlite_schema.sql'), 'utf8');
-        const hasExistingTables = Boolean(db.prepare(`
-            SELECT 1 FROM sqlite_master
-            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-            LIMIT 1
-        `).get());
-        const repairSchemaSql = hasExistingTables
-            ? schemaSql.replace(/^\s*CREATE\s+UNIQUE\s+INDEX\b[^;]*;\s*$/gim, '')
-            : schemaSql;
-        autoRepairSchema(db, repairSchemaSql);
-
-        if (hasExistingTables) {
-            const migrationApplied = db.prepare(`
-                SELECT 1 FROM SchemaMigrations
-                WHERE MigrationName = 'sqlite_integrity_constraints_v1'
-            `).get();
-            if (!migrationApplied) {
-                // Only warn if core FK constraints are genuinely absent (never on clean fresh installs)
-                const hasFk = db.prepare(`PRAGMA foreign_key_list('ServiceRecords')`).all().length > 0;
-                if (hasFk) {
-                    try {
-                        db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
-                    } catch (_) { }
-                } else {
-                    console.warn('⚠️ [DB Init] Legacy schema detected without full SQLite integrity constraints.');
-                }
+        const schemaTables = parseSchemaStatements(schemaSql);
+        try { db.exec(schemaSql); } catch (_) { }
+        await yieldEventLoop();
+        const entries = Array.from(schemaTables.entries());
+        for (let i = 0; i < entries.length; i++) {
+            const [tName, tMeta] = entries[i];
+            repairSingleTable(db, tName, tMeta);
+            if (typeof onProgress === 'function') {
+                const pct = 42 + Math.round(((i + 1) / Math.max(1, entries.length)) * 28);
+                onProgress('schema', pct, `Table verify (${i + 1}/${entries.length}): ${tName}`);
             }
-        } else {
-            // Fresh DB created directly from sqlite_schema.sql already contains all verified constraints
-            try {
-                db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
-            } catch (_) { }
+            if ((i + 1) % 3 === 0) await yieldEventLoop();
         }
+        applyIndexesAndTriggers(db, schemaSql);
+        await yieldEventLoop();
+    } catch (err) {
+        console.warn('⚠️ [Auto-Repair] Schema validation notice:', err.message);
+    }
+}
+
+function prepareSchemaInput(db) {
+    db.pragma('busy_timeout = 7000');
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('foreign_keys = ON');
+
+    const schemaSql = fs.readFileSync(path.join(__dirname, 'sqlite_schema.sql'), 'utf8');
+    const hasExistingTables = Boolean(db.prepare(`
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+        LIMIT 1
+    `).get());
+    const repairSchemaSql = hasExistingTables
+        ? schemaSql.replace(/^\s*CREATE\s+UNIQUE\s+INDEX\b[^;]*;\s*$/gim, '')
+        : schemaSql;
+    return { hasExistingTables, repairSchemaSql };
+}
+
+function finalizeSeedData(db, hasExistingTables) {
+    if (hasExistingTables) {
+        const migrationApplied = db.prepare(`
+            SELECT 1 FROM SchemaMigrations
+            WHERE MigrationName = 'sqlite_integrity_constraints_v1'
+        `).get();
+        if (!migrationApplied) {
+            const hasFk = db.prepare(`PRAGMA foreign_key_list('ServiceRecords')`).all().length > 0;
+            if (hasFk) {
+                try {
+                    db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
+                } catch (_) { }
+            } else {
+                console.warn('⚠️ [DB Init] Legacy schema detected without full SQLite integrity constraints.');
+            }
+        }
+    } else {
+        try {
+            db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
+        } catch (_) { }
+    }
 
         // 2. Starter SuperAdmin user
         const userCount = db.prepare('SELECT COUNT(*) AS cnt FROM Users').get().cnt;
@@ -404,7 +422,48 @@ function setupSQLite(existingDb) {
             }
         } catch (_) { }
 
-        return true;
+    return true;
+}
+
+function setupSQLite(existingDb) {
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    const dbPath = path.join(dataDir, 'cash_management.db');
+    const shouldClose = !existingDb;
+    const db = existingDb || new Database(dbPath, { timeout: 7000 });
+
+    try {
+        const { hasExistingTables, repairSchemaSql } = prepareSchemaInput(db);
+        autoRepairSchema(db, repairSchemaSql);
+        return finalizeSeedData(db, hasExistingTables);
+    } finally {
+        if (shouldClose && db) {
+            db.close();
+        }
+    }
+}
+
+async function setupSQLiteAsync(existingDb, onProgress) {
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    const dbPath = path.join(dataDir, 'cash_management.db');
+    const shouldClose = !existingDb;
+    const db = existingDb || new Database(dbPath, { timeout: 7000 });
+
+    try {
+        const { hasExistingTables, repairSchemaSql } = prepareSchemaInput(db);
+        await autoRepairSchemaAsync(db, repairSchemaSql, onProgress);
+        if (typeof onProgress === 'function') {
+            onProgress('seeding', 74, 'Starter configuration & indexes verify ho rahe hain...');
+        }
+        await yieldEventLoop();
+        return finalizeSeedData(db, hasExistingTables);
     } finally {
         if (shouldClose && db) {
             db.close();
@@ -417,4 +476,4 @@ if (require.main === module) {
     console.log('🎉 SQLite database successfully prepared & verified!');
 }
 
-module.exports = { setupSQLite, autoRepairSchema };
+module.exports = { setupSQLite, setupSQLiteAsync, autoRepairSchema };

@@ -9835,11 +9835,16 @@ body.light-theme .rep-table-toolbar {
 .cust-action-dropdown-menu {
     position: fixed !important;
     z-index: 99999 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    max-height: calc(100vh - 16px) !important;
+    max-width: calc(100vw - 20px) !important;
+    overflow: hidden !important;
     background: #0f172a !important;
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 14px !important;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
-    width: 250px !important;
+    width: 270px;
     padding: 8px !important;
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
@@ -9866,6 +9871,7 @@ body.light-theme .cust-action-dropdown-menu {
 }
 
 .cad-header {
+    flex-shrink: 0 !important;
     padding: 10px 12px 10px !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
     margin-bottom: 6px !important;
@@ -9909,6 +9915,10 @@ body.light-theme .cad-name {
 .cad-items {
     display: flex !important;
     flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
     gap: 2px !important;
 }
 

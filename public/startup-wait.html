@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>CSC &amp; BC Apna Hisaab - Please Wait</title>
+    <title>CSC &amp; BC Apna Hisaab - Starting Server...</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -15,296 +15,585 @@
             align-items: center;
             justify-content: center;
             padding: 20px;
-            font-family: "Segoe UI", Roboto, Arial, sans-serif;
-            background: radial-gradient(circle at 20% 15%, #1e3a8a 0%, #0f172a 45%, #020617 100%);
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+            background:
+                radial-gradient(circle at 18% 18%, rgba(16, 185, 129, 0.22) 0%, transparent 45%),
+                radial-gradient(circle at 82% 82%, rgba(56, 189, 248, 0.18) 0%, transparent 45%),
+                linear-gradient(145deg, #020617 0%, #0a1428 50%, #041b1b 100%);
             color: #e2e8f0;
+            overflow-x: hidden;
+        }
+
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(16, 185, 129, 0.04) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(16, 185, 129, 0.04) 1px, transparent 1px);
+            background-size: 36px 36px;
+            pointer-events: none;
+            mask-image: radial-gradient(circle at center, black 35%, transparent 80%);
         }
 
         .card {
+            position: relative;
+            z-index: 1;
             width: 100%;
-            max-width: 460px;
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid rgba(96, 165, 250, 0.25);
-            border-radius: 18px;
-            padding: 34px 28px 28px;
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+            max-width: 500px;
+            background: rgba(11, 18, 34, 0.88);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(52, 211, 153, 0.28);
+            border-radius: 22px;
+            padding: 32px 28px 26px;
+            box-shadow:
+                0 28px 70px rgba(0, 0, 0, 0.65),
+                0 0 40px rgba(16, 185, 129, 0.08);
             text-align: center;
+            animation: cardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
-        .brand {
-            font-size: 12px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            color: #60a5fa;
-            font-weight: 600;
-            margin-bottom: 10px;
+        @keyframes cardIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
+
+        .badge-top {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(52, 211, 153, 0.32);
+            font-size: 11px;
+            letter-spacing: 1.4px;
+            text-transform: uppercase;
+            color: #34d399;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+            animation: pulseDot 1.3s ease-in-out infinite;
+        }
+
+        @keyframes pulseDot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.45); opacity: 0.55; }
+        }
+
+        .logo-orbit {
+            position: relative;
+            width: 84px;
+            height: 84px;
+            margin: 0 auto 18px;
+            display: grid;
+            place-items: center;
+        }
+
+        .orbit-ring {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 3px solid rgba(52, 211, 153, 0.14);
+            border-top-color: #10b981;
+            border-right-color: #38bdf8;
+            animation: spin 1.15s linear infinite;
+        }
+
+        .orbit-ring.inner {
+            inset: 9px;
+            border: 2px solid rgba(56, 189, 248, 0.14);
+            border-bottom-color: #34d399;
+            animation: spinRev 1.8s linear infinite;
+        }
+
+        .logo-core {
+            width: 50px;
+            height: 50px;
+            border-radius: 15px;
+            background: linear-gradient(135deg, #059669, #0284c7);
+            display: grid;
+            place-items: center;
+            font-size: 20px;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: 0.5px;
+            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes spinRev { to { transform: rotate(-360deg); } }
 
         h1 {
             font-size: 22px;
             font-weight: 700;
             color: #f8fafc;
-            margin-bottom: 6px;
+            margin-bottom: 5px;
         }
 
         .sub {
             font-size: 13px;
             color: #94a3b8;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
+            min-height: 18px;
         }
 
-        .spinner {
-            width: 54px;
-            height: 54px;
-            margin: 0 auto 22px;
-            border: 4px solid rgba(96, 165, 250, 0.18);
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: spin 0.9s linear infinite;
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
+            padding: 0 2px;
         }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .pct-num {
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(90deg, #34d399, #38bdf8);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .timer-pill {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #94a3b8;
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(71, 85, 105, 0.4);
+            padding: 4px 10px;
+            border-radius: 999px;
+        }
+
+        .progress-track {
+            position: relative;
+            height: 10px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .progress-fill {
+            width: 8%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #10b981, #06b6d4, #3b82f6, #10b981);
+            background-size: 200% 100%;
+            box-shadow: 0 0 18px rgba(16, 185, 129, 0.55);
+            transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+            animation: shimmer 2.2s linear infinite;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
 
         .status {
-            background: rgba(30, 41, 59, 0.7);
-            border: 1px solid rgba(71, 85, 105, 0.5);
-            border-radius: 12px;
-            padding: 16px;
+            background: rgba(15, 23, 42, 0.78);
+            border: 1px solid rgba(71, 85, 105, 0.45);
+            border-radius: 15px;
+            padding: 15px 16px;
             text-align: left;
-            font-size: 13.5px;
         }
 
-        .steps { display: grid; gap: 15px; }
+        .steps { display: grid; gap: 11px; }
 
         .connection-step {
             display: grid;
-            grid-template-columns: 30px 1fr;
+            grid-template-columns: 28px 1fr auto;
             align-items: center;
-            gap: 10px;
-            color: #94a3b8;
+            gap: 11px;
+            color: #64748b;
+            transition: color 0.25s ease;
         }
 
         .step-indicator {
-            width: 28px;
-            height: 28px;
+            width: 26px;
+            height: 26px;
             display: grid;
             place-items: center;
-            border: 1px solid rgba(148, 163, 184, 0.35);
+            border: 1.5px solid rgba(148, 163, 184, 0.3);
             border-radius: 50%;
             color: #64748b;
-            font-size: 12px;
+            font-size: 11.5px;
             font-weight: 700;
+            transition: all 0.25s ease;
         }
 
         .connection-step strong,
         .connection-step small { display: block; }
+        .connection-step strong { color: #94a3b8; font-size: 12.8px; font-weight: 600; }
+        .connection-step small { margin-top: 1px; color: #64748b; font-size: 11px; }
+        .step-badge { font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; color: #475569; }
 
-        .connection-step strong { color: #cbd5e1; font-size: 13px; }
-        .connection-step small { margin-top: 2px; color: #64748b; font-size: 11.5px; }
-        .connection-step.done .step-indicator { border-color: #22c55e; background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-        .connection-step.done strong { color: #86efac; }
-        .connection-step.active .step-indicator { border-color: #60a5fa; background: rgba(59, 130, 246, 0.15); }
-        .connection-step.active strong { color: #bfdbfe; }
+        .connection-step.done .step-indicator {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.18);
+            color: #34d399;
+        }
+        .connection-step.done strong { color: #a7f3d0; }
+        .connection-step.done .step-badge { color: #34d399; }
+
+        .connection-step.active .step-indicator {
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.16);
+        }
+        .connection-step.active strong { color: #f8fafc; }
+        .connection-step.active small { color: #93c5fd; }
+        .connection-step.active .step-badge { color: #38bdf8; }
 
         .mini-spinner {
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(96, 165, 250, 0.25);
-            border-top-color: #60a5fa;
+            width: 13px;
+            height: 13px;
+            border: 2px solid rgba(56, 189, 248, 0.25);
+            border-top-color: #38bdf8;
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        .progress-track {
-            height: 5px;
-            margin: 18px 0 12px;
-            overflow: hidden;
-            border-radius: 99px;
-            background: rgba(148, 163, 184, 0.15);
-        }
-
-        .progress-fill {
-            width: 18%;
-            height: 100%;
-            border-radius: inherit;
-            background: linear-gradient(90deg, #2563eb, #22d3ee);
-            box-shadow: 0 0 14px rgba(34, 211, 238, 0.5);
-            transition: width 0.5s ease;
-            animation: progressPulse 1.6s ease-in-out infinite;
-        }
-
-        @keyframes progressPulse {
-            50% { filter: brightness(1.35); }
+            animation: spin 0.75s linear infinite;
         }
 
         .connection-detail {
-            min-height: 18px;
-            color: #93c5fd;
-            font-size: 12px;
+            margin-top: 13px;
+            padding-top: 11px;
+            border-top: 1px solid rgba(71, 85, 105, 0.35);
+            min-height: 20px;
+            color: #7dd3fc;
+            font-size: 12.2px;
+            font-weight: 500;
             text-align: center;
         }
 
-        .refresh {
-            margin-top: 20px;
-            font-size: 13px;
-            color: #cbd5e1;
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
         }
-
-        .refresh b { color: #60a5fa; }
 
         button {
-            margin-top: 16px;
-            width: 100%;
-            padding: 11px 16px;
-            font-size: 14px;
+            flex: 1;
+            padding: 10px 14px;
+            font-size: 13px;
             font-weight: 600;
             color: #ffffff;
-            background: #2563eb;
+            background: linear-gradient(135deg, #059669, #0284c7);
             border: 0;
-            border-radius: 10px;
+            border-radius: 11px;
             cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease;
         }
-
-        button:hover { background: #1d4ed8; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
 
         .help {
             display: none;
-            margin-top: 18px;
-            padding: 14px 16px;
+            margin-top: 16px;
+            padding: 13px 15px;
             text-align: left;
-            font-size: 12.5px;
-            line-height: 1.8;
+            font-size: 12px;
+            line-height: 1.75;
             color: #fde68a;
             background: rgba(120, 53, 15, 0.28);
             border: 1px solid rgba(251, 191, 36, 0.35);
             border-radius: 12px;
         }
-
         .help b { color: #fbbf24; }
 
         .foot {
-            margin-top: 18px;
+            margin-top: 16px;
             font-size: 11px;
             color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card.is-ready .logo-core {
+            background: linear-gradient(135deg, #10b981, #22c55e);
+            transform: scale(1.06);
+            transition: transform 0.25s ease;
         }
     </style>
 </head>
 
 <body>
-    <div class="card">
-        <div class="brand">CSC &amp; BC Apna Hisaab</div>
-        <h1>Please wait...</h1>
-        <div class="sub">System start ho raha hai, thoda intezaar karein</div>
+    <div class="bg-grid"></div>
+    <div class="card" id="splashCard">
+        <div class="badge-top">
+            <span class="live-dot"></span>
+            <span id="portBadge">LOCAL SERVER PORT 4000</span>
+        </div>
 
-        <div class="spinner"></div>
+        <div class="logo-orbit">
+            <div class="orbit-ring"></div>
+            <div class="orbit-ring inner"></div>
+            <div class="logo-core">₹</div>
+        </div>
+
+        <h1 id="headlineText">Apna Hisaab Start Ho Raha Hai...</h1>
+        <div class="sub" id="subText">Server aur SQLite database khud taiyaar ho rahe hain — bas kuch second</div>
+
+        <div class="progress-header">
+            <span class="pct-num" id="pctText">8%</span>
+            <span class="timer-pill" id="timerText">00:00s</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
 
         <div class="status" role="status" aria-live="polite">
             <div class="steps">
-                <div class="connection-step done" id="stepServer">
-                    <span class="step-indicator">✓</span>
-                    <span><strong>App server</strong><small>Port 3000 par ready</small></span>
-                </div>
-                <div class="connection-step active" id="stepDatabase">
+                <div class="connection-step active" id="step1">
                     <span class="step-indicator"><span class="mini-spinner"></span></span>
-                    <span><strong>SQL Server se connection</strong><small>Surakshit database connection ban raha hai</small></span>
+                    <span><strong>Environment &amp; Port Check</strong><small id="step1Sub">Port &amp; Node.js runtime verify ho raha hai</small></span>
+                    <span class="step-badge" id="step1Badge">LIVE</span>
                 </div>
-                <div class="connection-step" id="stepSchema">
+                <div class="connection-step" id="step2">
+                    <span class="step-indicator">2</span>
+                    <span><strong>App Server Engine</strong><small id="step2Sub">HTTP server port par bind ho raha hai</small></span>
+                    <span class="step-badge" id="step2Badge">WAIT</span>
+                </div>
+                <div class="connection-step" id="step3">
                     <span class="step-indicator">3</span>
-                    <span><strong>Database taiyaari</strong><small>Schema aur zaroori updates verify honge</small></span>
+                    <span><strong>SQLite Database Engine</strong><small id="step3Sub">Zero-Install local database khul raha hai</small></span>
+                    <span class="step-badge" id="step3Badge">WAIT</span>
+                </div>
+                <div class="connection-step" id="step4">
+                    <span class="step-indicator">4</span>
+                    <span><strong>Schema &amp; Data Integrity</strong><small id="step4Sub">Tables, indexes aur suraksha checks</small></span>
+                    <span class="step-badge" id="step4Badge">WAIT</span>
+                </div>
+                <div class="connection-step" id="step5">
+                    <span class="step-indicator">5</span>
+                    <span><strong>Launching Apna Hisaab</strong><small id="step5Sub">Ready hote hi software khud khulega</small></span>
+                    <span class="step-badge" id="step5Badge">WAIT</span>
                 </div>
             </div>
-            <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-            <div class="connection-detail" id="connectionDetail">Server aur database ka status check ho raha hai...</div>
+            <div class="connection-detail" id="connectionDetail">Background startup monitor se sampark ho raha hai...</div>
         </div>
 
-        <div class="refresh">Connection milte hi app khud khul jayega</div>
-
-        <button type="button" onclick="checkStartupConnection()">Abhi connection check karein</button>
+        <div class="actions">
+            <button type="button" onclick="window.checkStartupNow()">Status Refresh Karein</button>
+        </div>
 
         <div class="help" id="help">
-            <b>Zyada time lag raha hai?</b><br>
-            1. Desktop par <b>CSC BC Apna Hissab</b> shortcut dobara kholein.<br>
-            2. SQL Fix chalayein: <b>Desktop &rarr; SQL_FIX.bat</b> (right click &rarr; Run as administrator).<br>
-            3. PC restart karein &mdash; server khud silent start ho jayega.<br>
-            <span style="color:#fca5a5;">Aapka data safe hai, kuch delete nahi hota.</span>
+            <b>Zyada samay lag raha hai?</b><br>
+            1. Desktop par <b>CSC &amp; BC Apna Hisaab (SQLite)</b> shortcut par double-click karein.<br>
+            2. Project folder me <b>AI_DOCTOR_SQLITE.bat</b> chalayein (Right click &rarr; Run as administrator).<br>
+            3. Agar aap pehli baar chala rahe hain to Windows Defender scan ke kaaran 10-20s lag sakte hain.<br>
+            <span style="color:#a7f3d0;">Aapka saara database aur data 100% surakshit hai.</span>
         </div>
 
-        <div class="foot">Version __VERSION__ &middot; Data local hai, internet ki zaroorat nahi</div>
+        <div class="foot">
+            <span id="versionFoot">Version __VERSION__</span>
+            <span>Offline SQLite &middot; Zero Data Loss</span>
+        </div>
     </div>
 
     <script>
         (function () {
-            var detail = document.getElementById('connectionDetail');
-            var progress = document.getElementById('progressFill');
+            var isFileMode = location.protocol === 'file:';
+            var params = new URLSearchParams(location.search || '');
+            var targetPort = Number(params.get('port')) || Number(location.port) || 4000;
+
+            var detailEl = document.getElementById('connectionDetail');
+            var headlineEl = document.getElementById('headlineText');
+            var subEl = document.getElementById('subText');
+            var fillEl = document.getElementById('progressFill');
+            var pctEl = document.getElementById('pctText');
+            var timerEl = document.getElementById('timerText');
+            var portBadgeEl = document.getElementById('portBadge');
+            var versionFootEl = document.getElementById('versionFoot');
+            var cardEl = document.getElementById('splashCard');
+
+            if (versionFootEl && versionFootEl.textContent.indexOf('__VERSION__') !== -1) {
+                versionFootEl.textContent = 'SQLite Edition';
+            }
+
+            var startTs = Date.now();
+            var currentPct = 8;
             var checking = false;
+            var redirected = false;
+            var latestFileStatus = null;
 
-            function setStep(id, state, number) {
-                var step = document.getElementById(id);
-                var marker = step.querySelector('.step-indicator');
-                step.className = 'connection-step ' + state;
-                marker.textContent = state === 'done' ? '✓' : String(number);
-                if (state === 'active') marker.innerHTML = '<span class="mini-spinner"></span>';
-            }
-
-            function showStage(data) {
-                var stage = data.startupStage || 'connecting';
-                var activeStep = 2;
-                var width = '35%';
-                var message = 'SQL Server se connection ban raha hai...';
-
-                if (stage === 'waiting') {
-                    message = 'SQL Server abhi start nahi hua; automatic retry jari hai...';
-                } else if (stage === 'schema') {
-                    activeStep = 3;
-                    width = '72%';
-                    message = 'Database connect ho gaya; schema verify ho raha hai...';
-                } else if (stage === 'migrations') {
-                    activeStep = 3;
-                    width = '88%';
-                    message = 'Database taiyaar ho raha hai; zaroori updates check ho rahe hain...';
-                } else if (stage === 'reconnecting') {
-                    message = 'Database connection ruk gaya; dobara connect kiya ja raha hai...';
-                } else if (data.connectionAttempt > 0) {
-                    message += ' Koshish ' + data.connectionAttempt + '/' + data.maxAttempts + '.';
+            function setPort(p) {
+                var num = Number(p);
+                if (num > 0 && num <= 65535) {
+                    targetPort = num;
+                    portBadgeEl.textContent = 'LOCAL SERVER PORT ' + targetPort;
                 }
+            }
+            setPort(targetPort);
 
-                setStep('stepServer', 'done', 1);
-                setStep('stepDatabase', activeStep === 2 ? 'active' : 'done', 2);
-                setStep('stepSchema', activeStep === 3 ? 'active' : '', 3);
-                progress.style.width = width;
-                detail.textContent = message;
+            function setPct(nextPct) {
+                var clamped = Math.max(currentPct, Math.min(100, Math.round(Number(nextPct) || 0)));
+                currentPct = clamped;
+                fillEl.style.width = clamped + '%';
+                pctEl.textContent = clamped + '%';
             }
 
-            window.checkStartupConnection = async function () {
-                if (checking) return;
+            function setStepState(index, state) {
+                var el = document.getElementById('step' + index);
+                var badge = document.getElementById('step' + index + 'Badge');
+                if (!el) return;
+                var marker = el.querySelector('.step-indicator');
+                el.className = 'connection-step ' + (state || '');
+                if (state === 'done') {
+                    marker.textContent = '✓';
+                    if (badge) badge.textContent = 'OK';
+                } else if (state === 'active') {
+                    marker.innerHTML = '<span class="mini-spinner"></span>';
+                    if (badge) badge.textContent = 'RUN';
+                } else {
+                    marker.textContent = String(index);
+                    if (badge) badge.textContent = 'WAIT';
+                }
+            }
+
+            function applySteps(activeStep, allDone) {
+                for (var i = 1; i <= 5; i++) {
+                    if (allDone || i < activeStep) setStepState(i, 'done');
+                    else if (i === activeStep) setStepState(i, 'active');
+                    else setStepState(i, '');
+                }
+            }
+
+            function getApiBase() {
+                if (!isFileMode && location.origin && location.origin !== 'null') {
+                    return location.origin;
+                }
+                return 'http://localhost:' + targetPort;
+            }
+
+            function pollLocalStatusScript() {
+                if (!isFileMode) return;
+                var old = document.getElementById('cmbc-boot-status-script');
+                if (old && old.parentNode) old.parentNode.removeChild(old);
+                var s = document.createElement('script');
+                s.id = 'cmbc-boot-status-script';
+                s.async = true;
+                s.src = '../logs/startup-status.js?_t=' + Date.now();
+                s.onload = function () {
+                    if (window.__CMBC_BOOT_STATUS) {
+                        var st = window.__CMBC_BOOT_STATUS;
+                        latestFileStatus = st;
+                        if (st.port) setPort(st.port);
+                        if (st.version && versionFootEl) {
+                            versionFootEl.textContent = 'Version ' + st.version;
+                        }
+                        if (!redirected && st.pct) {
+                            setPct(Math.max(currentPct, st.pct));
+                        }
+                        if (!redirected && st.step) {
+                            applySteps(Number(st.step), Boolean(st.ok));
+                        }
+                        if (!redirected && st.title) {
+                            headlineEl.textContent = st.title;
+                        }
+                        if (!redirected && st.detail) {
+                            detailEl.textContent = st.detail;
+                        }
+                        if (st.error) {
+                            var help = document.getElementById('help');
+                            if (help) help.style.display = 'block';
+                        }
+                    }
+                };
+                document.body.appendChild(s);
+            }
+
+            function launchTargetApp() {
+                if (redirected) return;
+                redirected = true;
+                cardEl.classList.add('is-ready');
+                applySteps(5, true);
+                setPct(100);
+                headlineEl.textContent = 'Server 100% Live Hai!';
+                subEl.textContent = 'Aapka Apna Hisaab dashboard abhi khul raha hai...';
+                detailEl.textContent = 'Port ' + targetPort + ' ready hai — redirect ho raha hai...';
+                setTimeout(function () {
+                    window.location.replace(getApiBase() + '/');
+                }, 260);
+            }
+
+            function applyServerHealth(data) {
+                if (!data) return;
+                if (data.port) setPort(data.port);
+                if (data.version && versionFootEl) {
+                    versionFootEl.textContent = 'Version ' + data.version;
+                }
+                if (data.dbReady) {
+                    launchTargetApp();
+                    return;
+                }
+                var stage = String(data.startupStage || 'booting');
+                var step = Number(data.step || 2);
+                var pct = Number(data.progressPct || 35);
+                if (stage === 'opening_db') { step = 3; pct = Math.max(pct, 42); }
+                else if (stage === 'schema' || stage === 'schema_repair' || stage === 'seeding') { step = 4; pct = Math.max(pct, 62); }
+                else if (stage === 'routes') { step = 5; pct = Math.max(pct, 86); }
+                else if (stage === 'connecting' || stage === 'booting') { step = 2; pct = Math.max(pct, 26); }
+
+                applySteps(step, false);
+                setPct(pct);
+                if (data.detail) detailEl.textContent = data.detail;
+                else detailEl.textContent = 'Stage: ' + stage + ' — automatic taiyaar ho raha hai...';
+            }
+
+            window.checkStartupNow = async function () {
+                if (checking || redirected) return;
                 checking = true;
+                pollLocalStatusScript();
                 try {
-                    var response = await fetch('/api/health?_t=' + Date.now(), { cache: 'no-store' });
-                    var data = await response.json();
-                    if (response.ok && data.dbReady) {
-                        setStep('stepServer', 'done', 1);
-                        setStep('stepDatabase', 'done', 2);
-                        setStep('stepSchema', 'done', 3);
-                        progress.style.width = '100%';
-                        detail.textContent = 'Connection ho gaya. App khul raha hai...';
-                        window.location.replace('/');
+                    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                    var timer = controller ? setTimeout(function () { controller.abort(); }, 1200) : null;
+                    var resp = await fetch(getApiBase() + '/api/health?_t=' + Date.now(), {
+                        cache: 'no-store',
+                        mode: 'cors',
+                        signal: controller ? controller.signal : undefined
+                    });
+                    if (timer) clearTimeout(timer);
+                    var data = await resp.json();
+                    if (resp.ok && data && data.dbReady) {
+                        launchTargetApp();
                         return;
                     }
-                    showStage(data);
-                } catch (error) {
-                    detail.textContent = 'Server se sampark ban raha hai; automatic retry jari hai...';
+                    applyServerHealth(data);
+                } catch (_) {
+                    if (!latestFileStatus || (Date.now() - Number(latestFileStatus.updatedAt || 0) > 8000)) {
+                        var elapsedSec = Math.floor((Date.now() - startTs) / 1000);
+                        var estPct = Math.min(28, 10 + elapsedSec * 2);
+                        setPct(estPct);
+                        applySteps(elapsedSec >= 3 ? 2 : 1, false);
+                        detailEl.textContent = 'Node.js server Port ' + targetPort + ' par start ho raha hai (' + elapsedSec + 's)...';
+                    }
                 } finally {
                     checking = false;
                 }
             };
 
-            window.checkStartupConnection();
-            setInterval(window.checkStartupConnection, 2000);
+            setInterval(function () {
+                if (redirected) return;
+                var sec = Math.floor((Date.now() - startTs) / 1000);
+                var mins = Math.floor(sec / 60);
+                var rem = sec % 60;
+                timerEl.textContent = (mins < 10 ? '0' : '') + mins + ':' + (rem < 10 ? '0' : '') + rem + 's';
+                if (sec >= 30) {
+                    var help = document.getElementById('help');
+                    if (help) help.style.display = 'block';
+                }
+            }, 500);
 
-            setTimeout(function () {
-                var help = document.getElementById('help');
-                if (help) help.style.display = 'block';
-            }, 45000);
+            window.checkStartupNow();
+            setInterval(window.checkStartupNow, 350);
         })();
     </script>
 </body>

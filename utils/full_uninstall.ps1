@@ -59,7 +59,15 @@ function Kill-ProjectProcesses {
 function Remove-AutoStartEntries {
     Log "Removing auto-start (scheduled task, startup entry, Run key)..." 'Cyan'
 
-    foreach ($t in @('CSC BC Apna Hisaab Server', 'CSC BC Apna Hissab Server', 'CSC BC Apna Hissab Server (Login)', 'CSC BC Apna Hisaab Server (Login)', 'CSC BC Apna Hisaab SQLite')) {
+    foreach ($t in @(
+        'CSC BC Apna Hisaab Server',
+        'CSC BC Apna Hissab Server',
+        'CSC BC Apna Hissab Server (Login)',
+        'CSC BC Apna Hisaab Server (Login)',
+        'CSC BC Apna Hisaab SQLite',
+        'CSC BC Apna Hisaab SQLite AutoStart',
+        'CSC BC Apna Hisaab SQLite BootService'
+    )) {
         schtasks /Query /TN "$t" > $null 2>&1
         if ($LASTEXITCODE -eq 0) {
             schtasks /Delete /TN "$t" /F > $null 2>&1
@@ -67,7 +75,11 @@ function Remove-AutoStartEntries {
         }
     }
 
-    foreach ($vbsName in @('CSC BC Apna Hisaab SQLite (Auto).vbs', 'CSC BC Apna Hisaab (Auto).vbs')) {
+    foreach ($vbsName in @(
+        'CSC BC Apna Hisaab SQLite (Auto).vbs',
+        'CSC BC Apna Hisaab SQLite (Auto).cmd',
+        'CSC BC Apna Hisaab (Auto).vbs'
+    )) {
         $startup = Join-Path $env:APPDATA ("Microsoft\Windows\Start Menu\Programs\Startup\" + $vbsName)
         if (Test-Path -LiteralPath $startup) {
             try { Remove-Item -LiteralPath $startup -Force -ErrorAction Stop; Log "  Startup entry removed: $vbsName" 'DarkGray' } catch { Log "  [!] Startup entry locked: $startup" 'Yellow' }

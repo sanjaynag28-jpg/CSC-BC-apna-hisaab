@@ -472,6 +472,27 @@ function Heal-EnvAndPort {
         if ($raw -match '(?m)^\s*PORT\s*=\s*(\d+)') { $port = [int]$Matches[1] }
     }
 
+    # First check if healthy server is ALREADY running on $port — avoid breaking supervision!
+    try {
+        $hPre = Invoke-RestMethod -Uri "http://localhost:$port/api/health" -TimeoutSec 2 -ErrorAction Stop
+        if ($hPre -and $hPre.success) {
+            $script:ResolvedPort = $port
+            Write-AiLog "Server pehle se Port $port par healthy chal raha hai." 'OK'
+            return $port
+        }
+    } catch { }
+
+    # Clean stale .updating sentinel if older than 3 minutes
+    $updFlag = Join-Path $LogsDir '.updating'
+    if (Test-Path -LiteralPath $updFlag) {
+        try {
+            if (([DateTime]::UtcNow - (Get-Item -LiteralPath $updFlag).LastWriteTimeUtc).TotalSeconds -gt 180) {
+                Remove-Item -LiteralPath $updFlag -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath (Join-Path $LogsDir '.auto_update.lock') -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+    }
+
     # Stop ONLY project supervisor & project node processes (never kill foreign shop software!)
     Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -and $_.CommandLine -like '*server-supervisor.bat*' } |
@@ -484,14 +505,6 @@ function Heal-EnvAndPort {
             $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
             $w = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)" -ErrorAction SilentlyContinue
             if ($p -and $p.ProcessName -ieq 'node' -and ($w.CommandLine -like "*$ProjectDir*" -or $w.CommandLine -like '*server.js*')) {
-                try {
-                    $h = Invoke-RestMethod -Uri "http://localhost:$port/api/health" -TimeoutSec 2 -ErrorAction Stop
-                    if ($h -and $h.success) {
-                        $script:ResolvedPort = $port
-                        Write-AiLog "Server pehle se Port $port par healthy chal raha hai." 'OK'
-                        return $port
-                    }
-                } catch { }
                 Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
                 $script:RepairsApplied++
             }
@@ -643,21 +656,42 @@ function Test-AndDiagnoseLiveServer {
         } catch { }
     }
 
-    # Crash Classifier: inspect logs\server-run.log for known signatures and re-repair!
+    # Crash Classifier: inspect logs\server-run.log for known signatures, repair, then RETRY boot!
     $srvLog = Join-Path $LogsDir 'server-run.log'
     $tail = if (Test-Path -LiteralPath $srvLog) { (Get-Content -LiteralPath $srvLog -Tail 30 -ErrorAction SilentlyContinue) -join "`n" } else { '' }
+    $didClassifyFix = $false
     if ($tail -match 'NODE_MODULE_VERSION|ERR_DLOPEN_FAILED|better_sqlite3\.node') {
         Write-AiLog "[AI CRASH CLASSIFIER] Native ABI mismatch detect hua! Clean rebuild run ho raha hai..." 'FIX'
         Heal-NpmDependencies -NodeExe $NodeExe | Out-Null
+        $didClassifyFix = $true
     } elseif ($tail -match 'Cannot find module') {
         Write-AiLog "[AI CRASH CLASSIFIER] Missing module detect hua! Installing missing modules..." 'FIX'
         Heal-NpmDependencies -NodeExe $NodeExe | Out-Null
+        $didClassifyFix = $true
     } elseif ($tail -match 'EADDRINUSE|EACCES') {
         Write-AiLog "[AI CRASH CLASSIFIER] Port lock detect hua! Switching to alternate free port..." 'FIX'
         $Port = Heal-EnvAndPort
+        $url = "http://localhost:$Port"
+        $didClassifyFix = $true
     } elseif ($tail -match 'secretOrPrivateKey') {
         Write-AiLog "[AI CRASH CLASSIFIER] Empty JWT_SECRET detect hua! Regenerating..." 'FIX'
         $Port = Heal-EnvAndPort
+        $url = "http://localhost:$Port"
+        $didClassifyFix = $true
+    }
+
+    if ($didClassifyFix -and (Test-Path -LiteralPath $supBat)) {
+        Start-Process -FilePath 'cmd.exe' -ArgumentList "/c `"`"$supBat`"`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        for ($j = 1; $j -le 12; $j++) {
+            Start-Sleep -Seconds 1
+            try {
+                $h2 = Invoke-RestMethod -Uri "$url/api/health" -TimeoutSec 2 -ErrorAction Stop
+                if ($h2 -and $h2.success) {
+                    Write-AiLog "Crash Classifier repair ke baad Server LIVE ho gaya ($url)!" 'OK'
+                    return $true
+                }
+            } catch { }
+        }
     }
 
     if ($tail -and ($GeminiApiKey -or $env:GEMINI_API_KEY)) {
@@ -671,7 +705,6 @@ function Test-AndDiagnoseLiveServer {
         } catch { }
     }
 
-    try { Start-Process 'explorer.exe' -ArgumentList $url } catch { }
     return $false
 }
 
@@ -683,13 +716,23 @@ if ($envOk) {
     Heal-NetworkAndTls
     [void](Heal-VisualCpp)
     $nodeExe = Heal-NodeRuntime
+    if ($nodeExe) {
+        try {
+            $cfgDir = Join-Path $ProjectDir 'config'
+            if (-not (Test-Path -LiteralPath $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
+            [System.IO.File]::WriteAllText((Join-Path $cfgDir 'node-path.txt'), $nodeExe, (New-Object System.Text.UTF8Encoding($false)))
+        } catch { }
+    }
     [void](Heal-CoreFiles)
     [void](Heal-NpmDependencies -NodeExe $nodeExe)
     $resolvedPort = Heal-EnvAndPort
     [void](Heal-SqliteDatabase -NodeExe $nodeExe)
     Heal-FirewallAndShortcuts -NodeExe $nodeExe -Port $resolvedPort
     $liveOk = Test-AndDiagnoseLiveServer -NodeExe $nodeExe -Port $resolvedPort
-    if ($liveOk) {
+    $openPs = Join-Path $ProjectDir 'utils\open_browser.ps1'
+    if (Test-Path -LiteralPath $openPs) {
+        try { & $openPs -ProjectDir $ProjectDir -Port $resolvedPort } catch { }
+    } elseif ($liveOk) {
         try { Start-Process 'explorer.exe' -ArgumentList "http://localhost:$resolvedPort" } catch { }
     }
 }

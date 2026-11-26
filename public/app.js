@@ -1346,11 +1346,13 @@ function showActionDropdown({
     if (!triggerBtn) return;
 
     if (activeUniversalDropdownEl && activeUniversalDropdownEl.dataset.triggerId && activeUniversalDropdownEl.dataset.triggerId === triggerBtn.id) {
-        closeActionDropdown();
+        if (typeof closeAllActionMenus === 'function') closeAllActionMenus();
+    else closeActionDropdown();
         return;
     }
 
-    closeActionDropdown();
+    if (typeof closeAllActionMenus === 'function') closeAllActionMenus();
+    else closeActionDropdown();
     triggerBtn.classList.add('active');
 
     const menu = document.createElement('div');
@@ -1414,7 +1416,8 @@ function showActionDropdown({
         if (btn) {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                closeActionDropdown();
+                if (typeof closeAllActionMenus === 'function') closeAllActionMenus();
+    else closeActionDropdown();
                 item.onClick();
             });
         }
@@ -1422,33 +1425,86 @@ function showActionDropdown({
 
     document.body.appendChild(menu);
     activeUniversalDropdownEl = menu;
+    menu._anchorTriggerBtn = triggerBtn;
+    menu._preferredWidth = preferredWidth;
 
     if (window.lucide && typeof lucide.createIcons === 'function') {
         lucide.createIcons({ root: menu });
     }
 
-    // Intelligent positioning clamped within viewport
+    positionActionMenuViewport(menu, triggerBtn, preferredWidth);
+    menu.classList.add('active');
+}
+
+function positionActionMenuViewport(menu, triggerBtn, preferredWidth = 275) {
+    if (!menu || !triggerBtn) return;
     const rect = triggerBtn.getBoundingClientRect();
-    const menuWidth = preferredWidth;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let left = rect.right - menuWidth;
-    if (left < 10) left = 10;
-    if (left + menuWidth > viewportWidth - 10) left = viewportWidth - menuWidth - 10;
-
-    let top = rect.bottom + 6;
-    const estimatedHeight = menu.offsetHeight || 300;
-    if (top + estimatedHeight > viewportHeight - 10 && rect.top > estimatedHeight + 10) {
-        top = rect.top - estimatedHeight - 6;
-    }
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 720;
+    const pad = 10;
+    const menuWidth = Math.min(preferredWidth || 275, vw - pad * 2);
 
     menu.style.position = 'fixed';
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
     menu.style.width = `${menuWidth}px`;
+    menu.style.maxHeight = `${Math.max(160, vh - pad * 2)}px`;
     menu.style.zIndex = '99999';
-    menu.classList.add('active');
+
+    // Measure actual rendered height after width/maxHeight are applied
+    const naturalH = Math.min(menu.scrollHeight || menu.offsetHeight || 300, vh - pad * 2);
+    const spaceBelow = vh - rect.bottom - pad;
+    const spaceAbove = rect.top - pad;
+
+    let left = rect.right - menuWidth;
+    if (left < pad) left = pad;
+    if (left + menuWidth > vw - pad) left = vw - menuWidth - pad;
+
+    let top;
+    menu.classList.remove('opens-upward');
+    if (spaceBelow >= naturalH) {
+        top = rect.bottom + 6;
+    } else if (spaceAbove >= naturalH) {
+        top = rect.top - naturalH - 6;
+        menu.classList.add('opens-upward');
+    } else if (spaceAbove > spaceBelow) {
+        top = Math.max(pad, Math.min(rect.top - naturalH - 6, vh - naturalH - pad));
+        menu.classList.add('opens-upward');
+    } else {
+        top = Math.max(pad, Math.min(rect.bottom + 6, vh - naturalH - pad));
+    }
+
+    // Hard clamp guarantees top & bottom NEVER clip off-screen
+    top = Math.max(pad, Math.min(top, vh - naturalH - pad));
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+}
+
+let _actionMenuRepositionRaf = null;
+function repositionOpenActionMenus(e) {
+    if (e && e.target && e.target.closest && e.target.closest('.cust-action-dropdown-menu')) {
+        return;
+    }
+    if (_actionMenuRepositionRaf) return;
+    _actionMenuRepositionRaf = requestAnimationFrame(() => {
+        _actionMenuRepositionRaf = null;
+        document.querySelectorAll('.cust-action-dropdown-menu').forEach((menu) => {
+            const btn = menu._anchorTriggerBtn;
+            const w = menu._preferredWidth || 275;
+            if (btn && btn.isConnected) {
+                positionActionMenuViewport(menu, btn, w);
+            } else {
+                const vw = window.innerWidth || 1280;
+                const vh = window.innerHeight || 720;
+                const mh = Math.min(menu.scrollHeight || menu.offsetHeight || 300, vh - 20);
+                const mw = Math.min(menu.offsetWidth || w, vw - 20);
+                const curTop = parseFloat(menu.style.top) || 10;
+                const curLeft = parseFloat(menu.style.left) || 10;
+                menu.style.maxHeight = `${Math.max(160, vh - 20)}px`;
+                menu.style.top = `${Math.round(Math.max(10, Math.min(curTop, vh - mh - 10)))}px`;
+                menu.style.left = `${Math.round(Math.max(10, Math.min(curLeft, vw - mw - 10)))}px`;
+            }
+        });
+    });
 }
 
 function closeActionDropdown() {
@@ -1470,8 +1526,10 @@ document.addEventListener('click', (e) => {
     }
 }, true);
 
-window.addEventListener('scroll', closeActionDropdown, true);
-window.addEventListener('resize', closeActionDropdown);
+// Keep 3-dot menus visible and smoothly positioned inside viewport on scroll & resize
+window.addEventListener('scroll', repositionOpenActionMenus, true);
+window.addEventListener('resize', repositionOpenActionMenus);
+window.positionActionMenuViewport = positionActionMenuViewport;
 window.showActionDropdown = showActionDropdown;
 window.closeActionDropdown = closeActionDropdown;
 
@@ -3252,6 +3310,7 @@ function refreshIcons(scope = null) {
 
 function showPage(page, navEl) {
     if (!page) page = 'dashboard';
+    if (typeof closeAllActionMenus === 'function') closeAllActionMenus();
 
     // Reroute relocated modules to their dedicated Settings tabs
     if (page === 'database') {
@@ -5754,35 +5813,22 @@ function renderPartiesList() {
 // --------------------------------------------------------------------------
 function positionFloatingMenu(menu, triggerBtn, preferredWidth = 275) {
     document.body.appendChild(menu);
+    menu._anchorTriggerBtn = triggerBtn;
+    menu._preferredWidth = preferredWidth;
     if (window.lucide) {
         lucide.createIcons({ root: menu });
     }
 
-    const rect = triggerBtn.getBoundingClientRect();
-    const menuWidth = preferredWidth;
-    const menuHeight = menu.offsetHeight || 300;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    let left = rect.right - menuWidth;
-    if (left < 10) left = 10;
-    if (left + menuWidth > viewportWidth - 10) left = viewportWidth - menuWidth - 10;
-
-    let top = rect.bottom + 6;
-    if (top + menuHeight > viewportHeight - 10 && rect.top - menuHeight - 6 > 10) {
-        top = rect.top - menuHeight - 6;
-        menu.classList.add('opens-upward');
-    }
-
-    menu.style.top = `${top}px`;
-    menu.style.left = `${left}px`;
+    positionActionMenuViewport(menu, triggerBtn, preferredWidth);
 
     requestAnimationFrame(() => {
+        positionActionMenuViewport(menu, triggerBtn, preferredWidth);
         menu.classList.add('active');
     });
 }
 
 function closeAllActionMenus() {
+    if (typeof closeActionDropdown === 'function') closeActionDropdown();
     if (typeof closeCustActionMenu === 'function') closeCustActionMenu();
     if (typeof closePartyActionMenu === 'function') closePartyActionMenu();
     if (typeof closeCSCActionMenu === 'function') closeCSCActionMenu();
@@ -11434,9 +11480,6 @@ document.addEventListener('click', (e) => {
         closeAllActionMenus();
     }
 });
-window.addEventListener('scroll', () => {
-    closeAllActionMenus();
-}, true);
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         closeAllActionMenus();
