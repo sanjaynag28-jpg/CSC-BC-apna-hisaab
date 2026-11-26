@@ -111,12 +111,9 @@ $targetUrl = $liveUrl
 
 if ($ForceSplash -or -not (Test-ServerReadyQuick -CheckPort $Port)) {
     if (Test-Path -LiteralPath $splashPath) {
-        $uriBuilder = New-Object System.UriBuilder
-        $uriBuilder.Scheme = 'file'
-        $uriBuilder.Host = ''
-        $uriBuilder.Path = ($splashPath -replace '\\', '/')
-        $uriBuilder.Query = "port=$Port"
-        $targetUrl = $uriBuilder.Uri.AbsoluteUri
+        # Note: Do NOT use System.UriBuilder on file:// paths (it percent-encodes '?' to '%3F' causing ERR_FILE_NOT_FOUND)
+        $fileUri = ([System.Uri]$splashPath).AbsoluteUri
+        $targetUrl = "${fileUri}?port=$Port"
     }
 }
 
@@ -175,14 +172,14 @@ function Find-PreferredBrowser {
 $browserExe = Find-PreferredBrowser
 if ($browserExe) {
     try {
-        Start-Process -FilePath $browserExe -ArgumentList @($targetUrl) -ErrorAction Stop
+        Start-Process -FilePath $browserExe -ArgumentList ('"' + $targetUrl + '"') -ErrorAction Stop
         exit 0
     } catch { }
 }
 
 # Fallback to OS default browser / explorer
 try {
-    Start-Process -FilePath 'explorer.exe' -ArgumentList @($targetUrl) -ErrorAction Stop
+    Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $targetUrl + '"') -ErrorAction Stop
     exit 0
 } catch { }
 try {

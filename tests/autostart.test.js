@@ -133,5 +133,13 @@ test('Offline-Splash Service Worker intercepts only failed navigations without c
     assert.match(splash, /window\.location\.reload\(\)/);
 });
 
+test('open_browser.ps1 never uses UriBuilder on file:// URLs (prevents %3F ERR_FILE_NOT_FOUND)', () => {
+    const ob = fs.readFileSync(path.join(root, 'utils', 'open_browser.ps1'), 'utf8');
+    assert.doesNotMatch(ob, /New-Object\s+System\.UriBuilder/);
+    assert.match(ob, /\(\[System\.Uri\]\$splashPath\)\.AbsoluteUri/);
+    assert.match(ob, /\$\{fileUri\}\?port=\$Port/);
+});
+
+
 
 
