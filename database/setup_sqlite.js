@@ -145,8 +145,21 @@ function setupSQLite(existingDb) {
                 WHERE MigrationName = 'sqlite_integrity_constraints_v1'
             `).get();
             if (!migrationApplied) {
-                console.warn('⚠️ [DB Init] Run "npm run migrate:sqlite:integrity -- --apply" to add the verified SQLite integrity constraints.');
+                // Only warn if core FK constraints are genuinely absent (never on clean fresh installs)
+                const hasFk = db.prepare(`PRAGMA foreign_key_list('ServiceRecords')`).all().length > 0;
+                if (hasFk) {
+                    try {
+                        db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
+                    } catch (_) { }
+                } else {
+                    console.warn('⚠️ [DB Init] Legacy schema detected without full SQLite integrity constraints.');
+                }
             }
+        } else {
+            // Fresh DB created directly from sqlite_schema.sql already contains all verified constraints
+            try {
+                db.prepare(`INSERT OR IGNORE INTO SchemaMigrations (MigrationName) VALUES ('sqlite_integrity_constraints_v1')`).run();
+            } catch (_) { }
         }
 
         // 2. Starter SuperAdmin user
@@ -182,6 +195,29 @@ function setupSQLite(existingDb) {
                 ].join('\r\n'), 'utf8');
             } catch (credErr) { }
         }
+
+        // 2b. Seed TxnModules (after Users so UserID=1 FK succeeds)
+        try {
+            const modCount = db.prepare('SELECT COUNT(*) AS cnt FROM TxnModules').get().cnt;
+            if (modCount === 0) {
+                const insMod = db.prepare(`
+                    INSERT OR IGNORE INTO TxnModules (ModuleCode, ModuleName, Prefix, TargetTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder, DocPrefix, RecordTable, SortOrder, UserID)
+                    VALUES (@code, @name, @prefix, @tbl, @pk, 1, 1, @ord, @prefix, @tbl, @ord, 1)
+                `);
+                const starterMods = [
+                    { code: 'CSC', name: 'CSC e-Governance Services', prefix: 'CSC', tbl: 'CSCApplications', pk: 'AppID', ord: 1 },
+                    { code: 'BC', name: 'Banking Correspondent / Kiosk', prefix: 'BC', tbl: 'BCTransactions', pk: 'BCID', ord: 2 },
+                    { code: 'BillPay', name: 'Utility Bill Payments (BBPS)', prefix: 'BP', tbl: 'BillPayments', pk: 'PaymentID', ord: 3 },
+                    { code: 'Invoices', name: 'Billing / Tax Invoice', prefix: 'INV', tbl: 'Invoices', pk: 'InvoiceID', ord: 4 },
+                    { code: 'Khata', name: 'Khatabook Ledger', prefix: 'KH', tbl: 'KhataEntries', pk: 'KhataID', ord: 5 },
+                    { code: 'Cashbook', name: 'Len-Den Cashbook', prefix: 'TXN', tbl: 'Transactions', pk: 'TransactionID', ord: 6 },
+                    { code: 'Service', name: 'Dynamic Service Record', prefix: 'SRV', tbl: 'ServiceRecords', pk: 'RecordID', ord: 7 },
+                    { code: 'UCL', name: 'Aadhaar UCL Update', prefix: 'UCL', tbl: 'UCLUpdates', pk: 'UCLID', ord: 8 },
+                    { code: 'PAC', name: 'PAC Code', prefix: 'PAC', tbl: 'PACEntries', pk: 'PACID', ord: 9 }
+                ];
+                for (const m of starterMods) insMod.run(m);
+            }
+        } catch (_) { }
 
         // 3. Starter Accounts
         const accCount = db.prepare('SELECT COUNT(*) AS cnt FROM Accounts').get().cnt;

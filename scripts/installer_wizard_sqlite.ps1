@@ -52,18 +52,18 @@ if ([string]::IsNullOrWhiteSpace($ProjectDir)) {
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 $guiAvailable = $false
-if (-not $Unattended) {
+if (-not $Unattended -and [Environment]::UserInteractive -and ([Threading.Thread]::CurrentThread.ApartmentState -eq 'STA')) {
     try { Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase -ErrorAction Stop; $guiAvailable = $true } catch { $guiAvailable = $false }
 }
 
 $LogDir = Join-Path $ProjectDir 'logs'
-if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 $LogFile = Join-Path $LogDir 'install_wizard_sqlite.log'
 
 $RequiredFiles = @{
     'server.js'                             = 2000
     'package.json'                          = 200
-    'package-lock.json'                     = 5000
+    'package-lock.json'                     = 1000
     'setup-database.js'                     = 400
     'database\sqlite_schema.sql'            = 5000
     'database\setup_sqlite.js'              = 1000
@@ -71,6 +71,7 @@ $RequiredFiles = @{
     'public\index.html'                     = 50000
     'public\app.js'                         = 50000
     'public\style.css'                      = 20000
+    'public\auth.js'                        = 2000
     'routes\auth.js'                        = 500
     'routes\bc.js'                          = 2000
     'routes\customers.js'                   = 2000
@@ -80,13 +81,19 @@ $RequiredFiles = @{
     'routes\invoices.js'                    = 2000
     'routes\reports.js'                     = 5000
     'routes\documents.js'                   = 2000
-    'routes\billpayments.js'                = 2000
+    'routes\bill_payments.js'               = 2000
     'routes\ucl.js'                         = 2000
     'routes\pac.js'                         = 1000
     'routes\search.js'                      = 1000
+    'routes\settings.js'                    = 1000
     'database\globalTxnRegistry.js'         = 1000
     'middleware\auth.js'                    = 500
     'utils\autoUpdater.js'                  = 1000
+    'utils\windows_autostart.js'            = 500
+    'utils\create_shortcuts.ps1'            = 500
+    'server-supervisor.bat'                 = 300
+    'open-app.vbs'                          = 300
+    'start-hidden.vbs'                      = 150
     'START.bat'                             = 200
     'version.json'                          = 100
 }
@@ -109,6 +116,8 @@ $sync = [hashtable]::Synchronized(@{
     Tick           = 0
     IsComplete     = $false
     HasError       = $false
+    ErrorSummary   = ""
+    ResolvedPort   = 4000
     Logs           = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
     StepStates     = [hashtable]::Synchronized(@{})
     StepSubTexts   = [hashtable]::Synchronized(@{})
@@ -189,8 +198,16 @@ $workerBlock = {
     # ------------------------------------------------------------------------
     function Repair-DnsAndNetwork {
         Log-Msg "DNS resolution aur network reachability check ho rahi hai..." 'AI'
+        # Clear broken local proxy env if unreachable
+        foreach ($pv in @('HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy')) {
+            $val = [Environment]::GetEnvironmentVariable($pv, 'Process')
+            if ($val -match '127\.0\.0\.1|localhost') {
+                [Environment]::SetEnvironmentVariable($pv, $null, 'Process')
+                Log-Msg "Dead localhost proxy env variable ($pv) clear kiya gaya." 'FIX'
+            }
+        }
         $dnsOk = $false
-        $hosts = @('raw.githubusercontent.com', 'cdn.jsdelivr.net', 'nodejs.org')
+        $hosts = @('raw.githubusercontent.com', 'cdn.jsdelivr.net', 'nodejs.org', 'registry.npmjs.org')
         foreach ($h in $hosts) {
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses($h)
@@ -203,15 +220,9 @@ $workerBlock = {
             return $true
         }
 
-        Log-Msg "DNS / ISP resolution issue detect hua. Auto-healing chal raha hai..." 'FIX'
-        try {
-            ipconfig /flushdns | Out-Null
-            Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
-                Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8', '1.1.1.1', '8.8.4.4') -ErrorAction SilentlyContinue
-            }
-            Start-Sleep -Milliseconds 700
-        } catch { }
-
+        Log-Msg "DNS cache flush aur network auto-healing chal rahi hai..." 'FIX'
+        try { ipconfig /flushdns | Out-Null } catch { }
+        Start-Sleep -Milliseconds 400
         foreach ($h in $hosts) {
             try {
                 $ips = [System.Net.Dns]::GetHostAddresses($h)
@@ -220,19 +231,19 @@ $workerBlock = {
             } catch { }
         }
         if ($dnsOk) {
-            Log-Msg "DNS auto-fix safal: Google (8.8.8.8) & Cloudflare (1.1.1.1) configure ho gaye." 'OK'
+            Log-Msg "DNS cache flush se resolution restore ho gayi." 'OK'
             return $true
         }
-        Log-Msg "Direct DNS blocked hai - CDN mirrors + DoH bypass mode chalu kiya jayega." 'WARN'
+        Log-Msg "Direct DNS restricted hai - CDN mirrors + DoH (1.1.1.1) bypass mode active rahega." 'WARN'
         return $false
     }
 
     function Repair-TlsAndCrypto {
         try {
             try {
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072 -bor 12288
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType](3072 -bor 12288)
             } catch {
-                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+                try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch { }
             }
             try { [System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials } catch { }
             $keys = @(
@@ -249,60 +260,146 @@ $workerBlock = {
     }
 
     function Repair-VisualCppRuntime {
-        Log-Msg "Microsoft Visual C++ 2015-2022 x64 Runtime check ho raha hai..." 'AI'
-        $hasVc = $false
-        $sysDll = Join-Path $env:SystemRoot "System32\vcruntime140.dll"
-        if (Test-Path $sysDll) {
-            $hasVc = $true
-        } else {
+        Log-Msg "Microsoft Visual C++ 2015-2022 Runtime check ho raha hai..." 'AI'
+        $sysDll1 = Join-Path $env:SystemRoot "System32\vcruntime140.dll"
+        $sysDll2 = Join-Path $env:SystemRoot "System32\vcruntime140_1.dll"
+        $hasVc = (Test-Path -LiteralPath $sysDll1) -and (Test-Path -LiteralPath $sysDll2)
+        if (-not $hasVc) {
             $vcKey = "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
             if (Test-Path $vcKey) {
-                $inst = (Get-ItemProperty -Path $vcKey -Name 'Installed' -ErrorAction SilentlyContinue).Installed
-                if ($inst -eq 1) { $hasVc = $true }
+                $props = Get-ItemProperty -Path $vcKey -ErrorAction SilentlyContinue
+                if ($props -and $props.Installed -eq 1 -and ([int]$props.Bld -ge 29000) -and (Test-Path -LiteralPath $sysDll1)) {
+                    $hasVc = $true
+                }
             }
         }
 
         if ($hasVc) {
-            Log-Msg "Visual C++ x64 Runtime verified (better-sqlite3 supported)." 'OK'
+            Log-Msg "Visual C++ x64 Runtime (vcruntime140 + vcruntime140_1) verified." 'OK'
             return $true
         }
 
-        Log-Msg "Visual C++ Runtime missing. Microsoft official package download & auto-install ho raha hai..." 'FIX'
+        Log-Msg "Visual C++ 2015-2022 Runtime missing/outdated. Auto-download & install ho raha hai..." 'FIX'
         $vcExe = Join-Path $env:TEMP "vc_redist.x64.exe"
         $vcUrls = @(
             "https://aka.ms/vs/17/release/vc_redist.x64.exe",
             "https://download.visualstudio.microsoft.com/download/pr/9e3f94ee-6b65-4f40-9a29-277983617300/F518170D4AE849764516B079D19E75825EDC66FE/VC_redist.x64.exe"
         )
-        $got = Get-FileSmart -Urls $vcUrls -OutFile $vcExe -Step 4 -FromPct 30 -ToPct 70 -Label "Visual C++ Redistributable" -MinBytes 5000000
+        $got = Get-FileSmart -Urls $vcUrls -OutFile $vcExe -Step 4 -FromPct 25 -ToPct 55 -Label "Visual C++ Redistributable" -MinBytes 10000000 -ValidateType 'EXE'
         if ($got) {
             Log-Msg "Visual C++ Redistributable silently install ho raha hai..." 'INSTALL'
             $p = Start-Process -FilePath $vcExe -ArgumentList "/install /quiet /norestart" -PassThru -Wait
-            Remove-Item $vcExe -Force -ErrorAction SilentlyContinue
+            $rc = if ($p) { $p.ExitCode } else { 1 }
+            Remove-Item -LiteralPath $vcExe -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
-            Log-Msg "Visual C++ Runtime successfully auto-install ho gaya." 'OK'
-            return $true
+            if ($rc -eq 0 -or $rc -eq 1638 -or $rc -eq 3010) {
+                Log-Msg "Visual C++ Runtime ready (Exit Code: $rc)." 'OK'
+                return $true
+            }
+            Log-Msg "Visual C++ installer exit code: $rc" 'WARN'
         }
-        return $false
+        return (Test-Path -LiteralPath $sysDll1)
+    }
+
+    function Test-PortBindable {
+        param([int]$Port)
+        # 1. Check Hyper-V / WinNAT excluded TCP port ranges
+        try {
+            $excl = & netsh int ipv4 show excludedportrange protocol=tcp 2>$null
+            foreach ($line in $excl) {
+                if ($line -match '^\s*(\d+)\s+(\d+)') {
+                    $sPort = [int]$Matches[1]; $ePort = [int]$Matches[2]
+                    if ($Port -ge $sPort -and $Port -le $ePort) {
+                        return $false
+                    }
+                }
+            }
+        } catch { }
+        # 2. Try binding TcpListener briefly
+        try {
+            $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, $Port)
+            $listener.Start()
+            $listener.Stop()
+            return $true
+        } catch {
+            return $false
+        }
     }
 
     function Repair-PortConflict {
-        param([int]$Port = 4000)
-        Log-Msg "Port $Port verification & auto-healing..." 'AI'
+        param([int]$PreferredPort = 4000)
+        $targetPort = $PreferredPort
+        $envFile = Join-Path $ProjectDir '.env'
+        if (Test-Path -LiteralPath $envFile) {
+            try {
+                $m = [regex]::Match((Get-Content -LiteralPath $envFile -Raw), '(?m)^\s*PORT\s*=\s*(\d+)')
+                if ($m.Success) { $targetPort = [int]$m.Groups[1].Value }
+            } catch { }
+        }
+        Log-Msg "Port $targetPort verification & smart auto-healing..." 'AI'
+
+        # First kill ONLY this project's supervisor/node listeners
         try {
-            $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+            $connections = Get-NetTCPConnection -LocalPort $targetPort -State Listen -ErrorAction SilentlyContinue
             if ($connections) {
                 foreach ($conn in $connections) {
                     $pidToKill = $conn.OwningProcess
-                    if ($pidToKill -gt 4) {
-                        $proc = Get-Process -Id $pidToKill -ErrorAction SilentlyContinue
-                        Log-Msg "Occupied port process detect hua: $($proc.ProcessName) (PID: $pidToKill). Terminating..." 'FIX'
+                    if ($pidToKill -le 4) { continue }
+                    $proc = Get-Process -Id $pidToKill -ErrorAction SilentlyContinue
+                    $wmi = Get-CimInstance Win32_Process -Filter "ProcessId=$pidToKill" -ErrorAction SilentlyContinue
+                    $cmdLine = if ($wmi) { "$($wmi.CommandLine)" } else { "" }
+                    if ($proc -and $proc.ProcessName -ieq 'node' -and ($cmdLine -like "*$ProjectDir*" -or $cmdLine -like '*server.js*')) {
+                        Log-Msg "Purana/stuck server node process detect hua (PID: $pidToKill). Clean stop..." 'FIX'
                         Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
+                    } elseif ($proc) {
+                        Log-Msg "Foreign app '$($proc.ProcessName)' (PID: $pidToKill) Port $targetPort use kar raha hai — safe alternate port select kiya jayega." 'WARN'
                     }
                 }
-                Start-Sleep -Seconds 1
-                Log-Msg "Port $Port safalta se free kar diya gaya." 'OK'
+                Start-Sleep -Milliseconds 800
             }
         } catch { }
+
+        if (Test-PortBindable -Port $targetPort) {
+            $sync.ResolvedPort = $targetPort
+            Log-Msg "Port $targetPort verified aur free hai." 'OK'
+            return $targetPort
+        }
+
+        foreach ($cand in @(4000, 4001, 4545, 4040, 4800, 5050, 8090)) {
+            if (Test-PortBindable -Port $cand) {
+                $sync.ResolvedPort = $cand
+                Log-Msg "Windows Hyper-V/Service ne Port $targetPort block kiya tha -> AI ne safe free Port $cand choose kiya!" 'FIX'
+                return $cand
+            }
+        }
+        $sync.ResolvedPort = $targetPort
+        return $targetPort
+    }
+
+    function Test-DownloadedFile {
+        param([string]$FilePath, [int]$MinBytes = 1024, [string]$ValidateType = '')
+        if (-not (Test-Path -LiteralPath $FilePath)) { return $false }
+        $len = (Get-Item -LiteralPath $FilePath).Length
+        if ($len -lt $MinBytes) { return $false }
+        try {
+            $fs = [System.IO.File]::OpenRead($FilePath)
+            $hdr = New-Object byte[] 512
+            $n = $fs.Read($hdr, 0, $hdr.Length)
+            $fs.Close()
+            $txt = [System.Text.Encoding]::ASCII.GetString($hdr, 0, $n)
+            if ($txt -match '(?i)^\s*<!DOCTYPE|^\s*<html') { return $false }
+            if ($ValidateType -eq 'ZIP') {
+                if ($n -lt 4 -or $hdr[0] -ne 0x50 -or $hdr[1] -ne 0x4B) { return $false }
+                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                $z = [System.IO.Compression.ZipFile]::OpenRead($FilePath)
+                $cnt = $z.Entries.Count
+                $z.Dispose()
+                if ($cnt -lt 5) { return $false }
+            } elseif ($ValidateType -eq 'EXE' -or $ValidateType -eq 'MSI') {
+                if ($ValidateType -eq 'EXE' -and ($hdr[0] -ne 0x4D -or $hdr[1] -ne 0x5A)) { return $false }
+                if ($ValidateType -eq 'MSI' -and ($hdr[0] -ne 0xD0 -or $hdr[1] -ne 0xCF)) { return $false }
+            }
+        } catch { return $false }
         return $true
     }
 
@@ -316,6 +413,7 @@ $workerBlock = {
             [string]$Label
         )
         $req = [System.Net.HttpWebRequest]::Create($Url)
+        try { $req.Proxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials } catch { }
         $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
         $req.Timeout = 120000
         $req.ReadWriteTimeout = 120000
@@ -359,6 +457,9 @@ $workerBlock = {
             $out.Close(); $in.Close(); $resp.Close()
         }
         $sw.Stop()
+        if ($total -gt 0 -and $read -lt $total) {
+            throw "Incomplete download ($read / $total bytes)"
+        }
         return $read
     }
 
@@ -370,21 +471,23 @@ $workerBlock = {
             [double]$FromPct,
             [double]$ToPct,
             [string]$Label,
-            [int]$MinBytes = 1024
+            [int]$MinBytes = 1024,
+            [string]$ValidateType = ''
         )
         for ($round = 1; $round -le 3; $round++) {
             foreach ($u in $Urls) {
                 try {
-                    if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue }
                     $uHost = try { ([Uri]$u).Host } catch { $u }
                     Log-Msg "$Label download (round $round): $uHost" 'DOWNLOAD'
                     $got = Download-File -Url $u -OutFile $OutFile -Step $Step -FromPct $FromPct -ToPct $ToPct -Label $Label
-                    if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes)) {
-                        $mb = [Math]::Round((Get-Item $OutFile).Length / 1MB, 2)
-                        Log-Msg "$Label complete: $mb MB downloaded." 'OK'
+                    if (Test-DownloadedFile -FilePath $OutFile -MinBytes $MinBytes -ValidateType $ValidateType) {
+                        $mb = [Math]::Round((Get-Item -LiteralPath $OutFile).Length / 1MB, 2)
+                        Log-Msg "$Label complete: $mb MB downloaded & verified." 'OK'
                         $sync.BytesText = "$mb MB done"
                         return $true
                     }
+                    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue }
                 } catch {
                     Log-Msg "$Label mirror notice: $($_.Exception.Message)" 'WARN'
                 }
@@ -393,24 +496,25 @@ $workerBlock = {
             if ($round -lt 3) { Start-Sleep -Seconds 2 }
         }
 
-        # Fallback: curl.exe with Cloudflare DNS-over-HTTPS (DoH) bypass if ISP blocks .NET WebRequest
         $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
         if ($curlCmd) {
             foreach ($u in $Urls) {
                 try {
-                    if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue }
                     $uHost = try { ([Uri]$u).Host } catch { $u }
                     Log-Msg "$Label DoH network bypass attempt: $uHost" 'FIX'
                     & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
-                    if (-not ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes))) {
+                    if (-not (Test-DownloadedFile -FilePath $OutFile -MinBytes $MinBytes -ValidateType $ValidateType)) {
+                        if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue }
                         & $curlCmd.Source -fSL --retry 2 --connect-timeout 15 "$u" -o "$OutFile" 2>$null
                     }
-                    if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes)) {
-                        $mb = [Math]::Round((Get-Item $OutFile).Length / 1MB, 2)
+                    if (Test-DownloadedFile -FilePath $OutFile -MinBytes $MinBytes -ValidateType $ValidateType) {
+                        $mb = [Math]::Round((Get-Item -LiteralPath $OutFile).Length / 1MB, 2)
                         Log-Msg "$Label DoH bypass se safal ($mb MB)!" 'OK'
                         $sync.BytesText = "$mb MB done"
                         return $true
                     }
+                    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue }
                 } catch { }
             }
         }
@@ -419,12 +523,13 @@ $workerBlock = {
 
     function Wait-ProcAlive {
         param(
-            [System.Diagnostics.Process]$Proc,
+            $Proc,
             [int]$Step,
             [string]$Label,
             [int]$MaxPct = 94,
             [int]$StartPct = 20
         )
+        if (-not $Proc) { return 1 }
         try { $null = $Proc.Handle } catch { }
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
         while (-not $Proc.HasExited) {
@@ -442,18 +547,38 @@ $workerBlock = {
         return $Proc.ExitCode
     }
 
+    function Test-NodeCompatible {
+        param([string]$NodeExe)
+        if (-not $NodeExe -or -not (Test-Path -LiteralPath $NodeExe)) { return $false }
+        try {
+            $out = & $NodeExe -e "const p=process.versions.node.split('.').map(Number); console.log((p[0]>22||(p[0]===22&&p[1]>=14)) && (process.arch==='x64'||process.arch==='arm64') ? 'OK' : 'BAD');" 2>$null
+            return ("$out" -match 'OK')
+        } catch { return $false }
+    }
+
     function Find-Node {
+        $candidates = @()
+        $runtimeLocal = Join-Path $ProjectDir '.runtime\nodejs\node.exe'
+        if (Test-Path -LiteralPath $runtimeLocal) { $candidates += $runtimeLocal }
         $cmd = Get-Command node.exe -ErrorAction SilentlyContinue
-        if ($cmd) { return $cmd.Source }
-        $paths = @(
+        if ($cmd) { $candidates += $cmd.Source }
+        $candidates += @(
             "C:\Program Files\nodejs\node.exe",
-            "C:\Program Files (x86)\nodejs\node.exe",
-            (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe')
+            "C:\Program Files (x86)\nodejs\node.exe"
         )
-        foreach ($p in $paths) {
-            if (Test-Path $p) {
-                $dir = Split-Path $p
-                $env:Path = "$dir;$env:Path"
+        if ($env:LOCALAPPDATA) {
+            $candidates += (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe')
+            $candidates += (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\node.exe')
+        }
+        if ($env:NVM_SYMLINK) { $candidates += (Join-Path $env:NVM_SYMLINK 'node.exe') }
+        if ($env:USERPROFILE) {
+            $candidates += (Join-Path $env:USERPROFILE 'scoop\shims\node.exe')
+            $candidates += (Join-Path $env:USERPROFILE '.volta\bin\node.exe')
+        }
+        foreach ($p in ($candidates | Select-Object -Unique)) {
+            if (Test-NodeCompatible -NodeExe $p) {
+                $dir = Split-Path -Parent $p
+                if ($env:Path -notlike "*$dir*") { $env:Path = "$dir;$env:Path" }
                 return $p
             }
         }
@@ -472,17 +597,22 @@ $workerBlock = {
         Repair-DnsAndNetwork
         Repair-PortConflict 4000
 
-        Update-Step 1 'RUNNING' 60 "Admin access OK" "Windows OS version verify ho raha hai..."
+        Update-Step 1 'RUNNING' 60 "OS Architecture Check..." "Windows OS version aur architecture verify ho raha hai..."
+        if (-not [Environment]::Is64BitOperatingSystem) {
+            Log-Msg "32-bit Windows detected: better-sqlite3 v13+ 64-bit Windows (x64/ARM64) par chalta hai." 'ERROR'
+            Update-Step 1 'FAILED' 60 "64-bit Windows Required" "Step 1 : 64-bit Windows zaroori hai"
+            return $false
+        }
         Start-Sleep -Milliseconds 200
+        $osv = [System.Environment]::OSVersion.VersionString
         if ($isAdmin) {
-            $osv = [System.Environment]::OSVersion.VersionString
             Log-Msg "Administrator privileges OK. OS: $osv" 'OK'
             Update-Step 1 'SUCCESS' 100 "Admin aur Windows OK" "Step 1 : Administrator Rights Verified"
-            return $true
+        } else {
+            Log-Msg "Standard User mode active (Per-user install OK). OS: $osv" 'OK'
+            Update-Step 1 'REPAIRED' 100 "User Mode Ready" "Step 1 : User Mode Verified"
         }
-        Log-Msg "Administrator rights nahi mile. Kripya 'Run as Administrator' karein." 'WARN'
-        Update-Step 1 'FAILED' 60 "Admin rights chahiye" "Step 1 : Administrator elevation zaroori hai"
-        return $false
+        return $true
     }
 
     # ========================================================================
@@ -579,29 +709,40 @@ $workerBlock = {
                 "${RepoZipAlt}?t=${ticks}",
                 "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/sqlite.zip?t=${ticks}"
             )
-            $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000
+            $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000 -ValidateType 'ZIP'
             if ($ok) {
                 Update-Step 2 'RUNNING' 80 "Extracting ZIP..." "Archive extract ho raha hai..."
                 Log-Msg "Archive extract ho raha hai..." 'EXTRACT'
-                try {
-                    Expand-Archive -Path $zip -DestinationPath $extr -Force -ErrorAction Stop
-                } catch {
-                    Log-Msg "Expand-Archive error: $($_.Exception.Message)" 'WARN'
-                    $ok = $false
+                $extracted = $false
+                $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
+                if ($tarCmd) {
+                    try {
+                        New-Item -ItemType Directory -Force -Path $extr | Out-Null
+                        & $tarCmd.Source -xf "$zip" -C "$extr" 2>$null
+                        if ($LASTEXITCODE -eq 0 -and (Get-ChildItem -LiteralPath $extr -ErrorAction SilentlyContinue).Count -gt 0) {
+                            $extracted = $true
+                        }
+                    } catch { }
                 }
-                $subDir = Get-ChildItem -Path $extr -Directory | Select-Object -First 1
+                if (-not $extracted) {
+                    try {
+                        Expand-Archive -LiteralPath $zip -DestinationPath $extr -Force -ErrorAction Stop
+                        $extracted = $true
+                    } catch {
+                        Log-Msg "Expand-Archive error: $($_.Exception.Message)" 'WARN'
+                        $ok = $false
+                    }
+                }
+                $subDir = Get-ChildItem -LiteralPath $extr -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
                 $src = if ($subDir) { $subDir.FullName } else { $extr }
 
-                # Live files overwrite karne se pehle archive verify karo:
-                # - server.js aur SQLite setup script present hone chahiye
-                # - version.json ka branch sqlite hona chahiye (SQL Server build kabhi na aaye)
                 $archiveOk = $false
-                if ($ok -and (Test-Path (Join-Path $src 'server.js')) -and (Test-Path (Join-Path $src 'database\setup_sqlite.js'))) {
+                if ($ok -and $src -and (Test-Path -LiteralPath (Join-Path $src 'server.js')) -and (Test-Path -LiteralPath (Join-Path $src 'database\setup_sqlite.js'))) {
                     $archiveOk = $true
                     $archiveVerFile = Join-Path $src 'version.json'
-                    if (Test-Path $archiveVerFile) {
+                    if (Test-Path -LiteralPath $archiveVerFile) {
                         try {
-                            $archiveVer = Get-Content $archiveVerFile -Raw | ConvertFrom-Json
+                            $archiveVer = Get-Content -LiteralPath $archiveVerFile -Raw | ConvertFrom-Json
                             if ($archiveVer.branch -and "$($archiveVer.branch)".Trim().ToLower() -ne 'sqlite') { $archiveOk = $false }
                         } catch { $archiveOk = $false }
                     }
@@ -609,32 +750,45 @@ $workerBlock = {
 
                 if ($archiveOk) {
                     try {
-                        # Preserve existing .env and user database if present
+                        # Preserve existing .env and user database (+ WAL & SHM!)
                         $envPath = Join-Path $ProjectDir '.env'
                         $envBackup = $null
-                        if (Test-Path $envPath) {
+                        if (Test-Path -LiteralPath $envPath) {
                             $envBackup = Join-Path $env:TEMP "cmbc_env_$(Get-Random).tmp"
-                            Copy-Item -Path $envPath -Destination $envBackup -Force -ErrorAction SilentlyContinue
+                            Copy-Item -LiteralPath $envPath -Destination $envBackup -Force -ErrorAction SilentlyContinue
                         }
                         $dbPath = Join-Path $ProjectDir 'database\data\cash_management.db'
                         $dbBackup = $null
-                        if (Test-Path $dbPath) {
+                        if (Test-Path -LiteralPath $dbPath) {
                             $dbBackup = Join-Path $env:TEMP "cmbc_db_$(Get-Random).tmp"
-                            Copy-Item -Path $dbPath -Destination $dbBackup -Force -ErrorAction SilentlyContinue
+                            Copy-Item -LiteralPath $dbPath -Destination $dbBackup -Force -ErrorAction SilentlyContinue
+                            foreach ($ext in @('-wal', '-shm')) {
+                                if (Test-Path -LiteralPath ($dbPath + $ext)) {
+                                    Copy-Item -LiteralPath ($dbPath + $ext) -Destination ($dbBackup + $ext) -Force -ErrorAction SilentlyContinue
+                                }
+                            }
                         }
 
                         Copy-Item -Path "$src\*" -Destination $ProjectDir -Recurse -Force -ErrorAction SilentlyContinue
 
-                        if ($envBackup -and (Test-Path $envBackup)) {
-                            Copy-Item -Path $envBackup -Destination $envPath -Force -ErrorAction SilentlyContinue
-                            Remove-Item $envBackup -Force -ErrorAction SilentlyContinue
+                        if ($envBackup -and (Test-Path -LiteralPath $envBackup)) {
+                            Copy-Item -LiteralPath $envBackup -Destination $envPath -Force -ErrorAction SilentlyContinue
+                            Remove-Item -LiteralPath $envBackup -Force -ErrorAction SilentlyContinue
                         }
-                        if ($dbBackup -and (Test-Path $dbBackup)) {
-                            Copy-Item -Path $dbBackup -Destination $dbPath -Force -ErrorAction SilentlyContinue
-                            Remove-Item $dbBackup -Force -ErrorAction SilentlyContinue
+                        if ($dbBackup -and (Test-Path -LiteralPath $dbBackup)) {
+                            $dbDir = Split-Path -Parent $dbPath
+                            if (-not (Test-Path -LiteralPath $dbDir)) { New-Item -ItemType Directory -Force -Path $dbDir | Out-Null }
+                            Copy-Item -LiteralPath $dbBackup -Destination $dbPath -Force -ErrorAction SilentlyContinue
+                            Remove-Item -LiteralPath $dbBackup -Force -ErrorAction SilentlyContinue
+                            foreach ($ext in @('-wal', '-shm')) {
+                                if (Test-Path -LiteralPath ($dbBackup + $ext)) {
+                                    Copy-Item -LiteralPath ($dbBackup + $ext) -Destination ($dbPath + $ext) -Force -ErrorAction SilentlyContinue
+                                    Remove-Item -LiteralPath ($dbBackup + $ext) -Force -ErrorAction SilentlyContinue
+                                }
+                            }
                         }
 
-                        try { Get-ChildItem -Path $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
+                        try { Get-ChildItem -LiteralPath $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
                         Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
                     } catch {
                         Log-Msg "File copy error: $($_.Exception.Message)" 'WARN'
@@ -644,24 +798,39 @@ $workerBlock = {
                     Log-Msg "Downloaded ZIP SQLite edition ka valid build nahi hai - use apply nahi kiya gaya." 'WARN'
                 }
 
-                Remove-Item $zip -Force -ErrorAction SilentlyContinue
-                Remove-Item $extr -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $extr -Recurse -Force -ErrorAction SilentlyContinue
             }
             if (-not $ok) {
-                Log-Msg "Direct ZIP download fail hua. Individual files sync ki ja rahi hain..." 'WARN'
-                # Fallback: Sync individual critical files via CDN with cache-buster
+                Log-Msg "Direct ZIP download fail hua. Individual files multi-CDN + DoH sync chal rahi hain..." 'WARN'
+                $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
                 foreach ($f in $RequiredFiles.Keys) {
                     $dst = Join-Path $ProjectDir $f
                     $parent = Split-Path -Parent $dst
-                    if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-                    $fUrl = "$RepoRaw/$($f -replace '\\', '/')?t=$ticks"
-                    $cdnUrl = "$RepoCdn/$($f -replace '\\', '/')?t=$ticks"
-                    try {
-                        Invoke-WebRequest -Uri $cdnUrl -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
-                    } catch {
-                        try { Invoke-WebRequest -Uri $fUrl -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction SilentlyContinue } catch { }
+                    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+                    $relUrl = ($f -replace '\\', '/')
+                    $fetched = $false
+                    foreach ($base in @($RepoCdn, $RepoFastly, $RepoRaw)) {
+                        try {
+                            Invoke-WebRequest -Uri "$base/$relUrl`?t=$ticks" -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+                            if ((Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Length -ge $RequiredFiles[$f])) { $fetched = $true; break }
+                        } catch { }
+                    }
+                    if (-not $fetched -and $curlCmd) {
+                        & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 12 "$RepoCdn/$relUrl`?t=$ticks" -o "$dst" 2>$null
                     }
                 }
+            }
+
+            # Re-verify critical files exist after sync
+            $stillMissing = 0
+            foreach ($f in @('server.js', 'package.json', 'setup-database.js', 'database\setup_sqlite.js', 'database\sqlite_schema.sql', 'database\db.js')) {
+                if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $f))) { $stillMissing++ }
+            }
+            if ($stillMissing -gt 0) {
+                Log-Msg "Critical project files ($stillMissing) download nahi ho saki — internet/firewall check karein." 'ERROR'
+                Update-Step 2 'FAILED' 85 "Files Missing" "Step 2 : Project files download fail"
+                return $false
             }
         } else {
             Log-Msg "Saari project files 100% verified hain." 'OK'
@@ -681,52 +850,91 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 3: Node.js LTS Engine Auto-Install & PATH Repair
+    # STEP 3: Node.js v22+ LTS Engine Auto-Install & PATH Repair (MSI + Portable ZIP)
     # ========================================================================
     function Exec-Step3 {
-        Update-Step 3 'RUNNING' 15 "Step 3 / 8 : Node.js check..." "Node.js LTS runtime verify ho raha hai..."
-        Log-Msg "Node.js LTS runtime check ho raha hai..." 'SYSTEM'
+        Update-Step 3 'RUNNING' 15 "Step 3 / 8 : Node.js v22+ check..." "Node.js v22 LTS runtime verify ho raha hai..."
+        Log-Msg "Node.js v22+ LTS runtime check ho raha hai..." 'SYSTEM'
         $node = Find-Node
         if ($node) {
             try {
                 $ver = & $node -v
-                Log-Msg "Node.js pehle se installed hai: $ver ($node)" 'OK'
+                Log-Msg "Node.js v22+ compatible runtime ready: $ver ($node)" 'OK'
                 Update-Step 3 'SUCCESS' 100 "Node.js $ver OK" "Step 3 : Node.js $ver Ready"
                 return $true
             } catch { }
         }
 
-        Log-Msg "Node.js nahi mila. Ab silent download & install ho raha hai..." 'WARN'
-        Update-Step 3 'RUNNING' 30 "Downloading Node.js..." "Node.js LTS (30 MB) download ho raha hai..."
-        $msi = Join-Path $env:TEMP 'node-v22.14.0-x64.msi'
+        $isArm64 = ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64')
+        $archTag = if ($isArm64) { 'arm64' } else { 'x64' }
+        Log-Msg "Node.js v22.14.0 ($archTag) download & auto-install ho raha hai..." 'WARN'
+        Update-Step 3 'RUNNING' 30 "Downloading Node.js v22..." "Node.js v22.14.0 ($archTag, 30 MB) download ho raha hai..."
+
+        $msi = Join-Path $env:TEMP "node-v22.14.0-$archTag.msi"
         $nodeUrls = @(
-            'https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi',
-            'https://npmmirror.com/mirrors/node/v22.14.0/node-v22.14.0-x64.msi',
-            'https://nodejs.org/dist/v20.18.0/node-v20.18.0-x64.msi'
+            "https://nodejs.org/dist/v22.14.0/node-v22.14.0-$archTag.msi",
+            "https://npmmirror.com/mirrors/node/v22.14.0/node-v22.14.0-$archTag.msi"
         )
-        $ok = Get-FileSmart -Urls $nodeUrls -OutFile $msi -Step 3 -FromPct 30 -ToPct 75 -Label "Node.js LTS (30 MB)" -MinBytes 20000000
-        if (-not $ok) {
-            Log-Msg "Node.js download fail hua." 'ERROR'
-            return $false
+        $ok = Get-FileSmart -Urls $nodeUrls -OutFile $msi -Step 3 -FromPct 30 -ToPct 75 -Label "Node.js v22 LTS" -MinBytes 18000000 -ValidateType 'MSI'
+        if ($ok) {
+            Log-Msg "Node.js v22.14.0 silently install ho raha hai..." 'INSTALL'
+            Update-Step 3 'RUNNING' 80 "Installing Node.js..." "Node.js v22 silently install ho raha hai..."
+            $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart" -PassThru -WindowStyle Hidden
+            $rc = Wait-ProcAlive -Proc $p -Step 3 -Label "Node.js install" -StartPct 80 -MaxPct 95
+            Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue
+
+            $env:Path = "C:\Program Files\nodejs;$env:Path"
+            try {
+                $curMach = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+                if ($isAdmin -and $curMach -and $curMach -notlike "*C:\Program Files\nodejs*") {
+                    [System.Environment]::SetEnvironmentVariable("Path", "C:\Program Files\nodejs;$curMach", "Machine")
+                }
+            } catch { }
+            $node = Find-Node
+            if ($node) {
+                $ver = & $node -v
+                Log-Msg "Node.js v22 install ho gaya: $ver" 'OK'
+                Update-Step 3 'SUCCESS' 100 "Node.js $ver OK" "Step 3 : Node.js Installed"
+                return $true
+            }
+            Log-Msg "MSI install exit code: $rc — Portable Node.js v22 ZIP fallback try ho raha hai..." 'FIX'
         }
 
-        Log-Msg "Node.js silently install ho raha hai..." 'INSTALL'
-        Update-Step 3 'RUNNING' 80 "Installing Node.js..." "Node.js silently install ho raha hai..."
-        $p = Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /qn /norestart" -PassThru -WindowStyle Hidden
-        $rc = Wait-ProcAlive -Proc $p -Step 3 -Label "Node.js install" -StartPct 80 -MaxPct 96
-        Remove-Item $msi -Force -ErrorAction SilentlyContinue
-
-        # Refresh PATH
-        $env:Path = "C:\Program Files\nodejs;$env:Path"
-        [System.Environment]::SetEnvironmentVariable("Path", "C:\Program Files\nodejs;" + [System.Environment]::GetEnvironmentVariable("Path", "Machine"), "Machine")
-
-        $node = Find-Node
-        if ($node) {
-            $ver = & $node -v
-            Log-Msg "Node.js install ho gaya: $ver" 'OK'
-            Update-Step 3 'SUCCESS' 100 "Node.js $ver OK" "Step 3 : Node.js Installed"
-            return $true
+        # Portable ZIP fallback (works even if Windows Installer service or Admin rights blocked!)
+        $nodeZip = Join-Path $env:TEMP "node-v22.14.0-win-$archTag.zip"
+        $zipUrls = @(
+            "https://nodejs.org/dist/v22.14.0/node-v22.14.0-win-$archTag.zip",
+            "https://npmmirror.com/mirrors/node/v22.14.0/node-v22.14.0-win-$archTag.zip"
+        )
+        $zipOk = Get-FileSmart -Urls $zipUrls -OutFile $nodeZip -Step 3 -FromPct 45 -ToPct 88 -Label "Portable Node v22" -MinBytes 18000000 -ValidateType 'ZIP'
+        if ($zipOk) {
+            try {
+                $rtParent = Join-Path $ProjectDir '.runtime'
+                $rtExtr = Join-Path $rtParent 'extr'
+                $rtDest = Join-Path $rtParent 'nodejs'
+                if (Test-Path -LiteralPath $rtExtr) { Remove-Item -LiteralPath $rtExtr -Recurse -Force -ErrorAction SilentlyContinue }
+                if (Test-Path -LiteralPath $rtDest) { Remove-Item -LiteralPath $rtDest -Recurse -Force -ErrorAction SilentlyContinue }
+                New-Item -ItemType Directory -Force -Path $rtParent | Out-Null
+                Expand-Archive -LiteralPath $nodeZip -DestinationPath $rtExtr -Force -ErrorAction Stop
+                $inner = Get-ChildItem -LiteralPath $rtExtr -Directory | Select-Object -First 1
+                if ($inner) {
+                    Move-Item -LiteralPath $inner.FullName -Destination $rtDest -Force
+                }
+                Remove-Item -LiteralPath $rtExtr -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $nodeZip -Force -ErrorAction SilentlyContinue
+                $node = Find-Node
+                if ($node) {
+                    $ver = & $node -v
+                    Log-Msg "Portable Node.js v22 active ($ver): $node" 'OK'
+                    Update-Step 3 'REPAIRED' 100 "Portable Node $ver" "Step 3 : Portable Node Ready"
+                    return $true
+                }
+            } catch {
+                Log-Msg "Portable Node extract notice: $($_.Exception.Message)" 'WARN'
+            }
         }
+
+        Update-Step 3 'FAILED' 90 "Node.js v22 Required" "Step 3 : Node.js v22 install fail"
         return $false
     }
 
@@ -737,34 +945,50 @@ $workerBlock = {
         Update-Step 4 'RUNNING' 20 "Step 4 / 8 : NPM dependencies..." "better-sqlite3 aur Express packages verify ho rahe hain..."
         Log-Msg "NPM dependency packages verify ho rahe hain..." 'NPM'
 
-        # Check Visual C++ runtime needed by better-sqlite3 native binary
         Repair-VisualCppRuntime
 
         $node = Find-Node
-        if (-not $node) { $node = 'node' }
+        if (-not $node) {
+            Log-Msg "Compatible Node.js v22+ nahi mila — NPM install skip." 'ERROR'
+            Update-Step 4 'FAILED' 25 "Node v22 Missing" "Step 4 : Compatible Node.js zaroori hai"
+            return $false
+        }
 
-        # Test if all core packages (express, better-sqlite3, sharp, exceljs, multer) load cleanly
-        $depTestJs = "try{const D=require('better-sqlite3');require('express');require('sharp');require('exceljs');require('multer');const db=new D(':memory:');db.close();console.log('SQLITE_OK')}catch(e){console.log('FAIL:'+e.message)}"
-        $sqliteWorking = $false
-        try {
-            Push-Location -LiteralPath $ProjectDir
-            $testCmd = & $node -e $depTestJs 2>&1
-            Pop-Location
-            if ($testCmd -like "*SQLITE_OK*") {
-                $sqliteWorking = $true
+        $depTestJs = "try{const D=require('better-sqlite3');for(const m of['express','exceljs','multer','bcryptjs','jsonwebtoken','archiver','compression','cors','moment']){require(m);}const db=new D(':memory:');db.close();let hasSharp=true;try{require('sharp')}catch{hasSharp=false}console.log('SQLITE_OK:'+(hasSharp?'SHARP_OK':'SHARP_OPT'));}catch(e){console.log('FAIL:'+e.message)}"
+        $runDepCheck = {
+            try {
+                Push-Location -LiteralPath $ProjectDir
+                $out = & $node -e $depTestJs 2>&1
+                Pop-Location
+                return "$out"
+            } catch {
+                try { Pop-Location } catch {}
+                return "FAIL:$($_.Exception.Message)"
             }
-        } catch { try { Pop-Location } catch {} }
+        }
 
-        if ($sqliteWorking -and -not $CleanMode) {
-            Log-Msg "Saare npm packages (better-sqlite3 samet) 100% active aur verified hain." 'OK'
+        $chkInit = & $runDepCheck
+        if (($chkInit -like "*SQLITE_OK*") -and (-not $CleanMode)) {
+            Log-Msg "Saare core npm packages (better-sqlite3 samet) 100% active aur verified hain." 'OK'
             Update-Step 4 'SUCCESS' 100 "Packages Ready" "Step 4 : NPM Packages Verified"
             return $true
         }
 
         Log-Msg "npm install chal raha hai (--omit=dev, --ignore-scripts, IPv4-first)..." 'WARN'
         Update-Step 4 'RUNNING' 40 "npm install..." "Fast npm install chal raha hai..."
-        $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
-        $npmExe = if ($cmd) { $cmd.Source } else { "C:\Program Files\nodejs\npm.cmd" }
+
+        $nodeDir = Split-Path -Parent $node
+        $npmExe = Join-Path $nodeDir 'npm.cmd'
+        if (-not (Test-Path -LiteralPath $npmExe)) {
+            $cmd = Get-Command npm.cmd -ErrorAction SilentlyContinue
+            if ($cmd) { $npmExe = $cmd.Source }
+        }
+        if (-not (Test-Path -LiteralPath $npmExe)) {
+            Log-Msg "npm.cmd nahi mila ($nodeDir)." 'ERROR'
+            Update-Step 4 'FAILED' 45 "npm.cmd Missing" "Step 4 : npm.cmd missing"
+            return $false
+        }
+
         $prevNodeOpts = $env:NODE_OPTIONS
         $prevIgnScripts = $env:npm_config_ignore_scripts
         $env:NODE_OPTIONS = "--dns-result-order=ipv4first"
@@ -773,29 +997,25 @@ $workerBlock = {
         $npmOutLog = Join-Path $env:TEMP "cmbc_npm_out.log"
         $npmErrLog = Join-Path $env:TEMP "cmbc_npm_err.log"
 
-        # Use --ignore-scripts so prebuilt N-API binaries (better-sqlite3, sharp) install cleanly WITHOUT requiring Python or Visual Studio C++ tools
-        $npmArgs = "install --omit=dev --ignore-scripts --prefer-offline --fetch-retries=5 --fetch-retry-mintimeout=4000 --fetch-retry-maxtimeout=25000 --maxsockets=4 --no-audit --no-fund"
-        $p = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
+        # Clean half-written npm staging directories before installing
+        try {
+            $nmDir = Join-Path $ProjectDir 'node_modules'
+            if (Test-Path -LiteralPath $nmDir) {
+                Get-ChildItem -LiteralPath $nmDir -Filter '.*' -Directory -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        } catch { }
+
+        # Note: Do NOT omit optional (@img/sharp-win32-x64 is optionalDependency); use --ignore-scripts so prebuilds install without Python/VS!
+        $baseArgs = "install --omit=dev --ignore-scripts --fetch-retries=5 --fetch-retry-mintimeout=4000 --fetch-retry-maxtimeout=25000 --maxsockets=4 --no-audit --no-fund"
+
+        $p = Start-Process -FilePath $npmExe -ArgumentList $baseArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
         $rc = Wait-ProcAlive -Proc $p -Step 4 -Label "npm install" -StartPct 40 -MaxPct 92
 
-        $checkInstalled = {
-            try {
-                Push-Location -LiteralPath $ProjectDir
-                $out = & $node -e $depTestJs 2>&1
-                Pop-Location
-                return $out
-            } catch {
-                try { Pop-Location } catch {}
-                return "FAIL:$($_.Exception.Message)"
-            }
-        }
-
-        $chk1 = & $checkInstalled
+        $chk1 = & $runDepCheck
         if ($chk1 -like "*SQLITE_OK*") {
-            $env:NODE_OPTIONS = $prevNodeOpts
-            $env:npm_config_ignore_scripts = $prevIgnScripts
+            $env:NODE_OPTIONS = $prevNodeOpts; $env:npm_config_ignore_scripts = $prevIgnScripts
             Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
-            Log-Msg "npm install safalta se complete ho gaya. Saare core packages OK." 'OK'
+            Log-Msg "npm install safalta se complete ho gaya ($chk1)." 'OK'
             Update-Step 4 'SUCCESS' 100 "NPM Ready" "Step 4 : NPM Packages Installed"
             return $true
         } else {
@@ -803,23 +1023,29 @@ $workerBlock = {
             if ($errTail) { Log-Msg "Primary npm notice: $errTail" 'WARN' }
         }
 
-        # AI Self-Healing Fallback 1: Switch registry to npmmirror for FULL install
+        # Clean broken better-sqlite3 / cache before mirror attempt
+        try {
+            $bsDir = Join-Path $ProjectDir 'node_modules\better-sqlite3'
+            if (Test-Path -LiteralPath $bsDir) { Remove-Item -LiteralPath $bsDir -Recurse -Force -ErrorAction SilentlyContinue }
+            & $npmExe cache clean --force 2>$null | Out-Null
+        } catch { }
+
+        # AI Self-Healing Fallback 1: Pass --registry CLI flag (never mutates global ~/.npmrc)
         Log-Msg "Network / ISP slow detect hua — npmmirror fallback active kiya ja raha hai..." 'FIX'
         Update-Step 4 'HEALING' 60 "AI Fixing NPM..." "Mirror registry se dependencies install ho rahi hain..."
-        & $npmExe config set registry https://registry.npmmirror.com 2>$null
-        $p2 = Start-Process -FilePath $npmExe -ArgumentList $npmArgs -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
+        $p2 = Start-Process -FilePath $npmExe -ArgumentList ($baseArgs + " --registry=https://registry.npmmirror.com") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
         $rc2 = Wait-ProcAlive -Proc $p2 -Step 4 -Label "NPM Mirror Install" -StartPct 60 -MaxPct 95
 
         $okMirror = $false
-        $chk2 = & $checkInstalled
+        $chk2 = & $runDepCheck
         if ($chk2 -like "*SQLITE_OK*") { $okMirror = $true }
 
         if (-not $okMirror) {
-            # AI Self-Healing Fallback 2: Corporate/College proxy SSL inspection fallback
+            # AI Self-Healing Fallback 2: Corporate/Antivirus HTTPS proxy bypass scoped to command
             Log-Msg "SSL proxy bypass fallback try ho raha hai..." 'FIX'
-            $p3 = Start-Process -FilePath $npmExe -ArgumentList ($npmArgs + " --strict-ssl=false") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
+            $p3 = Start-Process -FilePath $npmExe -ArgumentList ($baseArgs + " --registry=https://registry.npmmirror.com --strict-ssl=false") -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $npmOutLog -RedirectStandardError $npmErrLog
             $rc3 = Wait-ProcAlive -Proc $p3 -Step 4 -Label "NPM Proxy Bypass" -StartPct 75 -MaxPct 97
-            $chk3 = & $checkInstalled
+            $chk3 = & $runDepCheck
             if ($chk3 -like "*SQLITE_OK*") {
                 $okMirror = $true
             } else {
@@ -828,13 +1054,12 @@ $workerBlock = {
             }
         }
 
-        & $npmExe config set registry https://registry.npmjs.org 2>$null
         $env:NODE_OPTIONS = $prevNodeOpts
         $env:npm_config_ignore_scripts = $prevIgnScripts
         Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
 
         if ($okMirror) {
-            Log-Msg "Saare packages mirror/bypass se safalta se ready ho gaye." 'OK'
+            Log-Msg "Saare core packages mirror/bypass se safalta se ready ho gaye." 'OK'
             Update-Step 4 'REPAIRED' 100 "Packages Repaired" "Step 4 : NPM Repaired by AI"
             return $true
         }
@@ -851,101 +1076,121 @@ $workerBlock = {
         Log-Msg "Embedded SQLite database setup shuru ho raha hai..." 'SQLITE'
 
         $node = Find-Node
-        if (-not $node) { $node = 'node' }
+        if (-not $node) {
+            Log-Msg "SQLite setup skipped: compatible Node.js v22+ missing." 'ERROR'
+            Update-Step 5 'FAILED' 25 "Node v22 Missing" "Step 5 : Node.js v22 zaroori hai"
+            return $false
+        }
 
         $dataDir = Join-Path $ProjectDir 'database\data'
-        if (-not (Test-Path $dataDir)) {
+        if (-not (Test-Path -LiteralPath $dataDir)) {
             New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
         }
 
-        # Clear stale WAL / SHM locks if node is not running
-        try {
-            $wal = Join-Path $dataDir 'cash_management.db-wal'
-            $shm = Join-Path $dataDir 'cash_management.db-shm'
-            if (Test-Path $wal) { Remove-Item $wal -Force -ErrorAction SilentlyContinue }
-            if (Test-Path $shm) { Remove-Item $shm -Force -ErrorAction SilentlyContinue }
-        } catch { }
+        # Safe WAL checkpoint BEFORE touching WAL/SHM files (Zero Data Loss!)
+        $dbFile = Join-Path $dataDir 'cash_management.db'
+        if (Test-Path -LiteralPath $dbFile) {
+            try {
+                Push-Location -LiteralPath $ProjectDir
+                & $node -e "try{const D=require('better-sqlite3');const db=new D('database/data/cash_management.db',{timeout:4000});db.pragma('wal_checkpoint(TRUNCATE)');db.close();}catch{}" 2>$null | Out-Null
+                Pop-Location
+            } catch { try { Pop-Location } catch {} }
+        }
 
-        # Forcefully ensure .env is correctly set to SQLite and Port 4000
+        $appPort = [int]$sync.ResolvedPort
+        if ($appPort -le 0) { $appPort = 4000 }
+
+        # Write .env UTF-8 WITHOUT BOM (cmd.exe / server-supervisor safe!)
         $envFile = Join-Path $ProjectDir '.env'
         $jwtBytes = New-Object byte[] 48
         $jwtRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
         try { $jwtRng.GetBytes($jwtBytes) } finally { $jwtRng.Dispose() }
         $jwtSecret = [Convert]::ToBase64String($jwtBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-        $needsEnvFix = $false
-        if (-not (Test-Path $envFile)) {
-            $needsEnvFix = $true
+
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        if (-not (Test-Path -LiteralPath $envFile)) {
+            $envContent = "PORT=$appPort`r`nHOST=0.0.0.0`r`nDB_TYPE=sqlite`r`nDB_FILE=database/data/cash_management.db`r`nJWT_SECRET=$jwtSecret`r`nALLOW_LOCAL_AUTO_LOGIN=true`r`nAUTO_UPDATE_DISABLED=false`r`n"
+            [System.IO.File]::WriteAllText($envFile, $envContent, $utf8NoBom)
+            Log-Msg "Configuration file .env (Port $appPort, SQLite, Unique JWT) ready." 'OK'
         } else {
-            $envTxt = Get-Content $envFile -Raw -ErrorAction SilentlyContinue
-            if ($envTxt -notmatch "DB_TYPE\s*=\s*sqlite" -or $envTxt -notmatch "PORT\s*=\s*4000") {
-                $needsEnvFix = $true
-            }
-        }
-        if ($needsEnvFix) {
-            Set-Content -Path $envFile -Value "PORT=4000`r`nHOST=0.0.0.0`r`nDB_TYPE=sqlite`r`nDB_FILE=database/data/cash_management.db`r`nJWT_SECRET=$jwtSecret`r`nALLOW_LOCAL_AUTO_LOGIN=true`r`nAUTO_UPDATE_DISABLED=false" -Encoding UTF8
-            Log-Msg "Configuration file .env (Port 4000, SQLite) configure ho gaya." 'OK'
-        } else {
-            $envTxt = Get-Content $envFile -Raw -ErrorAction Stop
-            if ($envTxt -match '(?m)^JWT_SECRET\s*=\s*(?:$|cash_management_sqlite_edition_secret_key_4000\s*$)') {
-                if ($envTxt -match '(?m)^JWT_SECRET\s*=') {
-                    $envTxt = [regex]::Replace($envTxt, '(?m)^JWT_SECRET\s*=.*$', "JWT_SECRET=$jwtSecret")
+            $envTxt = Get-Content -LiteralPath $envFile -Raw -ErrorAction SilentlyContinue
+            if ($envTxt) {
+                $envTxt = $envTxt.TrimStart([char]0xFEFF)
+                if ($envTxt -match '(?m)^\s*PORT\s*=') {
+                    $envTxt = [regex]::Replace($envTxt, '(?m)^\s*PORT\s*=.*$', "PORT=$appPort")
                 } else {
+                    $envTxt = "PORT=$appPort`r`n" + $envTxt
+                }
+                if ($envTxt -notmatch '(?m)^\s*DB_TYPE\s*=\s*sqlite') {
+                    if ($envTxt -match '(?m)^\s*DB_TYPE\s*=') { $envTxt = [regex]::Replace($envTxt, '(?m)^\s*DB_TYPE\s*=.*$', 'DB_TYPE=sqlite') }
+                    else { $envTxt = $envTxt.TrimEnd() + "`r`nDB_TYPE=sqlite`r`n" }
+                }
+                if ($envTxt -match '(?m)^JWT_SECRET\s*=\s*(?:$|cash_management_sqlite_edition_secret_key_4000\s*$)') {
+                    $envTxt = [regex]::Replace($envTxt, '(?m)^JWT_SECRET\s*=.*$', "JWT_SECRET=$jwtSecret")
+                } elseif ($envTxt -notmatch '(?m)^JWT_SECRET\s*=\S+') {
                     $envTxt = $envTxt.TrimEnd() + "`r`nJWT_SECRET=$jwtSecret`r`n"
                 }
-                [System.IO.File]::WriteAllText($envFile, $envTxt, (New-Object System.Text.UTF8Encoding($false)))
-                Log-Msg "Legacy/default JWT secret ko unique secret se replace kiya gaya." 'OK'
+                [System.IO.File]::WriteAllText($envFile, $envTxt, $utf8NoBom)
             }
         }
 
         $setupScript = Join-Path $ProjectDir 'setup-database.js'
-        if (-not (Test-Path $setupScript)) {
+        if (-not (Test-Path -LiteralPath $setupScript)) {
             $setupScript = Join-Path $ProjectDir 'database\setup_sqlite.js'
         }
 
+        $dbOutLog = Join-Path $env:TEMP 'cmbc_db_out.log'
+        $dbErrLog = Join-Path $env:TEMP 'cmbc_db_err.log'
         Update-Step 5 'RUNNING' 60 "Schema & Seeding..." "Starter Accounts, Categories, CSC Services seed ho rahe hain..."
-        $p = Start-Process -FilePath $node -ArgumentList "`"$setupScript`"" -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden
+        $p = Start-Process -FilePath $node -ArgumentList "`"$setupScript`"" -WorkingDirectory $ProjectDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $dbOutLog -RedirectStandardError $dbErrLog
         $rc = Wait-ProcAlive -Proc $p -Step 5 -Label "SQLite setup" -StartPct 60 -MaxPct 95
 
-        $dbFile = Join-Path $dataDir 'cash_management.db'
-        if ((Test-Path $dbFile) -and ((Get-Item $dbFile).Length -gt 5000)) {
+        if ($rc -eq 0 -and (Test-Path -LiteralPath $dbFile) -and ((Get-Item -LiteralPath $dbFile).Length -gt 5000)) {
+            Remove-Item $dbOutLog, $dbErrLog -Force -ErrorAction SilentlyContinue
             Log-Msg "SQLite database 100% Ready (Zero SQL Server setup required!)." 'OK'
             Update-Step 5 'SUCCESS' 100 "SQLite DB 100% Ready" "Step 5 : SQLite Database 100% Ready"
             return $true
         }
 
-        # Auto-Repair retry with alternate schema runner
+        $dbErrTxt = (Get-Content $dbErrLog -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | '
+        if ($dbErrTxt) { Log-Msg "SQLite setup notice: $dbErrTxt" 'WARN' }
+
+        # Auto-Repair retry: fix locale-safe NTFS ACLs (*S-1-5-32-545 = Users) + retry direct runner
         Log-Msg "SQLite setup retry kiya ja raha hai (AI Auto-Repair)..." 'FIX'
         Update-Step 5 'HEALING' 75 "AI Auto-Repair DB..." "Database permissions aur alternative runner..."
+        try { & icacls "$ProjectDir" /grant '*S-1-5-32-545:(OI)(CI)F' /T /Q 2>$null | Out-Null } catch { }
         try {
-            & icacls "$dataDir" /grant Everyone:(OI)(CI)F /T /Q | Out-Null
-        } catch { }
-        $altScript = Join-Path $ProjectDir 'database\setup_sqlite.js'
-        & $node $altScript
-        if ((Test-Path $dbFile) -and ((Get-Item $dbFile).Length -gt 5000)) {
+            Push-Location -LiteralPath $ProjectDir
+            $altScript = Join-Path $ProjectDir 'database\setup_sqlite.js'
+            & $node $altScript 2>&1 | Out-Null
+            $altRc = $LASTEXITCODE
+            Pop-Location
+        } catch { try { Pop-Location } catch {}; $altRc = 1 }
+
+        Remove-Item $dbOutLog, $dbErrLog -Force -ErrorAction SilentlyContinue
+        if ($altRc -eq 0 -and (Test-Path -LiteralPath $dbFile) -and ((Get-Item -LiteralPath $dbFile).Length -gt 5000)) {
             Log-Msg "SQLite database AI auto-repair me ready ho gaya." 'OK'
             Update-Step 5 'REPAIRED' 100 "SQLite DB Ready" "Step 5 : SQLite Database Ready"
             return $true
         }
 
+        Update-Step 5 'FAILED' 85 "SQLite Setup Failed" "Step 5 : SQLite DB setup fail"
         return $false
     }
 
     # ========================================================================
-    # STEP 6: Windows Firewall & Defender Unblock (Port 4000 + node.exe)
+    # STEP 6: Windows Firewall & Defender Unblock (Dynamic Port + node.exe)
     # ========================================================================
     function Exec-Step6 {
-        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall & Security..." "Local Wi-Fi / LAN & node.exe firewall rules configure ho rahe hain..."
-        Log-Msg "Windows Firewall rules (Port 4000 + node.exe) aur SmartScreen unblock verify ho raha hai..." 'NETWORK'
+        $appPort = [int]$sync.ResolvedPort; if ($appPort -le 0) { $appPort = 4000 }
+        Update-Step 6 'RUNNING' 30 "Step 6 / 8 : Firewall & Security..." "Local Wi-Fi / LAN & node.exe firewall rules configure ho rahe hain (Port $appPort)..."
+        Log-Msg "Windows Firewall rules (Port $appPort + node.exe) aur SmartScreen unblock verify ho raha hai..." 'NETWORK'
         $node = Find-Node
         if (-not $node) { $node = 'C:\Program Files\nodejs\node.exe' }
 
-        try {
-            # Clear Zone.Identifier / SmartScreen blocks on all project files
-            Get-ChildItem -Path $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
-        } catch { }
+        try { Get-ChildItem -LiteralPath $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
 
         try {
-            # Remove any stale Windows-auto-created Block rules for node.exe (Public Wi-Fi Cancel bug)
             $blockRules = Get-NetFirewallRule -Direction Inbound -Action Block -ErrorAction SilentlyContinue
             foreach ($br in $blockRules) {
                 try {
@@ -959,35 +1204,33 @@ $workerBlock = {
         } catch { }
 
         try {
-            $ruleName = "CSC BC Apna Hisaab SQLite (Port 4000)"
+            $ruleName = "CSC BC Apna Hisaab SQLite (Port $appPort)"
             if (-not (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
-                New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort $appPort -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
             }
-            $ruleOut = "CSC BC Apna Hisaab SQLite Out (Port 4000)"
+            $ruleOut = "CSC BC Apna Hisaab SQLite Out (Port $appPort)"
             if (-not (Get-NetFirewallRule -DisplayName $ruleOut -ErrorAction SilentlyContinue)) {
-                New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -LocalPort 4000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -LocalPort $appPort -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
             }
-            if ($node -and (Test-Path $node)) {
+            if ($node -and (Test-Path -LiteralPath $node)) {
                 $nodeRule = "CSC BC Apna Hisaab Node.js Runtime"
                 if (-not (Get-NetFirewallRule -DisplayName $nodeRule -ErrorAction SilentlyContinue)) {
                     New-NetFirewallRule -DisplayName $nodeRule -Program $node -Direction Inbound -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
                     New-NetFirewallRule -DisplayName "$nodeRule Out" -Program $node -Direction Outbound -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null
                 }
             }
-            # Backup netsh command (works even if NetSecurity module is restricted on Windows 7/10 Home)
             & netsh advfirewall firewall show rule name="$ruleName" >$null 2>&1
             if ($LASTEXITCODE -ne 0) {
-                & netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=4000 profile=any >$null 2>&1
+                & netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=$appPort profile=any >$null 2>&1
             }
-            Log-Msg "Firewall Port 4000 + Node.js allow rules (Private + Public LAN) OK." 'OK'
+            Log-Msg "Firewall Port $appPort + Node.js allow rules (Private + Public LAN) OK." 'OK'
         } catch {
             Log-Msg "Firewall rule notice: $($_.Exception.Message)" 'WARN'
         }
 
         try {
-            # Prevent Windows Defender from locking SQLite DB/WAL or .node native modules
             Add-MpPreference -ExclusionPath $ProjectDir -ErrorAction SilentlyContinue
-            if ($node -and (Test-Path $node)) {
+            if ($node -and (Test-Path -LiteralPath $node)) {
                 Add-MpPreference -ExclusionProcess $node -ErrorAction SilentlyContinue
             }
         } catch { }
@@ -997,24 +1240,37 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 7: Desktop Shortcuts & Auto-Boot Configuration
+    # STEP 7: Unified Desktop + Start Menu Shortcuts & Auto-Boot
     # ========================================================================
     function Exec-Step7 {
-        Update-Step 7 'RUNNING' 30 "Step 7 / 8 : Desktop shortcut..." "Desktop aur Start Menu shortcuts create ho rahe hain..."
-        Log-Msg "Desktop shortcut create ho raha hai..." 'SYSTEM'
+        Update-Step 7 'RUNNING' 30 "Step 7 / 8 : Shortcuts & Auto-Boot..." "Unified Desktop, Start Menu aur Auto-Boot configure ho rahe hain..."
+        Log-Msg "Unified Desktop & Start Menu shortcuts configure ho rahe hain..." 'SYSTEM'
         try {
-            $desktop = [Environment]::GetFolderPath("Desktop")
-            $ws = New-Object -ComObject WScript.Shell
-            $scPath = Join-Path $desktop "CSC & BC Apna Hisaab (SQLite).lnk"
-            $sc = $ws.CreateShortcut($scPath)
-            $sc.TargetPath = Join-Path $ProjectDir "START.bat"
-            $sc.WorkingDirectory = $ProjectDir
-            $ico = Join-Path $ProjectDir "public\favicon.ico"
-            if (Test-Path $ico) { $sc.IconLocation = $ico }
-            $sc.Description = "CSC & BC Apna Hisaab - 100% Zero-Install SQLite Edition"
-            $sc.Save()
-            Log-Msg "Desktop shortcut ban gaya: 'CSC & BC Apna Hisaab (SQLite)'" 'OK'
+            $helperPs = Join-Path $ProjectDir 'utils\create_shortcuts.ps1'
+            if (Test-Path -LiteralPath $helperPs) {
+                & $helperPs -ProjectDir $ProjectDir | Out-Null
+            } else {
+                $desktop = [Environment]::GetFolderPath("Desktop")
+                $ws = New-Object -ComObject WScript.Shell
+                $scPath = Join-Path $desktop "CSC & BC Apna Hisaab (SQLite).lnk"
+                $sc = $ws.CreateShortcut($scPath)
+                $sc.TargetPath = Join-Path $ProjectDir "START.bat"
+                $sc.WorkingDirectory = $ProjectDir
+                $ico = Join-Path $ProjectDir "public\favicon.ico"
+                if (Test-Path -LiteralPath $ico) { $sc.IconLocation = $ico }
+                $sc.Description = "CSC & BC Apna Hisaab - 100% Zero-Install SQLite Edition"
+                $sc.Save()
+            }
+            $node = Find-Node
+            $autoJs = Join-Path $ProjectDir 'utils\windows_autostart.js'
+            if ($node -and (Test-Path -LiteralPath $autoJs)) {
+                Push-Location -LiteralPath $ProjectDir
+                & $node $autoJs 2>$null | Out-Null
+                Pop-Location
+            }
+            Log-Msg "Desktop, Start Menu aur Windows Boot Auto-Start ready: 'CSC & BC Apna Hisaab (SQLite)'" 'OK'
         } catch {
+            try { Pop-Location } catch {}
             Log-Msg "Shortcut notice: $($_.Exception.Message)" 'WARN'
         }
         Update-Step 7 'SUCCESS' 100 "Shortcuts Ready" "Step 7 : Shortcuts Configured"
@@ -1022,121 +1278,108 @@ $workerBlock = {
     }
 
     # ========================================================================
-    # STEP 8: Live Health Check & Instant Browser Launch
+    # STEP 8: Live Health Check & De-Elevated Browser Launch
     # ========================================================================
+    function Open-BrowserSafe {
+        param([string]$Url)
+        try { Start-Process 'explorer.exe' -ArgumentList $Url -ErrorAction Stop; return } catch { }
+        try { Start-Process $Url } catch { }
+    }
+
     function Exec-Step8 {
-        Update-Step 8 'RUNNING' 15 "Step 8 / 8 : Server live launch..." "http://localhost:4000 live server start ho raha hai..."
-        Log-Msg "Server background me start ho raha hai..." 'START'
+        $appPort = [int]$sync.ResolvedPort; if ($appPort -le 0) { $appPort = 4000 }
+        $appUrl = "http://localhost:$appPort"
+        Update-Step 8 'RUNNING' 15 "Step 8 / 8 : Server live launch..." "$appUrl live server start ho raha hai..."
+        Log-Msg "Server background me start ho raha hai (Port $appPort)..." 'START'
 
-        # Ensure port 4000 is clean
-        Repair-PortConflict 4000
-
-        # Ensure logs dir
         $logsDir = Join-Path $ProjectDir "logs"
-        if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
+        if (-not (Test-Path -LiteralPath $logsDir)) { New-Item -ItemType Directory -Force -Path $logsDir | Out-Null }
+        $stopSentinel = Join-Path $logsDir '.stop_supervisor'
+        if (Test-Path -LiteralPath $stopSentinel) { Remove-Item -LiteralPath $stopSentinel -Force -ErrorAction SilentlyContinue }
+
+        $appPort = Repair-PortConflict $appPort
+        $sync.ResolvedPort = $appPort
+        $appUrl = "http://localhost:$appPort"
 
         $node = Find-Node
-        if (-not $node) { $node = 'node' }
+        if (-not $node) {
+            Log-Msg "Server start nahi ho sakta: Node.js v22+ missing." 'ERROR'
+            Update-Step 8 'FAILED' 20 "Node Missing" "Step 8 : Node.js missing"
+            return $false
+        }
 
-        # Launch via server-supervisor.bat (ensures persistence + auto-restart + clean log output)
         $supBat = Join-Path $ProjectDir "server-supervisor.bat"
-        if (Test-Path $supBat) {
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$supBat`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        if (Test-Path -LiteralPath $supBat) {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$supBat`"`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
         } else {
             $outLog = Join-Path $logsDir "server-run.log"
             $errLog = Join-Path $logsDir "server-err.log"
             Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog
         }
 
-        $alive = $false
-        for ($i = 1; $i -le 20; $i++) {
-            $t = $i * 1
-            $sync.Activity = "Server ka response aa raha hai$(New-Dots $i) ($t s)"
-            $sync.Elapsed = "{0:mm\:ss}" -f ([TimeSpan]::FromSeconds($t))
-            Update-Step 8 'RUNNING' (15 + [Math]::Min(80, $i * 4)) "Server check ($t s)..." "http://localhost:4000 ka response aa raha hai ($t s)..."
-            Start-Sleep -Seconds 1
-
-            # Check 1: Port listening check
+        $testHealth = {
             try {
-                $conns = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
-                if ($conns) {
-                    $alive = $true
-                    break
-                }
-            } catch { }
-
-            # Check 2: Direct HTTP response
-            try {
-                $req = [System.Net.HttpWebRequest]::Create("http://localhost:4000/api/health")
+                $req = [System.Net.HttpWebRequest]::Create("$appUrl/api/health")
                 $req.Timeout = 1500
                 $req.Method = "GET"
                 $resp = $req.GetResponse()
                 $code = [int]$resp.StatusCode
                 $resp.Close()
-                if ($code -ge 200 -and $code -lt 600) {
-                    $alive = $true
-                    break
-                }
-            } catch [System.Net.WebException] {
-                if ($_.Response) {
-                    $alive = $true
-                    $_.Response.Close()
-                    break
-                }
-            } catch { }
+                return ($code -eq 200)
+            } catch { return $false }
+        }
+
+        $alive = $false
+        for ($i = 1; $i -le 22; $i++) {
+            $sync.Activity = "Server ka response aa raha hai$(New-Dots $i) ($i s)"
+            $sync.Elapsed = "{0:mm\:ss}" -f ([TimeSpan]::FromSeconds($i))
+            Update-Step 8 'RUNNING' (15 + [Math]::Min(80, $i * 4)) "Server check ($i s)..." "$appUrl ka response aa raha hai ($i s)..."
+            Start-Sleep -Seconds 1
+            if (& $testHealth) { $alive = $true; break }
         }
 
         if ($alive) {
-            Log-Msg "Application 100% LIVE hai: http://localhost:4000" 'OK'
+            Log-Msg "Application 100% LIVE hai: $appUrl" 'OK'
             Update-Step 8 'SUCCESS' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-            try { Start-Process "http://localhost:4000" } catch { }
+            Open-BrowserSafe $appUrl
             return $true
         }
 
-        # AI Self-Healing Server Restart
-        Log-Msg "Server restart & AI schema self-heal chal raha hai..." 'FIX'
+        # AI Self-Healing Restart Attempt
+        Log-Msg "Server response slow/fail — AI Self-Healing DB & Restart chal raha hai..." 'FIX'
         Update-Step 8 'HEALING' 85 "AI Diagnostics..." "Server reload aur schema verification..."
-        Repair-PortConflict 4000
-
-        # Run database setup directly to fix any potential schema hiccups
+        $appPort = Repair-PortConflict $appPort
         $setupScript = Join-Path $ProjectDir 'setup-database.js'
-        if (Test-Path $setupScript) {
-            try { & $node $setupScript } catch { }
+        if (Test-Path -LiteralPath $setupScript) {
+            Push-Location -LiteralPath $ProjectDir
+            try { & $node $setupScript 2>&1 | Out-Null } catch { }
+            Pop-Location
         }
-
-        if (Test-Path $supBat) {
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$supBat`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
+        if (Test-Path -LiteralPath $supBat) {
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$supBat`"`"" -WorkingDirectory $ProjectDir -WindowStyle Hidden
         } else {
             Start-Process -FilePath $node -ArgumentList "server.js" -WorkingDirectory $ProjectDir -WindowStyle Hidden
         }
-        Start-Sleep -Seconds 4
 
-        for ($i = 1; $i -le 10; $i++) {
-            try {
-                $conns = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue
-                if ($conns) {
-                    $alive = $true
-                    break
-                }
-            } catch { }
+        for ($i = 1; $i -le 12; $i++) {
             Start-Sleep -Seconds 1
+            if (& $testHealth) { $alive = $true; break }
         }
 
         if ($alive) {
-            Log-Msg "Server auto-repair ke baad LIVE ho gaya: http://localhost:4000" 'OK'
+            Log-Msg "Server AI auto-repair ke baad LIVE ho gaya: $appUrl" 'OK'
             Update-Step 8 'REPAIRED' 100 "LIVE 100%" "Step 8 : Application 100% LIVE!"
-            try { Start-Process "http://localhost:4000" } catch { }
+            Open-BrowserSafe $appUrl
             return $true
         }
 
-        Log-Msg "Server background me start ho chuka hai. Browser open ho raha hai..." 'OK'
-        Update-Step 8 'SUCCESS' 100 "Server Ready" "Step 8 : Server Ready"
-        try { Start-Process "http://localhost:4000" } catch { }
-        return $true
+        Log-Msg "Server HTTP 200 health response nahi de paya ($appUrl). Kripya logs\server-run.log check karein ya AI_DOCTOR_SQLITE.bat chalayein." 'ERROR'
+        Update-Step 8 'FAILED' 95 "Server Health Fail" "Step 8 : Live health check failed"
+        return $false
     }
 
     # ========================================================================
-    # MASTER WORKFLOW WITH 100% LIVE AI AUTO-REPAIR LOOP
+    # MASTER WORKFLOW WITH HONEST STATUS & LIVE AI AUTO-REPAIR LOOP
     # ========================================================================
     try {
         Log-Msg "============================================================" 'START'
@@ -1145,74 +1388,90 @@ $workerBlock = {
         Log-Msg " Target Directory: $ProjectDir" 'START'
         Log-Msg "============================================================" 'START'
 
-        # STEP 1
         $ok1 = Exec-Step1
         if (-not $ok1) {
-            Log-Msg "[AI AUTO-FIX] Step 1 permissions issue. Retrying in bypass mode..." 'WARN'
-            Update-Step 1 'HEALING' 70 "AI Auto-Fixing..." "Permissions bypass..."
-            Start-Sleep -Seconds 1
-            Update-Step 1 'REPAIRED' 100 "Admin Rights Verified" "Step 1 : Verified by AI"
+            $sync.HasError = $true
+            $sync.ErrorSummary = "64-bit Windows (x64/ARM64) zaroori hai."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
         }
 
-        # STEP 2
         $ok2 = Exec-Step2
         if (-not $ok2) {
-            Log-Msg "[AI AUTO-FIX] Step 2 project files sync issue. Multi-CDN mirror active..." 'WARN'
-            Update-Step 2 'HEALING' 70 "AI Auto-Fixing..." "CDN Mirror Sync..."
+            Log-Msg "[AI AUTO-FIX] Step 2 project files sync retry..." 'WARN'
+            Update-Step 2 'HEALING' 70 "AI Auto-Fixing..." "CDN + DoH Mirror Sync..."
             Repair-DnsAndNetwork
             $ok2 = Exec-Step2
             if ($ok2) { Update-Step 2 'REPAIRED' 100 "Project Files Ready" "Step 2 : Fixed by AI" }
         }
-
-        # STEP 3
-        $ok3 = Exec-Step3
-        if (-not $ok3) {
-            Log-Msg "[AI AUTO-FIX] Step 3 Node.js check. Re-scanning system paths..." 'WARN'
-            Update-Step 3 'HEALING' 70 "AI Auto-Fixing..." "Node.js PATH reload..."
-            $node = Find-Node
-            if ($node) {
-                Update-Step 3 'REPAIRED' 100 "Node.js Ready" "Step 3 : Fixed by AI"
-            } else {
-                Log-Msg "Node.js install retry ho raha hai..." 'FIX'
-                $ok3 = Exec-Step3
-                if ($ok3) { Update-Step 3 'REPAIRED' 100 "Node.js Ready" "Step 3 : Fixed by AI" }
-            }
+        if (-not $ok2) {
+            $sync.HasError = $true
+            $sync.ErrorSummary = "Project files GitHub/CDN se download nahi ho sakin (Internet/Firewall block)."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
         }
 
-        # STEP 4
+        $ok3 = Exec-Step3
+        if (-not $ok3) {
+            Log-Msg "[AI AUTO-FIX] Step 3 Node.js retry..." 'WARN'
+            Update-Step 3 'HEALING' 70 "AI Auto-Fixing..." "Node.js v22 retry..."
+            Repair-DnsAndNetwork
+            $ok3 = Exec-Step3
+            if ($ok3) { Update-Step 3 'REPAIRED' 100 "Node.js Ready" "Step 3 : Fixed by AI" }
+        }
+        if (-not $ok3) {
+            $sync.HasError = $true
+            $sync.ErrorSummary = "Node.js v22+ install nahi ho saka."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
+        }
+
         $ok4 = Exec-Step4
         if (-not $ok4) {
-            Log-Msg "[AI AUTO-FIX] Step 4 npm packages issue. Running auto-rebuild..." 'WARN'
+            Log-Msg "[AI AUTO-FIX] Step 4 npm packages issue. Cleaning & retrying..." 'WARN'
             Update-Step 4 'HEALING' 70 "AI Auto-Fixing..." "NPM Rebuild & Mirror..."
             Repair-VisualCppRuntime
             $ok4 = Exec-Step4
             if ($ok4) { Update-Step 4 'REPAIRED' 100 "NPM Packages Ready" "Step 4 : Fixed by AI" }
         }
+        if (-not $ok4) {
+            $sync.HasError = $true
+            $sync.ErrorSummary = "NPM packages / better-sqlite3 install fail hua."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
+        }
 
-        # STEP 5
         $ok5 = Exec-Step5
         if (-not $ok5) {
-            Log-Msg "[AI AUTO-FIX] Step 5 SQLite database. Auto-repairing permissions..." 'WARN'
+            Log-Msg "[AI AUTO-FIX] Step 5 SQLite database auto-repair..." 'WARN'
             Update-Step 5 'HEALING' 70 "AI Auto-Fixing..." "SQLite DB Permissions..."
             $ok5 = Exec-Step5
             if ($ok5) { Update-Step 5 'REPAIRED' 100 "SQLite DB Ready" "Step 5 : Fixed by AI" }
         }
+        if (-not $ok5) {
+            $sync.HasError = $true
+            $sync.ErrorSummary = "SQLite database initialize nahi ho paya."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
+        }
 
-        # STEP 6
         $ok6 = Exec-Step6
-
-        # STEP 7
         $ok7 = Exec-Step7
-
-        # STEP 8
         $ok8 = Exec-Step8
+        if (-not $ok8) {
+            $sync.HasError = $true
+            $sync.ErrorSummary = "Server port $($sync.ResolvedPort) par live health response nahi mila."
+            $sync.OverallPct = 100; $sync.IsComplete = $true
+            return
+        }
 
         $sync.OverallPct = 100
         $sync.IsComplete = $true
-        Log-Msg "🎉 CONGRATULATIONS! SQLITE EDITION 100% SAFALTA SE INSTALL HO GAYA!" 'SUCCESS'
+        Log-Msg "🎉 CONGRATULATIONS! SQLITE EDITION 100% SAFALTA SE INSTALL HO GAYA! (Port $($sync.ResolvedPort))" 'SUCCESS'
     } catch {
         $sync.HasError = $true
-        Log-Msg "Setup notice: $($_.Exception.Message)" 'WARN'
+        $sync.ErrorSummary = $_.Exception.Message
+        Log-Msg "Setup error: $($_.Exception.Message)" 'ERROR'
         $sync.OverallPct = 100
         $sync.IsComplete = $true
     }
@@ -1222,14 +1481,19 @@ $workerBlock = {
 # GUI WIZARD (WPF/XAML) - Modern Dark Theme with Emerald Glow
 # ============================================================================
 if ($guiAvailable) {
-    [xml]$xaml = @'
+    $workH = [int][System.Windows.SystemParameters]::WorkArea.Height
+    $winH = if ($workH -gt 480) { [Math]::Min(680, $workH - 32) } else { 620 }
+    $xamlText = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="CSC &amp; BC Apna Hisaab - SQLite Edition 1-Click Wizard"
-        Height="680" Width="760"
+        Height="__WIN_H__" Width="760"
+        MinHeight="520" MinWidth="660"
         WindowStartupLocation="CenterScreen"
         Background="#0a0f1d"
-        ResizeMode="CanMinimize">
+        ResizeMode="CanResizeWithGrip">
+'@ -replace '__WIN_H__', "$winH"
+    $xamlTail = @'
     <Window.Resources>
         <Style TargetType="ProgressBar">
             <Setter Property="Foreground" Value="#10b981"/>
@@ -1402,6 +1666,7 @@ if ($guiAvailable) {
     </Grid>
 </Window>
 '@
+    [xml]$xaml = $xamlText + $xamlTail
 
     try {
         $reader = New-Object System.Xml.XmlNodeReader $xaml
@@ -1419,7 +1684,13 @@ if ($guiAvailable) {
         $global:LaunchBtnText     = $global:Window.FindName("LaunchBtnText")
 
         $global:LaunchBtn.Add_Click({
-            try { Start-Process "http://localhost:4000" } catch { }
+            $p = if ($sync.ResolvedPort) { $sync.ResolvedPort } else { 4000 }
+            if ($sync.HasError) {
+                $docBat = Join-Path $ProjectDir 'AI_DOCTOR_SQLITE.bat'
+                if (Test-Path -LiteralPath $docBat) { Start-Process -FilePath $docBat }
+            } else {
+                try { Start-Process 'explorer.exe' -ArgumentList "http://localhost:$p" } catch { try { Start-Process "http://localhost:$p" } catch {} }
+            }
             $global:Window.Close()
         })
 
@@ -1453,6 +1724,9 @@ if ($guiAvailable) {
                     foreach ($err in $ps.Streams.Error) {
                         $global:LogTextBox.AppendText("[WORKER ERROR] $err`r`n")
                     }
+                    $sync.HasError = $true
+                    $sync.ErrorSummary = 'Unexpected PowerShell worker failure'
+                    $sync.IsComplete = $true
                 }
             }
             $ts = $stopwatch.Elapsed
@@ -1549,19 +1823,33 @@ if ($guiAvailable) {
             if ($sync.IsComplete) {
                 $timer.Stop()
                 $stopwatch.Stop()
+                $p = if ($sync.ResolvedPort) { $sync.ResolvedPort } else { 4000 }
                 $global:LaunchBtn.IsEnabled = $true
-                $global:LaunchBtn.Background = $converter.ConvertFromString("#10b981")
-                $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
-                $global:LaunchBtnText.Text = "CSC & BC Apna Hisaab kholein (http://localhost:4000)"
-                $global:CurrentActionText.Text = "SAARE 8 STEPS 100% VERIFIED & CONFIGURED!"
-                $global:CurrentActionText.Foreground = $converter.ConvertFromString("#34d399")
-                $global:ActivityText.Text = "Sab kuch ready hai - 15 second me setup poora ho gaya."
+                if ($sync.HasError) {
+                    $global:LaunchBtn.Background = $converter.ConvertFromString("#dc2626")
+                    $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
+                    $global:LaunchBtnText.Text = "AI Live Doctor Chalayein (Auto-Fix Issue)"
+                    $global:CurrentActionText.Text = "SETUP ISSUE: $($sync.ErrorSummary)"
+                    $global:CurrentActionText.Foreground = $converter.ConvertFromString("#f87171")
+                    $global:ActivityText.Text = "Logs check karein ya AI Live Doctor se auto-fix chalayein."
+                } else {
+                    $global:LaunchBtn.Background = $converter.ConvertFromString("#10b981")
+                    $global:LaunchBtn.Foreground = [System.Windows.Media.Brushes]::White
+                    $global:LaunchBtnText.Text = "CSC & BC Apna Hisaab kholein (http://localhost:$p)"
+                    $global:CurrentActionText.Text = "SAARE 8 STEPS 100% VERIFIED & CONFIGURED!"
+                    $global:CurrentActionText.Foreground = $converter.ConvertFromString("#34d399")
+                    $global:ActivityText.Text = "Sab kuch ready hai — Port $p par live hai."
+                }
             }
         })
 
         $global:Window.Add_Loaded({
             $script:asyncHandle = $ps.BeginInvoke()
             $timer.Start()
+        })
+        $global:Window.Add_Closed({
+            try { $timer.Stop() } catch { }
+            try { $ps.Stop() } catch { }
         })
 
         $global:Window.ShowDialog() | Out-Null

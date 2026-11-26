@@ -1,47 +1,99 @@
 @echo off
 rem ============================================================================
-rem CSC & BC Apna Hisaab - Hidden Server Supervisor
+rem CSC & BC Apna Hisaab - Hidden Server Supervisor (SQLite Edition)
 rem - Server ko silent background me chalata hai (koi window nahi)
 rem - Crash / update restart ke baad khud dobara start karta hai
-rem - Agar port 4000 par pehle se server chal raha hai to duplicate nahi banata
+rem - Port busy ya logs\.stop_supervisor sentinel hone par cleanly band hota hai
 rem ============================================================================
-setlocal EnableDelayedExpansion
-cd /d "%~dp0"
+setlocal EnableExtensions DisableDelayedExpansion
+set "PROJ_DIR=%~dp0"
+if "%PROJ_DIR:~-1%"=="\" if not "%PROJ_DIR:~-2%"==":\" set "PROJ_DIR=%PROJ_DIR:~0,-1%"
+cd /d "%PROJ_DIR%"
 
 if not exist "logs" mkdir "logs"
 set "CMBC_SUPERVISOR=1"
 
-set "NODE_EXE=node"
-where node >nul 2>&1
-if errorlevel 1 if exist "C:\Program Files\nodejs\node.exe" set "NODE_EXE=C:\Program Files\nodejs\node.exe"
-
-"%NODE_EXE%" -v >nul 2>&1
-if errorlevel 1 (
+:: Resolve Node.js across ALL common install locations (User, Machine, NVM, Scoop, Winget, Volta)
+set "NODE_EXE="
+for %%P in (
+    "%ProgramFiles%\nodejs\node.exe"
+    "%LOCALAPPDATA%\Programs\nodejs\node.exe"
+    "%ProgramFiles(x86)%\nodejs\node.exe"
+    "%NVM_SYMLINK%\node.exe"
+    "%LOCALAPPDATA%\Microsoft\WinGet\Links\node.exe"
+    "%USERPROFILE%\scoop\shims\node.exe"
+    "%USERPROFILE%\.volta\bin\node.exe"
+) do (
+    if not defined NODE_EXE if exist "%%~P" set "NODE_EXE=%%~P"
+)
+if not defined NODE_EXE (
+    for /f "delims=" %%W in ('where node 2^>nul') do (
+        if not defined NODE_EXE set "NODE_EXE=%%~W"
+    )
+)
+if not defined NODE_EXE (
     echo [%date% %time%] Node.js nahi mila - server start nahi ho sakta. SETUP.bat chalayein.>> "logs\server-run.log"
     exit /b 1
 )
 
+for %%I in ("%NODE_EXE%") do set "PATH=%%~dpI;%PATH%"
+
+:: Rotate log file if > 5MB
+if exist "logs\server-run.log" (
+    for %%F in ("logs\server-run.log") do (
+        if %%~zF GTR 5242880 (
+            move /y "logs\server-run.log" "logs\server-run.prev.log" >nul 2>&1
+        )
+    )
+)
+
+:: Parse PORT safely from .env (ignore BOM, spaces, quotes, # comments)
 set "CHECK_PORT=4000"
 if exist ".env" (
-    for /f "usebackq tokens=1,2 delims==" %%A in (".env") do (
-        if /i "%%A"=="PORT" set "CHECK_PORT=%%B"
+    for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+        set "ENV_K=%%~A"
+        set "ENV_V=%%~B"
+        call :parse_port
     )
 )
 
 set "IDLE=0"
+set "FAIL_STREAK=0"
 
 :loop
-netstat -ano | findstr /R /C:":!CHECK_PORT! .*LISTENING" >nul 2>&1
+if exist "logs\.stop_supervisor" exit /b 0
+
+netstat -ano | findstr /R /C:":%CHECK_PORT% .*LISTENING" >nul 2>&1
 if not errorlevel 1 (
-    rem Port already busy: ya to server chal raha hai, ya doosra supervisor.
-    rem 30 second tak busy rahe to duplicate supervisor band ho jata hai.
     set /a IDLE+=1
-    if !IDLE! GEQ 3 exit /b 0
-    timeout /t 10 /nobreak >nul
+    if %IDLE% GEQ 3 exit /b 0
+    ping -n 11 127.0.0.1 >nul
     goto loop
 )
 
 set "IDLE=0"
 "%NODE_EXE%" server.js >> "logs\server-run.log" 2>&1
-timeout /t 5 /nobreak >nul
+set "SRV_RC=%errorlevel%"
+if exist "logs\.stop_supervisor" exit /b 0
+
+if not "%SRV_RC%"=="0" (
+    set /a FAIL_STREAK+=1
+) else (
+    set "FAIL_STREAK=0"
+)
+if %FAIL_STREAK% GEQ 5 (
+    echo [%date% %time%] Server 5 baar lagatar fail hua (Exit %SRV_RC%). Loop roka ja raha hai - AI_DOCTOR_SQLITE.bat chalayein.>> "logs\server-run.log"
+    exit /b %SRV_RC%
+)
+
+ping -n 6 127.0.0.1 >nul
 goto loop
+
+:parse_port
+set "ENV_K=%ENV_K: =%"
+if /i "%ENV_K%"=="PORT" (
+    for /f "tokens=1 delims=# " %%P in ("%ENV_V%") do set "ENV_V=%%~P"
+    set "ENV_V=%ENV_V:"=%"
+    if not "%ENV_V%"=="" set "CHECK_PORT=%ENV_V%"
+)
+exit /b 0

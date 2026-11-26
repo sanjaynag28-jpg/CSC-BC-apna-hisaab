@@ -79,11 +79,14 @@ function ensureShortcuts() {
     const ps1 = path.join(__dirname, 'create_shortcuts.ps1');
     if (!fs.existsSync(ps1)) return 'missing-helper';
 
-    const desktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'CSC BC Apna Hisaab (SQLite).lnk');
+    const desktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'CSC & BC Apna Hisaab (SQLite).lnk');
+    const legacyDesktop = path.join(process.env.USERPROFILE || '', 'Desktop', 'CSC BC Apna Hisaab (SQLite).lnk');
     const programs = process.env.APPDATA
-        ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'CSC BC Apna Hisaab (SQLite).lnk')
+        ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'CSC & BC Apna Hisaab (SQLite).lnk')
         : null;
-    if (fs.existsSync(desktop) && (!programs || fs.existsSync(programs))) return 'unchanged';
+    if (fs.existsSync(desktop) && !fs.existsSync(legacyDesktop) && (!programs || fs.existsSync(programs))) {
+        // Also run helper whenever icon/target may have moved across releases
+    }
 
     try {
         execFileSync('powershell.exe', [
@@ -96,6 +99,7 @@ function ensureShortcuts() {
         log('Desktop / Start Menu shortcut ready.');
         return 'created';
     } catch (e) {
+        log('Shortcut creation notice: ' + e.message);
         return 'error:' + e.message;
     }
 }
@@ -113,7 +117,7 @@ function ensureRunKey() {
             'query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
             '/v', 'CSC BC Apna Hisaab SQLite'
         ], { windowsHide: true, timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
-        if (q.toLowerCase().includes('start-hidden.vbs')) return 'unchanged';
+        if (q.toLowerCase().includes(hiddenVbs.toLowerCase())) return 'unchanged';
     } catch (_) {
         // Entry nahi hai - neeche bana denge
     }

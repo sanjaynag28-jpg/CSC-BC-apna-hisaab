@@ -1,9 +1,10 @@
 ﻿param(
-    [string]$InstallDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab')
+    [string]$InstallDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite')
 )
 
 $ErrorActionPreference = 'Stop'
-$RepoZipUrl = 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/main.zip'
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType](3072 -bor 12288) } catch { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]3072 } catch {} }
+$RepoZipUrl = 'https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/refs/heads/sqlite.zip'
 $TmpRoot = Join-Path $env:TEMP ('cmbc_bootstrap_' + (Get-Random))
 $LogDir = Join-Path $InstallDir 'logs'
 $LogFile = Join-Path $LogDir 'install.log'
@@ -27,19 +28,14 @@ function Invoke-DownloadResume {
     param([string]$Url, [string]$Path, [int]$Attempts = 6)
     for ($i = 1; $i -le $Attempts; $i++) {
         try {
-            $existing = 0
-            if (Test-Path $Path) { $existing = (Get-Item $Path).Length }
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
             $req = [System.Net.HttpWebRequest]::Create($Url)
             $req.UserAgent = 'CMBC-Installer/1.0'
             $req.Timeout = 120000
             $req.ReadWriteTimeout = 120000
             $req.AllowAutoRedirect = $true
-            if ($existing -gt 0) { [void]$req.AddRange($existing) }
             $resp = $req.GetResponse()
-            $status = [int]$resp.StatusCode
-            $mode = [System.IO.FileMode]::Create
-            if ($existing -gt 0 -and $status -eq 206) { $mode = [System.IO.FileMode]::Append }
-            $fs = New-Object System.IO.FileStream($Path, $mode, [System.IO.FileAccess]::Write)
+            $fs = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
             try {
                 $resp.GetResponseStream().CopyTo($fs)
             } finally {
@@ -85,7 +81,7 @@ function Expand-ZipSafe {
     return $false
 }
 
-$SkipNames = @('.env', '.git', 'backups', 'logs', 'node_modules', '.auto-update-tmp', '.previous-release', '.antigravity', 'bin')
+$SkipNames = @('.env', '.git', 'backups', 'logs', 'node_modules', 'config', '.auto-update-tmp', '.previous-release', '.antigravity', 'bin')
 
 function Copy-ProjectFiles {
     param([string]$SourceDir, [string]$TargetDir)
@@ -110,18 +106,19 @@ function Copy-ProjectFiles {
 }
 
 $RequiredFiles = @{
-    'server.js'                      = 2000
-    'package.json'                   = 200
-    'package-lock.json'              = 5000
-    'ONE_CLICK_SETUP.bat'            = 200
-    'setup-database.js'              = 1000
-    'database\setup.sql'             = 10000
-    'scripts\auto_setup_windows.ps1' = 5000
-    'public\index.html'              = 50000
-    'public\app.js'                  = 50000
-    'routes\auth.js'                 = 500
-    'middleware\auth.js'             = 500
-    'utils\autoUpdater.js'           = 1000
+    'server.js'                        = 2000
+    'package.json'                     = 200
+    'package-lock.json'                = 1000
+    'SETUP.bat'                        = 200
+    'setup-database.js'                = 400
+    'database\sqlite_schema.sql'       = 5000
+    'database\setup_sqlite.js'         = 1000
+    'scripts\installer_wizard_sqlite.ps1' = 5000
+    'public\index.html'                = 50000
+    'public\app.js'                    = 50000
+    'routes\auth.js'                   = 500
+    'middleware\auth.js'               = 500
+    'utils\autoUpdater.js'             = 1000
 }
 
 function Test-ProjectIntegrity {
@@ -211,9 +208,9 @@ try {
     Remove-Item $TmpRoot -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host ""
-    Write-Host '[3/3] Running complete setup (Node.js + SQL Server + Database + Silent Auto-Start)...' -ForegroundColor Cyan
-    $setupBat = Join-Path $InstallDir 'ONE_CLICK_SETUP.bat'
-    if (-not (Test-Path $setupBat)) { throw 'ONE_CLICK_SETUP.bat nahi mila - project files incomplete.' }
+    Write-Host '[3/3] Running complete setup (Node.js v22 + Embedded SQLite + Firewall + Silent Auto-Start)...' -ForegroundColor Cyan
+    $setupBat = Join-Path $InstallDir 'SETUP.bat'
+    if (-not (Test-Path -LiteralPath $setupBat)) { throw 'SETUP.bat nahi mila - project files incomplete.' }
 
     $setupOk = $false
     for ($i = 1; $i -le 2 -and -not $setupOk; $i++) {

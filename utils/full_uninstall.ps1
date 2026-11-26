@@ -1,5 +1,5 @@
 ﻿param(
-    [string]$ProjectDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab'),
+    [string]$ProjectDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite'),
     [switch]$Force
 )
 
@@ -14,35 +14,44 @@ function Log {
 }
 
 function Kill-ProjectProcesses {
-    Log "Stopping project server / background processes..." 'Cyan'
+    Log "Stopping project server / supervisor / background processes..." 'Cyan'
 
-    # 1) Port 3000 par jo bhi listen kar raha hai use band karo
+    foreach ($pNum in @(4000, 3000)) {
+        try {
+            $conns = Get-NetTCPConnection -LocalPort $pNum -State Listen -ErrorAction SilentlyContinue
+            foreach ($c in $conns) {
+                $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
+                if ($p -and $p.ProcessName -ieq 'node') {
+                    try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction Stop; Log "  Killed node PID $($c.OwningProcess) (port $pNum)" 'DarkGray' } catch { }
+                }
+            }
+        } catch { }
+    }
+
     try {
-        $conns = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
-        foreach ($c in $conns) {
-            try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction Stop; Log "  Killed PID $($c.OwningProcess) (port 3000)" 'DarkGray' } catch { }
-        }
+        Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine -like '*server-supervisor.bat*' } |
+            ForEach-Object {
+                try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Log "  Killed supervisor PID $($_.ProcessId)" 'DarkGray' } catch { }
+            }
     } catch { }
 
-    # 2) Project folder se chalne wale node.exe band karo
     try {
         Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ProjectDir*" } |
+            Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$ProjectDir*" -or $_.CommandLine -like '*server.js*') } |
             ForEach-Object {
                 try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Log "  Killed node PID $($_.ProcessId)" 'DarkGray' } catch { }
             }
     } catch { }
 
-    # 3) start-hidden.vbs chalane wale wscript band karo
     try {
         Get-CimInstance Win32_Process -Filter "Name='wscript.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -and ($_.CommandLine -like '*start-hidden.vbs*' -or $_.CommandLine -like "*$ProjectDir*") } |
+            Where-Object { $_.CommandLine -and ($_.CommandLine -like '*start-hidden.vbs*' -or $_.CommandLine -like '*open-app.vbs*' -or $_.CommandLine -like "*$ProjectDir*") } |
             ForEach-Object {
                 try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Log "  Killed wscript PID $($_.ProcessId)" 'DarkGray' } catch { }
             }
     } catch { }
 
-    # 4) pm2 se chala ho to band karo
     try { & pm2 delete cash-management 2>$null | Out-Null } catch { }
     Log "  Server processes stopped." 'DarkGray'
 }
@@ -50,8 +59,7 @@ function Kill-ProjectProcesses {
 function Remove-AutoStartEntries {
     Log "Removing auto-start (scheduled task, startup entry, Run key)..." 'Cyan'
 
-    # Scheduled tasks (canonical + legacy typo names)
-    foreach ($t in @('CSC BC Apna Hisaab Server', 'CSC BC Apna Hissab Server', 'CSC BC Apna Hissab Server (Login)', 'CSC BC Apna Hisaab Server (Login)')) {
+    foreach ($t in @('CSC BC Apna Hisaab Server', 'CSC BC Apna Hissab Server', 'CSC BC Apna Hissab Server (Login)', 'CSC BC Apna Hisaab Server (Login)', 'CSC BC Apna Hisaab SQLite')) {
         schtasks /Query /TN "$t" > $null 2>&1
         if ($LASTEXITCODE -eq 0) {
             schtasks /Delete /TN "$t" /F > $null 2>&1
@@ -59,37 +67,47 @@ function Remove-AutoStartEntries {
         }
     }
 
-    # Startup folder VBS
-    $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\CSC BC Apna Hisaab (Auto).vbs'
-    if (Test-Path $startup) {
-        try { Remove-Item $startup -Force -ErrorAction Stop; Log "  Startup entry removed." 'DarkGray' } catch { Log "  [!] Startup entry locked: $startup" 'Yellow' }
+    foreach ($vbsName in @('CSC BC Apna Hisaab SQLite (Auto).vbs', 'CSC BC Apna Hisaab (Auto).vbs')) {
+        $startup = Join-Path $env:APPDATA ("Microsoft\Windows\Start Menu\Programs\Startup\" + $vbsName)
+        if (Test-Path -LiteralPath $startup) {
+            try { Remove-Item -LiteralPath $startup -Force -ErrorAction Stop; Log "  Startup entry removed: $vbsName" 'DarkGray' } catch { Log "  [!] Startup entry locked: $startup" 'Yellow' }
+        }
     }
 
-    # HKCU Run key (dono spelling cover)
     try {
-        Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CSC BC Apna Hissab' -ErrorAction SilentlyContinue
-        Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'CSC BC Apna Hisaab' -ErrorAction SilentlyContinue
+        foreach ($rk in @('CSC BC Apna Hissab', 'CSC BC Apna Hisaab', 'CSC BC Apna Hisaab SQLite')) {
+            Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $rk -ErrorAction SilentlyContinue
+        }
         Log "  Run key entries removed." 'DarkGray'
     } catch { }
 }
 
 function Remove-Shortcuts {
     Log "Removing desktop & start-menu shortcuts..." 'Cyan'
-    $paths = @(
-        (Join-Path ([Environment]::GetFolderPath('Desktop')) 'CSC BC Apna Hisaab.lnk'),
-        (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\CSC BC Apna Hisaab.lnk')
-    )
-    foreach ($p in $paths) {
-        if (Test-Path $p) {
-            try { Remove-Item $p -Force -ErrorAction Stop; Log "  Shortcut removed: $p" 'DarkGray' } catch { Log "  [!] Shortcut locked: $p" 'Yellow' }
+    $names = @('CSC & BC Apna Hisaab (SQLite).lnk', 'CSC BC Apna Hisaab (SQLite).lnk', 'CSC BC Apna Hisaab.lnk')
+    foreach ($n in $names) {
+        foreach ($dir in @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'))) {
+            if (-not $dir) { continue }
+            $p = Join-Path $dir $n
+            if (Test-Path -LiteralPath $p) {
+                try { Remove-Item -LiteralPath $p -Force -ErrorAction Stop; Log "  Shortcut removed: $p" 'DarkGray' } catch { }
+            }
         }
     }
 }
 
 function Remove-FirewallRule {
-    Log "Removing firewall rule (port 3000)..." 'Cyan'
-    netsh advfirewall firewall delete rule name="CSC BC Apna Hisaab (Port 3000)" > $null 2>&1
-    Log "  Firewall rule removed (if existed)." 'DarkGray'
+    Log "Removing firewall rules (Port 4000 / 3000 / Node.js)..." 'Cyan'
+    foreach ($r in @(
+        'CSC BC Apna Hisaab SQLite (Port 4000)',
+        'CSC BC Apna Hisaab SQLite Out (Port 4000)',
+        'CSC BC Apna Hisaab Node.js Runtime',
+        'CSC BC Apna Hisaab Node.js Runtime Out',
+        'CSC BC Apna Hisaab (Port 3000)'
+    )) {
+        netsh advfirewall firewall delete rule name="$r" > $null 2>&1
+    }
+    Log "  Firewall rules removed." 'DarkGray'
 }
 
 function Read-DbServer {
@@ -106,37 +124,21 @@ function Read-DbServer {
 function Remove-Database {
     param([string]$ServerName)
 
-    if (-not $Force) {
-        $ans = Read-Host "Database 'CashManagement' bhi DELETE karein? (fresh start ke liye Y recommend) [Y/N]"
-        if ($ans -notmatch '^(y|yes)$') { Log "  Database skip kiya gaya (aapne N diya)." 'Yellow'; return }
-    }
-
-    $candidates = @()
-    if ($ServerName) { $candidates += $ServerName }
-    $candidates += @('localhost', 'localhost\SQLEXPRESS', 'localhost\CMBCSQL', "$env:COMPUTERNAME\SQLEXPRESS", "$env:COMPUTERNAME\CMBCSQL")
-
-    foreach ($srv in ($candidates | Select-Object -Unique)) {
+    $dbDir = Join-Path $ProjectDir 'database\data'
+    if (Test-Path -LiteralPath $dbDir) {
+        if (-not $Force) {
+            $ans = Read-Host "SQLite Database folder ('database\data') bhi DELETE karein? (aapka sara hisaab-kitaab delete ho jayega!) [Y/N]"
+            if ($ans -notmatch '^(y|yes)$') { Log "  SQLite database surakshit rakha gaya (aapne N diya)." 'Yellow'; return }
+        }
         try {
-            $connStr = "Server=$srv;Database=master;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=8;"
-            $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
-            $conn.Open()
-            $cmd = $conn.CreateCommand()
-            $cmd.CommandText = @"
-IF DB_ID(N'CashManagement') IS NOT NULL
-BEGIN
-    ALTER DATABASE [CashManagement] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-    DROP DATABASE [CashManagement];
-END
-IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'cmbc_user')
-    DROP LOGIN [cmbc_user];
-"@
-            [void]$cmd.ExecuteNonQuery()
-            $conn.Close()
-            Log "  Database 'CashManagement' + login 'cmbc_user' deleted ($srv)." 'Green'
-            return
-        } catch { }
+            Remove-Item -LiteralPath $dbDir -Recurse -Force -ErrorAction Stop
+            Log "  SQLite database folder deleted ($dbDir)." 'Green'
+        } catch {
+            Log "  [!] Database delete warning: $($_.Exception.Message)" 'Yellow'
+        }
+        return
     }
-    Log "  [!] SQL Server se connect nahi hua - database skip. (SQL manually band/installed nahi hua to koi baat nahi)" 'Yellow'
+    Log "  Koi local SQLite database file nahi mili." 'DarkGray'
 }
 
 function Remove-ProjectFolder {

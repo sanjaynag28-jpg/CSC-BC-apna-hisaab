@@ -3,22 +3,56 @@
     try {
         const fs = require('fs');
         const path = require('path');
+        const crypto = require('crypto');
+
+        // Ensure core runtime folders exist on fresh PCs
+        for (const d of ['logs', 'backups', 'database/data', 'public/uploads/documents']) {
+            const p = path.join(__dirname, d);
+            if (!fs.existsSync(p)) {
+                try { fs.mkdirSync(p, { recursive: true }); } catch (_) { }
+            }
+        }
+
         const envPath = path.join(__dirname, '.env');
-        if (fs.existsSync(envPath)) {
-            let content = fs.readFileSync(envPath, 'utf8');
-            if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
-            content.split(/\r?\n/).forEach((line) => {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith('#')) return;
-                const eq = trimmed.indexOf('=');
-                if (eq === -1) return;
-                const key = trimmed.slice(0, eq).trim();
-                let value = trimmed.slice(eq + 1).trim();
-                if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                    value = value.slice(1, -1);
-                }
-                if (process.env[key] === undefined) process.env[key] = value;
-            });
+        const examplePath = path.join(__dirname, '.env.example');
+        if (!fs.existsSync(envPath)) {
+            if (fs.existsSync(examplePath)) {
+                fs.copyFileSync(examplePath, envPath);
+            } else {
+                fs.writeFileSync(
+                    envPath,
+                    'PORT=4000\r\nHOST=0.0.0.0\r\nDB_TYPE=sqlite\r\nDB_FILE=database/data/cash_management.db\r\nJWT_SECRET=\r\nALLOW_LOCAL_AUTO_LOGIN=true\r\nAUTO_UPDATE_DISABLED=false\r\n',
+                    'utf8'
+                );
+            }
+        }
+
+        let content = fs.readFileSync(envPath, 'utf8');
+        if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+        content.split(/\r?\n/).forEach((line) => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return;
+            const eq = trimmed.indexOf('=');
+            if (eq === -1) return;
+            const key = trimmed.slice(0, eq).trim();
+            let value = trimmed.slice(eq + 1).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+            }
+            if (process.env[key] === undefined) process.env[key] = value;
+        });
+
+        // Auto-generate strong cryptographic JWT_SECRET on fresh installs so token signing never fails
+        if (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim() || process.env.JWT_SECRET === 'cash_management_sqlite_edition_secret_key_4000') {
+            const generatedSecret = crypto.randomBytes(48).toString('base64url');
+            process.env.JWT_SECRET = generatedSecret;
+            let updatedEnv = content;
+            if (/^JWT_SECRET\s*=/m.test(updatedEnv)) {
+                updatedEnv = updatedEnv.replace(/^JWT_SECRET\s*=.*$/m, `JWT_SECRET=${generatedSecret}`);
+            } else {
+                updatedEnv = updatedEnv.trimEnd() + `\r\nJWT_SECRET=${generatedSecret}\r\n`;
+            }
+            fs.writeFileSync(envPath, updatedEnv, 'utf8');
         }
     } catch (_) { }
 })();
@@ -29,7 +63,6 @@ const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 const { getPool, isDbAlive, query, sql } = require('./database/db');
-const { runPendingMigrations } = require('./database/migrationRunner');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
 const { createIdempotencyMiddleware } = require('./utils/idempotencyMiddleware');
 
@@ -1083,6 +1116,16 @@ scheduleBootAutoUpdate();
 autoUpdater.startPeriodicCheck(20 * 60 * 1000, () => activeRequests === 0);
 
 scheduleNightlyUpdate();
+        });
+        httpServer.on('error', (listenErr) => {
+            const code = listenErr && listenErr.code ? listenErr.code : 'UNKNOWN';
+            console.error(`❌ Server listen error (${code}) on ${HOST}:${PORT}:`, listenErr.message);
+            try {
+                const errLogDir = path.join(__dirname, 'logs');
+                if (!fs.existsSync(errLogDir)) fs.mkdirSync(errLogDir, { recursive: true });
+                fs.appendFileSync(path.join(errLogDir, 'server_errors.log'), `[${new Date().toISOString()}] Listen Error (${code}) on ${HOST}:${PORT}: ${listenErr.message}\n`);
+            } catch (_) { }
+            process.exit(1);
         });
     } catch (err) {
         console.error('');

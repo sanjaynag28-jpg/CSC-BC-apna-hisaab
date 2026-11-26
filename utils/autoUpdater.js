@@ -142,7 +142,9 @@ function loadDotEnvIfNeeded() {
     try {
         const envPath = path.join(ROOT_DIR, '.env');
         if (!fs.existsSync(envPath)) return;
-        const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+        let rawEnv = fs.readFileSync(envPath, 'utf8');
+        if (rawEnv.charCodeAt(0) === 0xFEFF) rawEnv = rawEnv.slice(1);
+        const lines = rawEnv.split(/\r?\n/);
         for (const line of lines) {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#')) continue;
@@ -345,10 +347,11 @@ function downloadFileWithRetry(url, destPath, attempts = 4, timeoutMs = 60000) {
 const CRITICAL_FILES = {
     'server.js': 2000,
     'package.json': 200,
-    'package-lock.json': 5000,
+    'package-lock.json': 1000,
     'setup-database.js': 200,
     'database/setup_sqlite.js': 5000,
-    'database/setup.sql': 10000,
+    'database/sqlite_schema.sql': 5000,
+    'database/db.js': 3000,
     'public/index.html': 50000,
     'public/app.js': 50000,
     'routes/auth.js': 500,
@@ -399,6 +402,36 @@ function copyDirectorySafely(srcDir, dstDir, relBase = '') {
 }
 
 function runSafeBackupBeforeUpdate() {
+    const dbPath = path.join(ROOT_DIR, 'database', 'data', 'cash_management.db');
+    if (fs.existsSync(dbPath)) {
+        try {
+            logUpdate('Running pre-update safety SQLite backup...');
+            const backupDir = path.join(ROOT_DIR, 'backups');
+            if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const dest = path.join(backupDir, `pre_update_${stamp}.db`);
+            try {
+                const Database = require('better-sqlite3');
+                const db = new Database(dbPath, { readonly: true, timeout: 5000 });
+                try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) { }
+                fs.copyFileSync(dbPath, dest);
+                db.close();
+            } catch (_) {
+                fs.copyFileSync(dbPath, dest);
+            }
+            for (const ext of ['-wal', '-shm']) {
+                if (fs.existsSync(dbPath + ext)) {
+                    try { fs.copyFileSync(dbPath + ext, dest + ext); } catch (_) { }
+                }
+            }
+            logUpdate(`Pre-update SQLite backup completed: ${path.basename(dest)}`);
+            return;
+        } catch (err) {
+            logUpdate(`Pre-update SQLite backup warning (non-fatal): ${err.message}`);
+            return;
+        }
+    }
+
     const backupScript = path.join(ROOT_DIR, 'database', 'backup-runner.js');
     if (!fs.existsSync(backupScript)) return;
     try {
@@ -528,8 +561,8 @@ async function applyCodeUpdateViaZip(expectedVersion) {
                         '-NoProfile',
                         '-ExecutionPolicy', 'Bypass',
                         '-Command',
-                        `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force`
-                    ], { stdio: 'ignore', timeout: 60000 });
+                        `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${extractDir.replace(/'/g, "''")}' -Force; try { Get-ChildItem -LiteralPath '${extractDir.replace(/'/g, "''")}' -Recurse -File | Unblock-File -ErrorAction SilentlyContinue } catch {}`
+                    ], { stdio: 'ignore', timeout: 120000 });
                     extracted = true;
                 } catch (extractErr) {
                     logUpdate(`ZIP extract attempt ${i}/2 failed: ${extractErr.message}`);
@@ -705,24 +738,61 @@ function npmInstallCommand(platform = process.platform, commandShell = process.e
     return { command: 'npm', args: npmArgs };
 }
 
+function resolveNodeBinDir() {
+    const nodeDir = path.dirname(process.execPath);
+    const curPath = process.env.PATH || process.env.Path || '';
+    if (nodeDir && !curPath.toLowerCase().includes(nodeDir.toLowerCase())) {
+        return `${nodeDir}${path.delimiter}${curPath}`;
+    }
+    return curPath;
+}
+
 function installDependenciesIfNeeded(force = false) {
     const packageJson = JSON.parse(fs.readFileSync(PKG_FILE, 'utf8'));
     const missing = findMissingDependencies(packageJson.dependencies);
-    if (!force && missing.length === 0) return false;
+    let sqliteNativeOk = true;
+    try {
+        const Database = require('better-sqlite3');
+        const memDb = new Database(':memory:');
+        memDb.close();
+    } catch (_) {
+        sqliteNativeOk = false;
+    }
+    if (!force && missing.length === 0 && sqliteNativeOk) return false;
 
     logUpdate(`Installing npm dependencies${missing.length ? ` (missing: ${missing.join(', ')})` : ''}...`);
     const npmCommand = npmInstallCommand();
-    execFileSync(npmCommand.command, npmCommand.args, {
-        cwd: ROOT_DIR,
-        stdio: 'ignore',
-        timeout: 300000,
-        windowsHide: true,
-        env: {
-            ...process.env,
-            npm_config_ignore_scripts: 'true',
-            NODE_OPTIONS: '--dns-result-order=ipv4first'
+    const baseEnv = {
+        ...process.env,
+        PATH: resolveNodeBinDir(),
+        npm_config_ignore_scripts: 'true',
+        NODE_OPTIONS: '--dns-result-order=ipv4first'
+    };
+
+    const tryRunNpm = (extraFlags = []) => {
+        const cmd = extraFlags.length > 0 && process.platform === 'win32'
+            ? { command: npmCommand.command, args: ['/d', '/c', `${npmCommand.args[2]} ${extraFlags.join(' ')}`] }
+            : (extraFlags.length > 0 ? { command: npmCommand.command, args: [...npmCommand.args, ...extraFlags] } : npmCommand);
+        execFileSync(cmd.command, cmd.args, {
+            cwd: ROOT_DIR,
+            stdio: 'ignore',
+            timeout: 300000,
+            windowsHide: true,
+            env: baseEnv
+        });
+    };
+
+    try {
+        tryRunNpm();
+    } catch (firstErr) {
+        logUpdate(`Primary npm install failed (${firstErr.message}); trying npmmirror fallback...`);
+        try {
+            tryRunNpm(['--registry=https://registry.npmmirror.com']);
+        } catch (mirrorErr) {
+            logUpdate(`Mirror npm install failed (${mirrorErr.message}); trying SSL bypass fallback...`);
+            tryRunNpm(['--registry=https://registry.npmmirror.com', '--strict-ssl=false']);
         }
-    });
+    }
 
     const stillMissing = findMissingDependencies(packageJson.dependencies);
     if (stillMissing.length > 0) {
@@ -1001,6 +1071,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    state,
     checkForUpdate,
     runSilentAutoUpdate,
     compareVersions,

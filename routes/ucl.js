@@ -19,7 +19,12 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const Tesseract = require('tesseract.js');
-const sharp = require('sharp');
+let sharp = null;
+try {
+    sharp = require('sharp');
+} catch (sharpLoadErr) {
+    console.warn('⚠️ [UCL] sharp native module unavailable, raw OCR fallback active:', sharpLoadErr.message);
+}
 
 const { query, withTransaction, sql } = require('../database/db');
 const { logAudit } = require('../utils/auditLogger');
@@ -206,7 +211,7 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
         let imgMeta = null;
         try {
             let imageSource = filePath;
-            if (fileType.startsWith('image/')) {
+            if (sharp && fileType.startsWith('image/')) {
                 try {
                     imgMeta = await sharp(filePath).metadata();
                     const targetWidth = Math.max(2200, imgMeta.width || 0);
@@ -232,7 +237,7 @@ router.post('/scan-receipt', upload.single('receipt'), async (req, res) => {
         const parsed = parseUCLReceipt(ocrText);
 
         // Targeted Regional Crops Fallback for high precision
-        if (fileType.startsWith('image/') && imgMeta) {
+        if (sharp && fileType.startsWith('image/') && imgMeta) {
             // 1. Targeted Aadhaar Crop if missing or incomplete
             if (!parsed.aadhaarLast4 || parsed.aadhaarLast4.length < 4) {
                 try {

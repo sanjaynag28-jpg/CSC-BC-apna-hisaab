@@ -1,8 +1,8 @@
 {
-  "version": "1.0.91",
+  "version": "1.0.92",
   "critical": true,
-  "releasedAt": "2026-11-25",
+  "releasedAt": "2026-11-26",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Auto-sync updated Shop Name across all old/new slips, UCL/BillPay/Reports parchis, passbooks, sidebar & multi-tab"
+  "notes": "Bulletproof Windows BAT installer, AI Self-Healing Engine v2.0, Node v22 portable ZIP fallback, Hyper-V port auto-heal, zero-crash boot"
 }

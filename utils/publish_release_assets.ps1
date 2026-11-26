@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # utils/publish_release_assets.ps1
 # PUBLISH_UPDATE.bat ke baad chalta hai:
 # - version.json ka version uthata hai (e.g. 1.0.3 -> v1.0.3)
@@ -7,6 +7,7 @@
 # Token stored git credential se aata hai (print nahi hota).
 # ============================================================================
 $ErrorActionPreference = 'Continue'
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072 -bor 12288 } catch { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
 
 $root = Split-Path -Parent $PSScriptRoot
 $repo = 'sanjaynag28-jpg/CSC-BC-apna-hisaab'
@@ -62,17 +63,24 @@ try {
 
     $existing = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/$($rel.id)/assets" -Headers $headers -Method Get
     foreach ($a in $assets) {
+        if (-not (Test-Path -LiteralPath $a.Path)) {
+            Write-Host "  [!] $($a.Name) file missing locally, skipping"
+            continue
+        }
         $found = $existing | Where-Object { $_.name -eq $a.Name } | Select-Object -First 1
         if ($found) {
-            Write-Host "  [OK] $($a.Name) already attached"
-            continue
+            try {
+                Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/assets/$($found.id)" -Headers $headers -Method Delete | Out-Null
+            } catch {
+                Write-Host "  [!] Old asset delete notice ($($a.Name)): $($_.Exception.Message)"
+            }
         }
         try {
             $url = "https://uploads.github.com/repos/$repo/releases/$($rel.id)/assets?name=$($a.Name)"
             $uploaded = $false
             for ($i = 1; $i -le 3 -and -not $uploaded; $i++) {
                 try {
-                    $up = Invoke-RestMethod -Uri $url -Headers $headers -Method Post -ContentType 'application/octet-stream' -InFile $a.Path
+                    $up = Invoke-RestMethod -Uri $url -Headers $headers -Method Post -ContentType 'application/octet-stream' -InFile $a.Path -TimeoutSec 60
                     $uploaded = $true
                 } catch {
                     Write-Host "  [!] $($a.Name) upload attempt $i/3 fail: $($_.Exception.Message)"

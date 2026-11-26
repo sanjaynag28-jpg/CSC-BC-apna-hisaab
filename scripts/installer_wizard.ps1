@@ -226,7 +226,7 @@ $workerBlock = {
             foreach ($u in $Urls) {
                 try {
                     if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
-                    Log-Msg "$Label download (round $round): $([Uri]$u).Host" 'DOWNLOAD'
+                    Log-Msg "$Label download (round $round): $(([Uri]$u).Host)" 'DOWNLOAD'
                     $got = Download-File -Url $u -OutFile $OutFile -Step $Step -FromPct $FromPct -ToPct $ToPct -Label $Label
                     if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -ge $MinBytes)) {
                         $mb = [Math]::Round((Get-Item $OutFile).Length / 1MB, 2)

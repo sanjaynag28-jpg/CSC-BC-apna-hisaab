@@ -33,8 +33,18 @@ if (require.main === module) {
     console.log('   100% Zero-Install Embedded Database               ');
     console.log('====================================================');
 
-    const { setupSQLite } = require('./database/setup_sqlite.js');
-    setupSQLite();
+    try {
+        const fs = require('fs');
+        for (const d of ['logs', 'backups', 'database/data', 'public/uploads/documents']) {
+            const p = path.join(__dirname, d);
+            if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+        }
+        const { setupSQLite } = require('./database/setup_sqlite.js');
+        setupSQLite();
+    } catch (err) {
+        console.error('❌ [Setup] SQLite database initialization failed:', err.message);
+        process.exit(1);
+    }
 }
 
 module.exports = { getStoredProcedureName, prepareStoredProcedureBatch };
