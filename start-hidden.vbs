@@ -12,18 +12,21 @@ On Error Resume Next
 If fso.FileExists(stopFile) Then fso.DeleteFile stopFile, True
 On Error GoTo 0
 
-nodeExe = FindNodeExe(sh)
+nodeExe = FindNodeExe(sh, baseDir)
 If nodeExe <> "" Then
-    On Error Resume Next
-    sh.Run "cmd.exe /c """"" & nodeExe & """ """ & baseDir & "\utils\autoUpdater.js"" --silent >nul 2>&1""", 0, True
-    On Error GoTo 0
+    If Not fso.FileExists(baseDir & "\node_modules\better-sqlite3\package.json") And Not fso.FileExists(baseDir & "\logs\.updating") Then
+        On Error Resume Next
+        sh.Run "cmd.exe /c """"" & nodeExe & """ """ & baseDir & "\utils\autoUpdater.js"" --silent >nul 2>&1""", 0, True
+        On Error GoTo 0
+    End If
 End If
 sh.Run "cmd.exe /c """"" & baseDir & "\server-supervisor.bat""""", 0, False
 
-Function FindNodeExe(shellObj)
+Function FindNodeExe(shellObj, projDir)
     Dim candidates, i, p
     FindNodeExe = ""
     candidates = Array( _
+        projDir & "\.runtime\nodejs\node.exe", _
         shellObj.ExpandEnvironmentStrings("%ProgramFiles%\nodejs\node.exe"), _
         shellObj.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\nodejs\node.exe"), _
         shellObj.ExpandEnvironmentStrings("%ProgramFiles(x86)%\nodejs\node.exe"), _

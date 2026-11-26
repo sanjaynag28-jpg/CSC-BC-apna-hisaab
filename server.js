@@ -62,7 +62,7 @@ const cors = require('cors');
 const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
-const { getPool, isDbAlive, query, sql } = require('./database/db');
+const { getPool, isDbAlive, query, sql, getActiveTransactions } = require('./database/db');
 const { createSqlIdempotencyStore } = require('./utils/idempotencyStore');
 const { createIdempotencyMiddleware } = require('./utils/idempotencyMiddleware');
 
@@ -82,6 +82,7 @@ process.on('uncaughtException', (err) => {
 });
 
 const serverStartTime = Date.now();
+const SERVER_BOOT_ID = require('crypto').randomBytes(16).toString('hex');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
@@ -187,6 +188,7 @@ app.use('/api', (req, res, next) => {
 // 2. Dedicated Health Check Endpoint
 app.get('/api/health', async (req, res) => {
     const uptimeSeconds = Math.round((Date.now() - serverStartTime) / 1000);
+    const version = getAppVersion();
     if (!dbStartupReady) {
         return res.status(503).json({
             success: false,
@@ -196,6 +198,8 @@ app.get('/api/health', async (req, res) => {
             startupStage: dbStartupStage,
             connectionAttempt: dbStartupAttempt,
             maxAttempts: DB_STARTUP_MAX_ATTEMPTS,
+            version,
+            bootId: SERVER_BOOT_ID,
             uptimeSeconds
         });
     }
@@ -208,6 +212,8 @@ app.get('/api/health', async (req, res) => {
             dbReady: true,
             database: process.env.DB_NAME || 'CashManagement',
             startupStage: 'ready',
+            version,
+            bootId: SERVER_BOOT_ID,
             uptimeSeconds,
             serverTime: new Date()
         });
@@ -218,6 +224,8 @@ app.get('/api/health', async (req, res) => {
             dbReady: false,
             isDatabaseDown: true,
             startupStage: 'reconnecting',
+            version,
+            bootId: SERVER_BOOT_ID,
             uptimeSeconds,
             error: 'Database connection is DOWN.'
         });
@@ -683,6 +691,7 @@ app.get('/api/app-version', (req, res) => {
         success: true,
         version: getAppVersion(),
         releaseVersion: localInfo.version || '1.0.0',
+        bootId: SERVER_BOOT_ID,
         serverTime: new Date().toISOString()
     });
 });
@@ -752,19 +761,7 @@ app.post('/api/system/version-report', async (req, res) => {
     }
 });
 
-// Version report list — admin dekh sakta hai kaunsa PC kis version par hai
-app.get('/api/system/version-reports', (req, res) => {
-    try {
-        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
-        let reports = [];
-        if (fs.existsSync(reportFile)) {
-            reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
-        }
-        res.json({ success: true, count: reports.length, data: reports });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+// Version report list — moved behind authenticateUser + SuperAdmin/loopback check (see below)
 
 // Explicit Service Worker Route with strict zero-cache policy
 app.get('/sw.js', (req, res) => {
@@ -826,6 +823,26 @@ app.use(async (req, res, next) => {
     res.type('html').status(200).send(startupWaitPage.replace(/__VERSION__/g, getAppVersion()));
 });
 
+// Dynamic cache-busted HTML entrypoint (guarantees browsers never run stale JS/CSS after update)
+function serveIndexHtml(req, res) {
+    try {
+        const indexPath = path.join(__dirname, 'public', 'index.html');
+        let html = fs.readFileSync(indexPath, 'utf8');
+        const assetStamp = encodeURIComponent(`${getAppVersion()}-${serverStartTime}`);
+        html = html.replace(/(<(?:script|link)\b[^>]*(?:src|href)="[^"?]+)\?v=[^"]*"/gi, `$1?v=${assetStamp}"`);
+        const bootScript = `<script>window.__APP_VERSION__=${JSON.stringify(getAppVersion())};window.__SERVER_BOOT_ID__=${JSON.stringify(SERVER_BOOT_ID)};</script>`;
+        html = html.replace('</head>', `    ${bootScript}\n</head>`);
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.type('html').send(html);
+    } catch (err) {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
+}
+
+app.get(['/', '/index.html'], serveIndexHtml);
+
 // Static assets with ETag support for instant 304 Not Modified revalidation
 const staticOptions = {
     etag: true,
@@ -843,6 +860,29 @@ app.use('/extension', express.static(path.join(__dirname, 'extension'), staticOp
 const { authenticateUser } = require('./middleware/auth');
 app.use('/api', authenticateUser);
 app.use('/api', createIdempotencyMiddleware(createSqlIdempotencyStore(query, sql)));
+
+function isStrictLoopback(req) {
+    if (req.headers['x-forwarded-for'] || req.headers['forwarded']) return false;
+    const remoteAddr = String((req.socket && req.socket.remoteAddress) || req.ip || '').replace(/^::ffff:/, '');
+    return remoteAddr === '127.0.0.1' || remoteAddr === '::1';
+}
+
+app.get('/api/system/version-reports', (req, res) => {
+    const isAllowed = isStrictLoopback(req) || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1));
+    if (!isAllowed) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
+    try {
+        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
+        let reports = [];
+        if (fs.existsSync(reportFile)) {
+            reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+        }
+        res.json({ success: true, count: reports.length, data: reports });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // Auth & Admin Routes
 app.use('/api/auth', require('./routes/auth'));
@@ -876,10 +916,16 @@ app.use('/api', (req, res, next) => {
 
 // Authenticated User Trigger for 1-Click Auto-Updater from Dashboard
 app.post('/api/system/apply-update', async (req, res) => {
-    const isLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'].includes(req.hostname) || ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
-    const isAdmin = isLoopback || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1 || req.user.Role === 'Admin' || req.user.Role === 'User'));
+    const isAdmin = isStrictLoopback(req) || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1 || req.user.Role === 'Admin'));
     if (!isAdmin) {
-        return res.status(403).json({ success: false, error: 'Kripya update karne ke liye login karein.' });
+        return res.status(403).json({ success: false, error: 'Kripya Admin account se login karke update karein.' });
+    }
+    if (getActiveTransactions() > 0) {
+        return res.status(409).json({
+            success: false,
+            skipped: true,
+            reason: 'Ek database transaction abhi chal raha hai — data suraksha ke liye 2 second me dubara try karein.'
+        });
     }
     const force = Boolean(req.body && req.body.force !== false);
     const result = await autoUpdater.runSilentAutoUpdate({ force, restartOnUpdate: true });
@@ -991,12 +1037,9 @@ app.use('/api', (req, res) => {
     res.status(404).json({ success: false, error: 'API route nahi mila' });
 });
 
-// SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache)
+// SPA fallback - sab routes frontend ko bhejo (Strictly No-Cache + Dynamic Versioning)
 app.get(/.*/, (req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    serveIndexHtml(req, res);
 });
 
 // Global Error Handler - har error JSON me do, HTML nahi, aur logs file me save karo
@@ -1085,8 +1128,11 @@ function startServer() {
 
 // Smart Proactive Auto-Update Engine (Immediate Zero-Touch Delivery):
 // 1. Boot ke 8s baad pehla check, agar app busy ho to har 15s me retry karega (max 8 attempts).
-// 2. Har 20 minute me automatic background check (4 ghante lambe intezar ki zaroorat nahi).
+// 2. Har 20 minute me automatic background check.
 // 3. Raat 2:30 AM scheduler.
+const isServerIdleForUpdate = () => activeRequests === 0 && getActiveTransactions() === 0;
+autoUpdater.setBeforeRestartHandler(() => gracefulShutdown('AUTO_UPDATE_RESTART', { exitProcess: false }));
+
 function scheduleBootAutoUpdate() {
     let attempts = 0;
     const maxAttempts = 8;
@@ -1096,7 +1142,7 @@ function scheduleBootAutoUpdate() {
             const res = await autoUpdater.runSilentAutoUpdate({
                 restartOnUpdate: true,
                 requireIdle: true,
-                isIdle: () => activeRequests === 0
+                isIdle: isServerIdleForUpdate
             });
             if (res && res.updated) return;
             if (res && res.skipped) {
@@ -1113,7 +1159,7 @@ function scheduleBootAutoUpdate() {
 scheduleBootAutoUpdate();
 
 // Har 20 minute me automatic background check (Sanjay ji ke push karte hi sabhi PC par bina restart update)
-autoUpdater.startPeriodicCheck(20 * 60 * 1000, () => activeRequests === 0);
+autoUpdater.startPeriodicCheck(20 * 60 * 1000, isServerIdleForUpdate);
 
 scheduleNightlyUpdate();
         });
@@ -1159,7 +1205,7 @@ function scheduleNightlyUpdate() {
             result = await autoUpdater.runSilentAutoUpdate({
                 restartOnUpdate: true,
                 requireIdle: true,
-                isIdle: () => activeRequests === 0
+                isIdle: isServerIdleForUpdate
             });
         } catch (_) { }
 
@@ -1173,10 +1219,10 @@ function scheduleNightlyUpdate() {
     }, next.getTime() - now.getTime());
 }
 
-// Graceful shutdown: in-flight requests + SQL pool ko safely band karo.
+// Graceful shutdown: in-flight requests + SQLite WAL checkpoint + DB close cleanly.
 let shuttingDown = false;
-function gracefulShutdown(signal) {
-    if (shuttingDown) return;
+function gracefulShutdown(signal, { exitProcess = true } = {}) {
+    if (shuttingDown) return Promise.resolve();
     shuttingDown = true;
     console.log(`\n🛑 ${signal} received — graceful shutdown shuru...`);
 
@@ -1185,20 +1231,26 @@ function gracefulShutdown(signal) {
     }
     sseClients.clear();
 
-    const finish = async () => {
-        try {
-            const db = require('./database/db');
-            if (db.closePool) await db.closePool();
-        } catch (_) { }
-        process.exit(0);
-    };
+    return new Promise((resolve) => {
+        let finished = false;
+        const finish = async () => {
+            if (finished) return;
+            finished = true;
+            try {
+                const db = require('./database/db');
+                if (db.closePool) await db.closePool();
+            } catch (_) { }
+            resolve();
+            if (exitProcess) process.exit(0);
+        };
 
-    if (httpServer) {
-        httpServer.close(() => finish());
-        setTimeout(() => finish(), 8000).unref();
-    } else {
-        finish();
-    }
+        if (httpServer) {
+            try { httpServer.close(() => finish()); } catch (_) { finish(); }
+            setTimeout(() => finish(), 5000).unref();
+        } else {
+            finish();
+        }
+    });
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

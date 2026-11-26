@@ -813,6 +813,7 @@
     // cleanly to run the latest version.
     // ------------------------------------------------------------------------
     let isUpdatingApp = false;
+    let tabLoadedVersion = (typeof window !== 'undefined' && window.__APP_VERSION__) ? String(window.__APP_VERSION__) : '';
 
     async function checkForProjectUpdates() {
         if (!navigator.onLine || isUpdatingApp) return;
@@ -823,18 +824,18 @@
             if (!data || !data.success || !data.version) return;
 
             const serverVersion = String(data.version);
-            const localVersion = localStorage.getItem('cm_active_app_version');
-
-            if (!localVersion) {
-                // First initialization: save current version silently
-                localStorage.setItem('cm_active_app_version', serverVersion);
-                return;
+            if (!tabLoadedVersion) {
+                tabLoadedVersion = sessionStorage.getItem('cm_tab_app_version') || '';
+                if (!tabLoadedVersion) {
+                    tabLoadedVersion = serverVersion;
+                    try { sessionStorage.setItem('cm_tab_app_version', serverVersion); } catch (_) { }
+                    return;
+                }
             }
 
-            if (serverVersion !== localVersion) {
+            if (serverVersion !== tabLoadedVersion) {
                 isUpdatingApp = true;
-                console.log(`🚀 [AutoUpdate] Naya update mila! Server: ${serverVersion}, Local: ${localVersion}`);
-                localStorage.setItem('cm_active_app_version', serverVersion);
+                console.log(`🚀 [AutoUpdate] Naya update mila! Server: ${serverVersion}, Tab: ${tabLoadedVersion}`);
 
                 // 1. Clear old caches if any
                 if ('caches' in window) {
@@ -844,13 +845,13 @@
                     } catch (e) { }
                 }
 
-                // 2. Show smooth floating update toast and reload cleanly
-                showUpdateBannerAndReload();
+                // 2. Show smooth floating update toast (safe — never wipes unsaved user form)
+                showUpdateBannerAndReload(serverVersion);
             }
         } catch (e) { }
     }
 
-    function showUpdateBannerAndReload() {
+    function showUpdateBannerAndReload(serverVersion) {
         try {
             const existing = document.getElementById('cm-update-banner');
             if (existing) existing.remove();
@@ -865,13 +866,20 @@
                 display: flex; align-items: center; gap: 12px; font-family: system-ui;
                 border: 1.5px solid rgba(255,255,255,0.4); animation: slideDown 0.3s ease;
             `;
-            banner.innerHTML = `
-                <span>🚀 Naya version upalabdh hai!</span>
-                <button onclick="window.location.reload(true)" style="background: white; color: #0284c7; border: none; padding: 4px 12px; border-radius: 20px; font-weight: 800; cursor: pointer; font-size: 12px;">
-                    ⚡ Abhi Reload Karein
-                </button>
-                <button onclick="this.parentElement.remove()" style="background: transparent; border: none; color: white; cursor: pointer; font-size: 14px; margin-left: 4px;">✕</button>
-            `;
+            const verLabel = document.createElement('span');
+            verLabel.textContent = serverVersion ? `🚀 Naya version v${serverVersion} upalabdh hai!` : '🚀 Naya version upalabdh hai!';
+            const reloadBtn = document.createElement('button');
+            reloadBtn.textContent = '⚡ Abhi Reload Karein';
+            reloadBtn.style.cssText = 'background: white; color: #0284c7; border: none; padding: 4px 12px; border-radius: 20px; font-weight: 800; cursor: pointer; font-size: 12px;';
+            reloadBtn.onclick = () => {
+                try { if (serverVersion) sessionStorage.setItem('cm_tab_app_version', serverVersion); } catch (_) { }
+                window.location.reload();
+            };
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = 'background: transparent; border: none; color: white; cursor: pointer; font-size: 14px; margin-left: 4px;';
+            closeBtn.onclick = () => banner.remove();
+            banner.append(verLabel, reloadBtn, closeBtn);
             document.body.appendChild(banner);
         } catch (e) { }
     }

@@ -635,214 +635,280 @@ $workerBlock = {
             Copy-Item -Path $licensePath -Destination $licenseBackup -Force -ErrorAction SilentlyContinue
         }
 
-        # 1. Pull latest code via git if git repository exists
-        if (Test-Path (Join-Path $ProjectDir ".git")) {
-            try {
-                Log-Msg "Git repository detect hua. GitHub se latest code sync kiya ja raha hai..." 'PULL'
-                # SQLite edition hamesha sqlite branch se hi sync hota hai.
-                # DB file missing hone par bhi doosri branch pull karna galat hai.
-                & git -C "$ProjectDir" fetch origin sqlite --quiet 2>&1 | Out-Null
-                if ($LASTEXITCODE -eq 0) {
-                    & git -C "$ProjectDir" reset --hard origin/sqlite 2>&1 | Out-Null
-                }
-            } catch { }
-        }
-
-        # 2. Check local version vs remote GitHub version
-        $needsCodeUpdate = $false
-        $localVer = "0.0.0"
-        $verFile = Join-Path $ProjectDir "version.json"
-        if (Test-Path $verFile) {
-            try { $localVer = (Get-Content $verFile -Raw | ConvertFrom-Json).version } catch { }
-        }
-
         try {
-            $ticks = [DateTime]::UtcNow.Ticks
-            $vUrls = @(
-                "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/version.json?t=$ticks",
-                "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/version.json?t=$ticks",
-                "$RepoFastly/version.json?t=$ticks"
-            )
-            foreach ($u in $vUrls) {
+            # 1. Pull latest code via git if git repository exists
+            if (Test-Path (Join-Path $ProjectDir ".git")) {
                 try {
-                    $vResp = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-                    $remoteObj = $vResp.Content | ConvertFrom-Json
-                    if ($remoteObj -and $remoteObj.version) {
-                        # Sirf sqlite edition ka manifest accept karo.
-                        if ($remoteObj.branch -and "$($remoteObj.branch)".Trim().ToLower() -ne 'sqlite') { continue }
-
-                        # Sirf newer version par sync karo. Older/different version par
-                        # baar-baar download karna band.
-                        $isNewer = $false
-                        try {
-                            $isNewer = ([version]([string]$remoteObj.version) -gt [version]([string]$localVer))
-                        } catch {
-                            $isNewer = ([string]$remoteObj.version -ne [string]$localVer)
-                        }
-                        if ($isNewer) {
-                            Log-Msg "Naya version detect hua: Local v$localVer -> Remote v$($remoteObj.version). Auto-syncing files..." 'UPDATE'
-                            $needsCodeUpdate = $true
-                        }
-                        break
+                    Log-Msg "Git repository detect hua. GitHub se latest code sync kiya ja raha hai..." 'PULL'
+                    $gitLock = Join-Path $ProjectDir '.git\index.lock'
+                    if (Test-Path -LiteralPath $gitLock) {
+                        $age = ((Get-Date) - (Get-Item -LiteralPath $gitLock).LastWriteTime).TotalMinutes
+                        if ($age -gt 3) { Remove-Item -LiteralPath $gitLock -Force -ErrorAction SilentlyContinue }
                     }
+                    $safeDir = $ProjectDir.Replace('\', '/')
+                    $prevPrompt = $env:GIT_TERMINAL_PROMPT
+                    $env:GIT_TERMINAL_PROMPT = '0'
+                    & git -c "safe.directory=$safeDir" -C "$ProjectDir" fetch origin sqlite --quiet 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        & git -c "safe.directory=$safeDir" -C "$ProjectDir" reset --hard origin/sqlite 2>&1 | Out-Null
+                        if ($LASTEXITCODE -ne 0) {
+                            Log-Msg "Git reset notice (Exit $LASTEXITCODE) — ZIP verification fallback check hoga." 'WARN'
+                        }
+                    } else {
+                        Log-Msg "Git fetch notice (Exit $LASTEXITCODE) — CDN/ZIP fallback check hoga." 'WARN'
+                    }
+                    $env:GIT_TERMINAL_PROMPT = $prevPrompt
                 } catch { }
             }
-        } catch { }
 
-        # Check existing files
-        $missing = 0
-        foreach ($f in $RequiredFiles.Keys) {
-            $fp = Join-Path $ProjectDir $f
-            if (-not (Test-Path $fp) -or (Get-Item $fp).Length -lt $RequiredFiles[$f]) {
-                $missing++
+            # 2. Check local version vs highest reachable remote GitHub version
+            $needsCodeUpdate = $false
+            $localVer = "0.0.0"
+            $verFile = Join-Path $ProjectDir "version.json"
+            if (Test-Path $verFile) {
+                try {
+                    $rawLocal = (Get-Content $verFile -Raw).TrimStart([char]0xFEFF)
+                    $localVer = ($rawLocal | ConvertFrom-Json).version
+                } catch { }
             }
-        }
 
-        if ($missing -gt 0 -or $CleanMode -or $needsCodeUpdate) {
-            Log-Msg "Missing/updated project files detect hui ($missing). GitHub se latest SQLite build download ho raha hai..." 'INFO'
-            Update-Step 2 'RUNNING' 20 "Downloading ZIP..." "GitHub se SQLite Edition archive download ho raha hai..."
-            $zip = Join-Path $env:TEMP "cmbc_sqlite_$(Get-Random).zip"
-            $extr = Join-Path $env:TEMP "cmbc_sqlite_extr_$(Get-Random)"
-            $ticks = [DateTime]::UtcNow.Ticks
-            $zipUrls = @(
-                "${RepoZip}?t=${ticks}",
-                "${RepoZipAlt}?t=${ticks}",
-                "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/sqlite.zip?t=${ticks}"
-            )
-            $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000 -ValidateType 'ZIP'
-            if ($ok) {
-                Update-Step 2 'RUNNING' 80 "Extracting ZIP..." "Archive extract ho raha hai..."
-                Log-Msg "Archive extract ho raha hai..." 'EXTRACT'
-                $extracted = $false
-                $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
-                if ($tarCmd) {
+            try {
+                $ticks = [DateTime]::UtcNow.Ticks
+                $vUrls = @(
+                    "https://raw.githubusercontent.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/sqlite/version.json?t=$ticks",
+                    "https://api.github.com/repos/sanjaynag28-jpg/CSC-BC-apna-hisaab/contents/version.json?ref=sqlite&t=$ticks",
+                    "https://cdn.jsdelivr.net/gh/sanjaynag28-jpg/CSC-BC-apna-hisaab@sqlite/version.json?t=$ticks",
+                    "$RepoFastly/version.json?t=$ticks"
+                )
+                $bestRemoteVer = $null
+                foreach ($u in $vUrls) {
                     try {
-                        New-Item -ItemType Directory -Force -Path $extr | Out-Null
-                        & $tarCmd.Source -xf "$zip" -C "$extr" 2>$null
-                        if ($LASTEXITCODE -eq 0 -and (Get-ChildItem -LiteralPath $extr -ErrorAction SilentlyContinue).Count -gt 0) {
-                            $extracted = $true
+                        $hdrs = @{ 'Cache-Control' = 'no-cache' }
+                        if ($u -like '*api.github.com*') { $hdrs['Accept'] = 'application/vnd.github.raw+json' }
+                        $vResp = Invoke-WebRequest -Uri $u -Headers $hdrs -UseBasicParsing -TimeoutSec 6 -ErrorAction Stop
+                        $contentTxt = "$($vResp.Content)".TrimStart([char]0xFEFF)
+                        $remoteObj = $contentTxt | ConvertFrom-Json
+                        if ($remoteObj -and $remoteObj.encoding -eq 'base64' -and $remoteObj.content) {
+                            $decoded = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($remoteObj.content -replace '\s+', '')))
+                            $remoteObj = $decoded.TrimStart([char]0xFEFF) | ConvertFrom-Json
+                        }
+                        if ($remoteObj -and $remoteObj.version) {
+                            if ($remoteObj.branch -and "$($remoteObj.branch)".Trim().ToLower() -ne 'sqlite') { continue }
+                            if (-not $bestRemoteVer) {
+                                $bestRemoteVer = [string]$remoteObj.version
+                            } else {
+                                try {
+                                    if ([version]([string]$remoteObj.version) -gt [version]$bestRemoteVer) {
+                                        $bestRemoteVer = [string]$remoteObj.version
+                                    }
+                                } catch { }
+                            }
+                            try {
+                                if ([version]$bestRemoteVer -gt [version]([string]$localVer)) { break }
+                            } catch { }
                         }
                     } catch { }
                 }
-                if (-not $extracted) {
+                if ($bestRemoteVer) {
+                    $isNewer = $false
                     try {
-                        Expand-Archive -LiteralPath $zip -DestinationPath $extr -Force -ErrorAction Stop
-                        $extracted = $true
+                        $isNewer = ([version]$bestRemoteVer -gt [version]([string]$localVer))
                     } catch {
-                        Log-Msg "Expand-Archive error: $($_.Exception.Message)" 'WARN'
-                        $ok = $false
+                        $isNewer = ($bestRemoteVer -ne [string]$localVer)
+                    }
+                    if ($isNewer) {
+                        Log-Msg "Naya version detect hua: Local v$localVer -> Remote v$bestRemoteVer. Auto-syncing files..." 'UPDATE'
+                        $needsCodeUpdate = $true
                     }
                 }
-                $subDir = Get-ChildItem -LiteralPath $extr -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-                $src = if ($subDir) { $subDir.FullName } else { $extr }
+            } catch { }
 
-                $archiveOk = $false
-                if ($ok -and $src -and (Test-Path -LiteralPath (Join-Path $src 'server.js')) -and (Test-Path -LiteralPath (Join-Path $src 'database\setup_sqlite.js'))) {
-                    $archiveOk = $true
-                    $archiveVerFile = Join-Path $src 'version.json'
-                    if (Test-Path -LiteralPath $archiveVerFile) {
-                        try {
-                            $archiveVer = Get-Content -LiteralPath $archiveVerFile -Raw | ConvertFrom-Json
-                            if ($archiveVer.branch -and "$($archiveVer.branch)".Trim().ToLower() -ne 'sqlite') { $archiveOk = $false }
-                        } catch { $archiveOk = $false }
-                    }
+            # Check existing files
+            $missing = 0
+            foreach ($f in $RequiredFiles.Keys) {
+                $fp = Join-Path $ProjectDir $f
+                if (-not (Test-Path $fp) -or (Get-Item $fp).Length -lt $RequiredFiles[$f]) {
+                    $missing++
                 }
-
-                if ($archiveOk) {
-                    try {
-                        # Preserve existing .env and user database (+ WAL & SHM!)
-                        $envPath = Join-Path $ProjectDir '.env'
-                        $envBackup = $null
-                        if (Test-Path -LiteralPath $envPath) {
-                            $envBackup = Join-Path $env:TEMP "cmbc_env_$(Get-Random).tmp"
-                            Copy-Item -LiteralPath $envPath -Destination $envBackup -Force -ErrorAction SilentlyContinue
-                        }
-                        $dbPath = Join-Path $ProjectDir 'database\data\cash_management.db'
-                        $dbBackup = $null
-                        if (Test-Path -LiteralPath $dbPath) {
-                            $dbBackup = Join-Path $env:TEMP "cmbc_db_$(Get-Random).tmp"
-                            Copy-Item -LiteralPath $dbPath -Destination $dbBackup -Force -ErrorAction SilentlyContinue
-                            foreach ($ext in @('-wal', '-shm')) {
-                                if (Test-Path -LiteralPath ($dbPath + $ext)) {
-                                    Copy-Item -LiteralPath ($dbPath + $ext) -Destination ($dbBackup + $ext) -Force -ErrorAction SilentlyContinue
-                                }
-                            }
-                        }
-
-                        Copy-Item -Path "$src\*" -Destination $ProjectDir -Recurse -Force -ErrorAction SilentlyContinue
-
-                        if ($envBackup -and (Test-Path -LiteralPath $envBackup)) {
-                            Copy-Item -LiteralPath $envBackup -Destination $envPath -Force -ErrorAction SilentlyContinue
-                            Remove-Item -LiteralPath $envBackup -Force -ErrorAction SilentlyContinue
-                        }
-                        if ($dbBackup -and (Test-Path -LiteralPath $dbBackup)) {
-                            $dbDir = Split-Path -Parent $dbPath
-                            if (-not (Test-Path -LiteralPath $dbDir)) { New-Item -ItemType Directory -Force -Path $dbDir | Out-Null }
-                            Copy-Item -LiteralPath $dbBackup -Destination $dbPath -Force -ErrorAction SilentlyContinue
-                            Remove-Item -LiteralPath $dbBackup -Force -ErrorAction SilentlyContinue
-                            foreach ($ext in @('-wal', '-shm')) {
-                                if (Test-Path -LiteralPath ($dbBackup + $ext)) {
-                                    Copy-Item -LiteralPath ($dbBackup + $ext) -Destination ($dbPath + $ext) -Force -ErrorAction SilentlyContinue
-                                    Remove-Item -LiteralPath ($dbBackup + $ext) -Force -ErrorAction SilentlyContinue
-                                }
-                            }
-                        }
-
-                        try { Get-ChildItem -LiteralPath $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
-                        Log-Msg "Project files latest SQLite version se sync ho gayi." 'OK'
-                    } catch {
-                        Log-Msg "File copy error: $($_.Exception.Message)" 'WARN'
-                    }
-                } else {
-                    $ok = $false
-                    Log-Msg "Downloaded ZIP SQLite edition ka valid build nahi hai - use apply nahi kiya gaya." 'WARN'
-                }
-
-                Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-                Remove-Item -LiteralPath $extr -Recurse -Force -ErrorAction SilentlyContinue
             }
-            if (-not $ok) {
-                Log-Msg "Direct ZIP download fail hua. Individual files multi-CDN + DoH sync chal rahi hain..." 'WARN'
-                $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
-                foreach ($f in $RequiredFiles.Keys) {
-                    $dst = Join-Path $ProjectDir $f
-                    $parent = Split-Path -Parent $dst
-                    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-                    $relUrl = ($f -replace '\\', '/')
-                    $fetched = $false
-                    foreach ($base in @($RepoCdn, $RepoFastly, $RepoRaw)) {
+
+            if ($missing -gt 0 -or $CleanMode -or $needsCodeUpdate) {
+                Log-Msg "Missing/updated project files detect hui ($missing). GitHub se latest SQLite build download ho raha hai..." 'INFO'
+                Update-Step 2 'RUNNING' 20 "Downloading ZIP..." "GitHub se SQLite Edition archive download ho raha hai..."
+                $zip = Join-Path $env:TEMP "cmbc_sqlite_$(Get-Random).zip"
+                $extr = Join-Path $env:TEMP "cmbc_sqlite_extr_$(Get-Random)"
+                $ticks = [DateTime]::UtcNow.Ticks
+                $zipUrls = @(
+                    "${RepoZip}?t=${ticks}",
+                    "${RepoZipAlt}?t=${ticks}",
+                    "https://github.com/sanjaynag28-jpg/CSC-BC-apna-hisaab/archive/sqlite.zip?t=${ticks}"
+                )
+                $ok = Get-FileSmart -Urls $zipUrls -OutFile $zip -Step 2 -FromPct 20 -ToPct 75 -Label "SQLite Edition ZIP" -MinBytes 500000 -ValidateType 'ZIP'
+                if ($ok) {
+                    Update-Step 2 'RUNNING' 80 "Extracting ZIP..." "Archive extract ho raha hai..."
+                    Log-Msg "Archive extract ho raha hai..." 'EXTRACT'
+                    $extracted = $false
+                    $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
+                    if ($tarCmd) {
                         try {
-                            Invoke-WebRequest -Uri "$base/$relUrl`?t=$ticks" -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
-                            if ((Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Length -ge $RequiredFiles[$f])) { $fetched = $true; break }
+                            New-Item -ItemType Directory -Force -Path $extr | Out-Null
+                            & $tarCmd.Source -xf "$zip" -C "$extr" 2>$null
+                            if ($LASTEXITCODE -eq 0 -and (Get-ChildItem -LiteralPath $extr -ErrorAction SilentlyContinue).Count -gt 0) {
+                                $extracted = $true
+                            }
                         } catch { }
                     }
-                    if (-not $fetched -and $curlCmd) {
-                        & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 12 "$RepoCdn/$relUrl`?t=$ticks" -o "$dst" 2>$null
+                    if (-not $extracted) {
+                        try {
+                            Expand-Archive -LiteralPath $zip -DestinationPath $extr -Force -ErrorAction Stop
+                            $extracted = $true
+                        } catch {
+                            Log-Msg "Expand-Archive error: $($_.Exception.Message)" 'WARN'
+                            $ok = $false
+                        }
+                    }
+                    $subDir = Get-ChildItem -LiteralPath $extr -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+                    $src = if ($subDir) { $subDir.FullName } else { $extr }
+
+                    $archiveOk = $false
+                    if ($ok -and $src -and (Test-Path -LiteralPath (Join-Path $src 'server.js')) -and (Test-Path -LiteralPath (Join-Path $src 'database\setup_sqlite.js'))) {
+                        $archiveOk = $true
+                        $archiveVerFile = Join-Path $src 'version.json'
+                        if (Test-Path -LiteralPath $archiveVerFile) {
+                            try {
+                                $archiveVer = (Get-Content -LiteralPath $archiveVerFile -Raw).TrimStart([char]0xFEFF) | ConvertFrom-Json
+                                if ($archiveVer.branch -and "$($archiveVer.branch)".Trim().ToLower() -ne 'sqlite') { $archiveOk = $false }
+                            } catch { $archiveOk = $false }
+                        }
+                    }
+
+                    if ($archiveOk) {
+                        $rollbackDir = Join-Path $ProjectDir '.previous-release'
+                        $backedUpRel = New-Object System.Collections.Generic.List[string]
+                        $createdRel = New-Object System.Collections.Generic.List[string]
+                        try {
+                            if (Test-Path -LiteralPath $rollbackDir) { Remove-Item -LiteralPath $rollbackDir -Recurse -Force -ErrorAction SilentlyContinue }
+                            New-Item -ItemType Directory -Force -Path $rollbackDir | Out-Null
+
+                            $srcPrefixLen = $src.TrimEnd('\', '/').Length + 1
+                            $protectedPrefixes = @(
+                                '.git', 'node_modules', '.runtime', 'backups', 'logs', 'bin',
+                                '.auto-update-tmp', '.previous-release', '.antigravity',
+                                'database/data', 'database/backups', 'public/uploads'
+                            )
+                            $protectedExact = @('.env', 'config/licenses.json', '.admin-login.txt', '.sql-server-credentials.txt', 'version.json.bak')
+
+                            $allFiles = Get-ChildItem -LiteralPath $src -Recurse -File -Force
+                            foreach ($fItem in $allFiles) {
+                                $rel = ($fItem.FullName.Substring($srcPrefixLen)) -replace '\\', '/'
+                                $relLower = $rel.ToLowerInvariant()
+                                $skip = $false
+                                foreach ($pp in $protectedPrefixes) {
+                                    if ($relLower -eq $pp -or $relLower.StartsWith("$pp/")) { $skip = $true; break }
+                                }
+                                if (-not $skip) {
+                                    if ($protectedExact -contains $relLower) { $skip = $true }
+                                    elseif ($relLower -match '^\.env(\.|$)' -and $relLower -ne '.env.example') { $skip = $true }
+                                    elseif ($relLower -match '\.(mdf|ldf|ndf|bak|db|db-wal|db-shm|db-journal|sqlite|sqlite3|sqlite-wal|sqlite-shm|sqlite-journal)$') { $skip = $true }
+                                }
+                                if ($skip) { continue }
+
+                                $dstPath = Join-Path $ProjectDir ($rel -replace '/', '\')
+                                $dstDir = Split-Path -Parent $dstPath
+                                if (-not (Test-Path -LiteralPath $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
+
+                                if (Test-Path -LiteralPath $dstPath) {
+                                    $snapPath = Join-Path $rollbackDir ($rel -replace '/', '\')
+                                    $snapDir = Split-Path -Parent $snapPath
+                                    if (-not (Test-Path -LiteralPath $snapDir)) { New-Item -ItemType Directory -Force -Path $snapDir | Out-Null }
+                                    Copy-Item -LiteralPath $dstPath -Destination $snapPath -Force -ErrorAction Stop
+                                    $backedUpRel.Add($rel)
+                                } else {
+                                    $createdRel.Add($rel)
+                                }
+
+                                $tmpDst = "$dstPath.updating-tmp"
+                                $copied = $false
+                                for ($retry = 1; $retry -le 3; $retry++) {
+                                    try {
+                                        Copy-Item -LiteralPath $fItem.FullName -Destination $tmpDst -Force -ErrorAction Stop
+                                        Move-Item -LiteralPath $tmpDst -Destination $dstPath -Force -ErrorAction Stop
+                                        $copied = $true
+                                        break
+                                    } catch {
+                                        if ($retry -lt 3) { Start-Sleep -Milliseconds 300 }
+                                        else { throw }
+                                    }
+                                }
+                            }
+
+                            try { Get-ChildItem -LiteralPath $ProjectDir -Recurse -File -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue } catch { }
+                            try { Remove-Item -LiteralPath $rollbackDir -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+                            Log-Msg "Project files latest SQLite version se atomically sync ho gayi (User Data 100% protected)." 'OK'
+                        } catch {
+                            Log-Msg "File apply error ($($_.Exception.Message)) — rolling back partial files..." 'WARN'
+                            foreach ($rel in $backedUpRel) {
+                                $snapPath = Join-Path $rollbackDir ($rel -replace '/', '\')
+                                $dstPath = Join-Path $ProjectDir ($rel -replace '/', '\')
+                                if (Test-Path -LiteralPath $snapPath) { Copy-Item -LiteralPath $snapPath -Destination $dstPath -Force -ErrorAction SilentlyContinue }
+                            }
+                            foreach ($rel in $createdRel) {
+                                $dstPath = Join-Path $ProjectDir ($rel -replace '/', '\')
+                                if (Test-Path -LiteralPath $dstPath) { Remove-Item -LiteralPath $dstPath -Force -ErrorAction SilentlyContinue }
+                            }
+                            $ok = $false
+                        }
+                    } else {
+                        $ok = $false
+                        Log-Msg "Downloaded ZIP SQLite edition ka valid build nahi hai - use apply nahi kiya gaya." 'WARN'
+                    }
+
+                    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $extr -Recurse -Force -ErrorAction SilentlyContinue
+                }
+                if (-not $ok) {
+                    Log-Msg "Direct ZIP download fail hua. Individual files multi-CDN + DoH sync chal rahi hain..." 'WARN'
+                    $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+                    foreach ($f in $RequiredFiles.Keys) {
+                        $dst = Join-Path $ProjectDir $f
+                        $parent = Split-Path -Parent $dst
+                        if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+                        $relUrl = ($f -replace '\\', '/')
+                        $fetched = $false
+                        foreach ($base in @($RepoCdn, $RepoFastly, $RepoRaw)) {
+                            try {
+                                Invoke-WebRequest -Uri "$base/$relUrl`?t=$ticks" -OutFile $dst -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+                                if ((Test-Path -LiteralPath $dst) -and ((Get-Item -LiteralPath $dst).Length -ge $RequiredFiles[$f])) { $fetched = $true; break }
+                            } catch { }
+                        }
+                        if (-not $fetched -and $curlCmd) {
+                            & $curlCmd.Source -fSL --doh-url 'https://cloudflare-dns.com/dns-query' --retry 2 --connect-timeout 12 "$RepoCdn/$relUrl`?t=$ticks" -o "$dst" 2>$null
+                        }
                     }
                 }
-            }
 
-            # Re-verify critical files exist after sync
-            $stillMissing = 0
-            foreach ($f in @('server.js', 'package.json', 'setup-database.js', 'database\setup_sqlite.js', 'database\sqlite_schema.sql', 'database\db.js')) {
-                if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $f))) { $stillMissing++ }
+                # Re-verify critical files exist after sync
+                $stillMissing = 0
+                foreach ($f in @('server.js', 'package.json', 'setup-database.js', 'database\setup_sqlite.js', 'database\sqlite_schema.sql', 'database\db.js')) {
+                    if (-not (Test-Path -LiteralPath (Join-Path $ProjectDir $f))) { $stillMissing++ }
+                }
+                if ($stillMissing -gt 0) {
+                    Log-Msg "Critical project files ($stillMissing) download nahi ho saki — internet/firewall check karein." 'ERROR'
+                    Update-Step 2 'FAILED' 85 "Files Missing" "Step 2 : Project files download fail"
+                    return $false
+                }
+            } else {
+                Log-Msg "Saari project files 100% verified hain." 'OK'
             }
-            if ($stillMissing -gt 0) {
-                Log-Msg "Critical project files ($stillMissing) download nahi ho saki — internet/firewall check karein." 'ERROR'
-                Update-Step 2 'FAILED' 85 "Files Missing" "Step 2 : Project files download fail"
-                return $false
+        } finally {
+            # License config ALWAYS restore karo (even on failure/early return).
+            if ($licenseBackup -and (Test-Path $licenseBackup)) {
+                $cfgDir = Join-Path $ProjectDir 'config'
+                if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
+                Copy-Item -Path $licenseBackup -Destination $licensePath -Force -ErrorAction SilentlyContinue
+                Remove-Item $licenseBackup -Force -ErrorAction SilentlyContinue
+                Log-Msg "Local license config (config\licenses.json) safely preserved." 'OK'
             }
-        } else {
-            Log-Msg "Saari project files 100% verified hain." 'OK'
-        }
-
-        # License config restore karo (agar local copy thi).
-        if ($licenseBackup -and (Test-Path $licenseBackup)) {
-            $cfgDir = Join-Path $ProjectDir 'config'
-            if (-not (Test-Path $cfgDir)) { New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null }
-            Copy-Item -Path $licenseBackup -Destination $licensePath -Force -ErrorAction SilentlyContinue
-            Remove-Item $licenseBackup -Force -ErrorAction SilentlyContinue
-            Log-Msg "Local license config (config\licenses.json) safely preserved." 'OK'
         }
 
         Update-Step 2 'SUCCESS' 100 "Project Files Ready" "Step 2 : Project Files 100% Verified"
@@ -954,7 +1020,8 @@ $workerBlock = {
             return $false
         }
 
-        $depTestJs = "try{const D=require('better-sqlite3');for(const m of['express','exceljs','multer','bcryptjs','jsonwebtoken','archiver','compression','cors','moment']){require(m);}const db=new D(':memory:');db.close();let hasSharp=true;try{require('sharp')}catch{hasSharp=false}console.log('SQLITE_OK:'+(hasSharp?'SHARP_OK':'SHARP_OPT'));}catch(e){console.log('FAIL:'+e.message)}"
+        $depTestJs = "try{const fs=require('fs'),c=require('crypto'),D=require('better-sqlite3');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));for(const m of Object.keys(pkg.dependencies||{})){require.resolve(m);if(m==='express')require(m);}const db=new D(':memory:');db.close();const h=c.createHash('sha256').update(fs.readFileSync('package.json','utf8')).update(fs.existsSync('package-lock.json')?fs.readFileSync('package-lock.json','utf8'):'').digest('hex').slice(0,16);const hFile='node_modules/.cmbc_deps_hash';const prev=fs.existsSync(hFile)?fs.readFileSync(hFile,'utf8').trim():'';let hasSharp=true;try{require('sharp')}catch{hasSharp=false}if(prev&&prev!==h){console.log('HASH_MISMATCH');}else{console.log('SQLITE_OK:'+(hasSharp?'SHARP_OK':'SHARP_OPT'));}}catch(e){console.log('FAIL:'+e.message)}"
+        $stampDepHashJs = "try{const fs=require('fs'),c=require('crypto');const h=c.createHash('sha256').update(fs.readFileSync('package.json','utf8')).update(fs.existsSync('package-lock.json')?fs.readFileSync('package-lock.json','utf8'):'').digest('hex').slice(0,16);fs.mkdirSync('node_modules',{recursive:true});fs.writeFileSync('node_modules/.cmbc_deps_hash',h,'utf8');}catch{}"
         $runDepCheck = {
             try {
                 Push-Location -LiteralPath $ProjectDir
@@ -1013,6 +1080,7 @@ $workerBlock = {
 
         $chk1 = & $runDepCheck
         if ($chk1 -like "*SQLITE_OK*") {
+            try { Push-Location -LiteralPath $ProjectDir; & $node -e $stampDepHashJs 2>$null | Out-Null; Pop-Location } catch { try { Pop-Location } catch {} }
             $env:NODE_OPTIONS = $prevNodeOpts; $env:npm_config_ignore_scripts = $prevIgnScripts
             Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
             Log-Msg "npm install safalta se complete ho gaya ($chk1)." 'OK'
@@ -1059,6 +1127,7 @@ $workerBlock = {
         Remove-Item $npmOutLog, $npmErrLog -Force -ErrorAction SilentlyContinue
 
         if ($okMirror) {
+            try { Push-Location -LiteralPath $ProjectDir; & $node -e $stampDepHashJs 2>$null | Out-Null; Pop-Location } catch { try { Pop-Location } catch {} }
             Log-Msg "Saare core packages mirror/bypass se safalta se ready ho gaye." 'OK'
             Update-Step 4 'REPAIRED' 100 "Packages Repaired" "Step 4 : NPM Repaired by AI"
             return $true

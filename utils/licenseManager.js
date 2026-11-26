@@ -186,8 +186,15 @@ async function initLicense() {
     let record = getActiveRecord();
 
     if (!record) {
-        // Auto-provision TEST123 for seamless zero-downtime operation
+        // Never re-provision a blacklisted or revoked machine
         const localCfg = getLocalConfig();
+        const revokedRow = db.prepare('SELECT IsActive FROM AppLicenses WHERE HardwareID = ? ORDER BY LicenseID DESC LIMIT 1').get(hwId);
+        const isBlacklisted = Array.isArray(localCfg.blacklistedHardwareIds) && localCfg.blacklistedHardwareIds.includes(hwId);
+        if (isBlacklisted || (revokedRow && Number(revokedRow.IsActive) === 0)) {
+            console.warn(`[LicenseManager] Machine ${hwId} revoked/inactive — auto-provision skipped.`);
+            return revokedRow || null;
+        }
+        // Auto-provision TEST123 for seamless zero-downtime operation
         const testKeyInfo = localCfg.universalKeys?.['TEST123'] || {
             expiryDate: '2027-02-23',
             plan: '90 Days Free Trial'
@@ -250,12 +257,17 @@ async function syncWithCloud() {
     if (!record) return null;
 
     const remoteCfg = await fetchRemoteConfig();
+    const existingCfg = getLocalConfig();
     if (remoteCfg && remoteCfg.universalKeys) {
         try {
-            fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+            const localTime = existingCfg?.updatedAt ? new Date(existingCfg.updatedAt).getTime() : 0;
+            const remoteTime = remoteCfg.updatedAt ? new Date(remoteCfg.updatedAt).getTime() : 0;
+            if (!localTime || remoteTime >= localTime) {
+                fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+            }
         } catch (_) {}
     }
-    const cfg = remoteCfg || getLocalConfig();
+    const cfg = (remoteCfg && (!existingCfg?.updatedAt || new Date(remoteCfg.updatedAt || 0) >= new Date(existingCfg.updatedAt))) ? remoteCfg : (existingCfg || remoteCfg);
     if (!cfg) return null;
 
     lastSyncTime = new Date().toISOString();
@@ -391,12 +403,17 @@ async function activateKey(keyInput, shopDetails = {}) {
 
     // Check Cloud & Local Universal Keys
     const remoteCfg = await fetchRemoteConfig();
+    const existingCfg = getLocalConfig();
     if (remoteCfg && remoteCfg.universalKeys) {
         try {
-            fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+            const localTime = existingCfg?.updatedAt ? new Date(existingCfg.updatedAt).getTime() : 0;
+            const remoteTime = remoteCfg.updatedAt ? new Date(remoteCfg.updatedAt).getTime() : 0;
+            if (!localTime || remoteTime >= localTime) {
+                fs.writeFileSync(LOCAL_CONFIG_PATH, JSON.stringify(remoteCfg, null, 2), 'utf8');
+            }
         } catch (_) {}
     }
-    const cfg = remoteCfg || getLocalConfig();
+    const cfg = (remoteCfg && (!existingCfg?.updatedAt || new Date(remoteCfg.updatedAt || 0) >= new Date(existingCfg.updatedAt))) ? remoteCfg : (existingCfg || remoteCfg);
 
     let planName = 'Universal Free Trial';
     let expiryDate = '2027-02-23';

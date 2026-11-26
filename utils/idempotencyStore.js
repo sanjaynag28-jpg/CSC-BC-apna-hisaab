@@ -36,7 +36,8 @@ function createSqlIdempotencyStore(query, sql) {
                     err && err.originalError && err.originalError.info && err.originalError.info.number,
                     ...((err && err.precedingErrors) || []).map(previous => previous.number)
                 ];
-                if (!errorNumbers.some(number => number === 2601 || number === 2627)) {
+                const isSqliteDup = String((err && (err.code || err.message)) || '').includes('SQLITE_CONSTRAINT');
+                if (!isSqliteDup && !errorNumbers.some(number => number === 2601 || number === 2627)) {
                     throw err;
                 }
 

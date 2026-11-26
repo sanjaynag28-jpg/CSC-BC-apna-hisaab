@@ -8,11 +8,14 @@ cd /d "%~dp0"
 :: Remove previous stop signal
 if exist "logs\.stop_supervisor" del /f /q "logs\.stop_supervisor" >nul 2>&1
 
-:: Resolve Node.js across all Windows install paths (System, User, Winget, NVM, Scoop, Volta)
+:: Resolve Node.js across local portable runtime first, then System/User/Winget/NVM/Scoop/Volta
 set "NODE_EXE="
-where node >nul 2>&1
-if not errorlevel 1 (
-    for /f "delims=" %%W in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%~W"
+if exist "%~dp0.runtime\nodejs\node.exe" set "NODE_EXE=%~dp0.runtime\nodejs\node.exe"
+if not defined NODE_EXE (
+    where node >nul 2>&1
+    if not errorlevel 1 (
+        for /f "delims=" %%W in ('where node 2^>nul') do if not defined NODE_EXE set "NODE_EXE=%%~W"
+    )
 )
 if not defined NODE_EXE (
     for %%P in (

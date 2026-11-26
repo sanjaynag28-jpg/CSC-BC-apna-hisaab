@@ -14,6 +14,11 @@ if (!fs.existsSync(dataDir)) {
 
 const dbPath = path.join(dataDir, 'cash_management.db');
 let db = null;
+let activeTransactions = 0;
+
+function getActiveTransactions() {
+    return activeTransactions;
+}
 
 function getDb() {
     if (!db) {
@@ -233,6 +238,7 @@ function translateSql(queryStr) {
     s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+TIME\s*\)/gi, "time($1)");
     s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+DATE\s*\)/gi, "date($1)");
     s = s.replace(/GETDATE\s*\(\s*\)/gi, "datetime('now', 'localtime')");
+    s = s.replace(/SYSUTCDATETIME\s*\(\s*\)/gi, "datetime('now')");
 
     // 12a. Universal subquery SELECT TOP n converter (with balanced parenthesis)
     if (s.includes('TOP')) {
@@ -411,13 +417,13 @@ async function handleStoredProcedure(execSql, rawParams) {
         return { recordset: [{ Status: 'SUCCESS' }], rowsAffected: [1] };
     }
 
-    // 5. sp_BackupCashManagementDB
+    // 5. sp_BackupCashManagementDB (Atomic SQLite Online Backup)
     if (/sp_BackupCashManagementDB/i.test(execSql)) {
         const destFolder = params.BackupFolder || params.folder || path.join(__dirname, '..', 'backups');
         if (!fs.existsSync(destFolder)) fs.mkdirSync(destFolder, { recursive: true });
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const destFile = path.join(destFolder, `CashManagement_SQLite_${ts}.db`);
-        fs.copyFileSync(dbPath, destFile);
+        await d.backup(destFile);
         return { recordset: [{ BackupPath: destFile }], rowsAffected: [1] };
     }
 
@@ -510,6 +516,7 @@ async function query(queryStr, rawParams = {}) {
 
 async function withTransaction(callback) {
     const d = getDb();
+    activeTransactions++;
     d.exec('BEGIN TRANSACTION');
     try {
         const transQuery = async (queryStr, rawParams = {}) => {
@@ -521,6 +528,8 @@ async function withTransaction(callback) {
     } catch (err) {
         try { d.exec('ROLLBACK'); } catch (_) { }
         throw err;
+    } finally {
+        activeTransactions = Math.max(0, activeTransactions - 1);
     }
 }
 
@@ -535,6 +544,7 @@ async function isDbAlive() {
 
 async function closePool() {
     if (db) {
+        try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) { }
         try { db.close(); } catch (_) { }
         db = null;
     }
@@ -564,6 +574,7 @@ async function getMasterPool() {
 
 module.exports = {
     getDb,
+    getActiveTransactions,
     getPool,
     getMasterPool,
     isDbAlive,

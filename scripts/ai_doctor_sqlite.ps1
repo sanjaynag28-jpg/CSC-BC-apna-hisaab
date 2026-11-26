@@ -1,4 +1,4 @@
-﻿<#
+<#
     scripts/ai_doctor_sqlite.ps1
     ============================================================================
     CSC & BC Apna Hisaab - SQLite Edition AI Live Self-Healing Doctor v2.0

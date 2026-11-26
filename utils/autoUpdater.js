@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
+const os = require('os');
 const { execFileSync, spawn } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -26,7 +27,9 @@ const VERSION_FILE = path.join(ROOT_DIR, 'version.json');
 const PKG_FILE = path.join(ROOT_DIR, 'package.json');
 const LOG_DIR = path.join(ROOT_DIR, 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'auto-update.log');
-const TMP_DIR = path.join(ROOT_DIR, '.auto-update-tmp');
+const TMP_DIR = path.join(os.tmpdir(), 'cmbc-auto-update-tmp');
+const LOCK_FILE = path.join(LOG_DIR, '.auto_update.lock');
+const UPDATING_FLAG_FILE = path.join(LOG_DIR, '.updating');
 
 const REPO_OWNER = 'sanjaynag28-jpg';
 const REPO_NAME = 'CSC-BC-apna-hisaab';
@@ -56,6 +59,7 @@ if (!branchFromManifest) {
 function getRemoteVersionUrls() {
     const urls = [
         `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/version.json`,
+        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/version.json?ref=${BRANCH}`,
         `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH}/version.json`,
         `https://fastly.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH}/version.json`
     ];
@@ -78,20 +82,26 @@ const PROTECTED_RELATIVE_PATHS = new Set([
     '.env',
     '.git',
     'node_modules',
+    '.runtime',
     'backups',
     'logs',
     'bin',
     '.auto-update-tmp',
+    '.previous-release',
     '.antigravity',
     'database/data',
+    'database/backups',
     'public/uploads',
+    '.admin-login.txt',
+    '.sql-server-credentials.txt',
+    'version.json.bak',
     // Admin-managed license cache (universal keys + hardware blacklist).
     // Release ZIP me iski purani copy hoti hai, isliye local file ko overwrite mat karo.
     'config/licenses.json'
 ]);
 
 // These tracked files are expected to differ locally and must survive an update.
-const LOCAL_DATA_FILES = new Set(['version.json', 'config/licenses.json']);
+const LOCAL_DATA_FILES = new Set(['version.json', 'config/licenses.json', 'extension/manifest.json']);
 
 const state = {
     checking: false,
@@ -216,7 +226,7 @@ function isRemoteInfoForBranch(info, branch = BRANCH) {
 
 function readVersionInfoFromDir(dir) {
     try {
-        return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8'));
+        return JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8').replace(/^\uFEFF/, ''));
     } catch (_) {
         return null;
     }
@@ -263,17 +273,47 @@ function findGitBinary() {
     return null;
 }
 
-function fetchJson(url, timeoutMs = 5000) {
-    return new Promise((resolve, reject) => {
-        const req = https.get(url, {
-            headers: {
-                'User-Agent': 'CSC-BC-Apna-Hisaab-Updater/1.0',
-                'Cache-Control': 'no-cache'
+function isHtmlPayload(buf) {
+    const head = Buffer.isBuffer(buf) ? buf.toString('utf8', 0, Math.min(buf.length, 256)) : String(buf || '').slice(0, 256);
+    return /^\s*(?:<!DOCTYPE|<html)/i.test(head);
+}
+
+function curlFetchFallback(url, destPath = null, timeoutMs = 15000) {
+    if (process.platform !== 'win32') throw new Error('curl fallback only on win32');
+    const sec = Math.max(5, Math.ceil(timeoutMs / 1000));
+    const commonArgs = ['-fSL', '--retry', '2', '--connect-timeout', String(sec), '--max-time', String(sec * 2)];
+    const attempts = [
+        [...commonArgs, '--doh-url', 'https://cloudflare-dns.com/dns-query', url],
+        [...commonArgs, url]
+    ];
+    for (const args of attempts) {
+        try {
+            if (destPath) {
+                execFileSync('curl.exe', [...args, '-o', destPath], { stdio: 'ignore', timeout: timeoutMs * 2 + 5000, windowsHide: true });
+                return destPath;
             }
-        }, (res) => {
+            return execFileSync('curl.exe', args, { encoding: 'utf8', timeout: timeoutMs + 3000, windowsHide: true });
+        } catch (_) { }
+    }
+    throw new Error('curl DoH/fallback fetch failed');
+}
+
+function fetchJson(url, timeoutMs = 5000, redirects = 0) {
+    if (redirects > 5) return Promise.reject(new Error('Too many redirects'));
+    return new Promise((resolve, reject) => {
+        const headers = {
+            'User-Agent': 'CSC-BC-Apna-Hisaab-Updater/1.0',
+            'Cache-Control': 'no-cache'
+        };
+        if (url.includes('api.github.com/repos/')) {
+            headers.Accept = 'application/vnd.github.raw+json';
+        }
+        const req = https.get(url, { headers }, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 res.resume();
-                return fetchJson(res.headers.location, timeoutMs).then(resolve, reject);
+                let nextUrl;
+                try { nextUrl = new URL(res.headers.location, url).toString(); } catch (e) { return reject(e); }
+                return fetchJson(nextUrl, timeoutMs, redirects + 1).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
                 res.resume();
@@ -281,10 +321,17 @@ function fetchJson(url, timeoutMs = 5000) {
             }
             let raw = '';
             res.setEncoding('utf8');
+            res.on('error', reject);
             res.on('data', chunk => { raw += chunk; });
             res.on('end', () => {
+                if (isHtmlPayload(raw)) return reject(new Error('Captive portal HTML returned'));
                 try {
-                    resolve(JSON.parse(raw));
+                    const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
+                    if (parsed && parsed.encoding === 'base64' && typeof parsed.content === 'string') {
+                        const decoded = Buffer.from(parsed.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+                        return resolve(JSON.parse(decoded.replace(/^\uFEFF/, '')));
+                    }
+                    resolve(parsed);
                 } catch (err) {
                     reject(new Error('Invalid JSON in remote version.json'));
                 }
@@ -293,36 +340,87 @@ function fetchJson(url, timeoutMs = 5000) {
         req.setTimeout(timeoutMs, () => {
             req.destroy(new Error('Network timeout'));
         });
-        req.on('error', reject);
+        req.on('error', (err) => {
+            if (redirects === 0 && process.platform === 'win32') {
+                try {
+                    const out = curlFetchFallback(url, null, timeoutMs);
+                    if (isHtmlPayload(out)) return reject(err);
+                    return resolve(JSON.parse(out.replace(/^\uFEFF/, '')));
+                } catch (_) { }
+            }
+            reject(err);
+        });
     });
+}
+
+function verifyZipFile(filePath) {
+    try {
+        const st = fs.statSync(filePath);
+        if (st.size < 10000) return false;
+        const fd = fs.openSync(filePath, 'r');
+        const sig = Buffer.alloc(4);
+        fs.readSync(fd, sig, 0, 4, 0);
+        fs.closeSync(fd);
+        return sig[0] === 0x50 && sig[1] === 0x4B; // 'PK'
+    } catch (_) {
+        return false;
+    }
 }
 
 function downloadFile(url, destPath, timeoutMs = 60000, redirects = 0) {
     return new Promise((resolve, reject) => {
         if (redirects > 5) return reject(new Error('Too many redirects'));
+        let ws = null;
+        let settled = false;
+        const fail = (err) => {
+            if (settled) return;
+            settled = true;
+            if (ws) {
+                try { ws.destroy(); } catch (_) { }
+            }
+            try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
+            if (redirects === 0 && process.platform === 'win32') {
+                try {
+                    curlFetchFallback(url, destPath, timeoutMs);
+                    if (verifyZipFile(destPath)) return resolve(destPath);
+                    try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (_) { }
+                } catch (_) { }
+            }
+            reject(err);
+        };
         const req = https.get(url, {
             headers: { 'User-Agent': 'CSC-BC-Apna-Hisaab-Updater/1.0' }
         }, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 res.resume();
-                return downloadFile(res.headers.location, destPath, timeoutMs, redirects + 1).then(resolve, reject);
+                let nextUrl;
+                try { nextUrl = new URL(res.headers.location, url).toString(); } catch (e) { return fail(e); }
+                settled = true;
+                return downloadFile(nextUrl, destPath, timeoutMs, redirects + 1).then(resolve, reject);
             }
             if (res.statusCode !== 200) {
                 res.resume();
-                return reject(new Error(`Download failed with HTTP ${res.statusCode}`));
+                return fail(new Error(`Download failed with HTTP ${res.statusCode}`));
             }
-            const ws = fs.createWriteStream(destPath);
+            ws = fs.createWriteStream(destPath);
+            res.on('error', fail);
+            ws.on('error', fail);
             res.pipe(ws);
-            ws.on('finish', () => ws.close(() => resolve(destPath)));
-            ws.on('error', (err) => {
-                try { fs.unlinkSync(destPath); } catch (_) { }
-                reject(err);
+            ws.on('finish', () => {
+                ws.close(() => {
+                    if (settled) return;
+                    if (!verifyZipFile(destPath)) {
+                        return fail(new Error('Downloaded file is not a valid ZIP archive'));
+                    }
+                    settled = true;
+                    resolve(destPath);
+                });
             });
         });
         req.setTimeout(timeoutMs, () => {
             req.destroy(new Error('Download timeout'));
         });
-        req.on('error', reject);
+        req.on('error', fail);
     });
 }
 
@@ -374,15 +472,96 @@ function findBrokenFiles(baseDir = ROOT_DIR) {
 }
 
 function isProtectedPath(relPath) {
-    const normalized = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    const normalized = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
     if (!normalized) return false;
+    const lower = normalized.toLowerCase();
     for (const p of PROTECTED_RELATIVE_PATHS) {
-        if (normalized === p || normalized.startsWith(p + '/')) return true;
+        const pLower = p.toLowerCase();
+        if (lower === pLower || lower.startsWith(pLower + '/')) return true;
     }
-    if (/^\.env(\.|$)/i.test(normalized) && normalized !== '.env.example') return true;
-    if (/\.(mdf|ldf|ndf|bak|db|sqlite|sqlite3)$/i.test(normalized)) return true;
-    if (normalized === '.admin-login.txt') return true;
+    if (/^\.env(\.|$)/i.test(normalized) && lower !== '.env.example') return true;
+    if (/\.(mdf|ldf|ndf|bak|db|db-wal|db-shm|db-journal|sqlite|sqlite3|sqlite-wal|sqlite-shm|sqlite-journal)$/i.test(normalized)) return true;
+    if (lower === '.admin-login.txt' || lower === '.sql-server-credentials.txt') return true;
     return false;
+}
+
+function isLockPidAlive(pid) {
+    if (!pid || typeof pid !== 'number' || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        return e && e.code === 'EPERM';
+    }
+}
+
+function acquireUpdateLock() {
+    try {
+        if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                fs.writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), { flag: 'wx' });
+                try { fs.writeFileSync(UPDATING_FLAG_FILE, String(process.pid), 'utf8'); } catch (_) { }
+                return true;
+            } catch (err) {
+                if (err.code !== 'EEXIST') return false;
+                let stale = false;
+                try {
+                    const existing = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8'));
+                    const ageMs = Date.now() - Number(existing.startedAt || 0);
+                    if (ageMs > 15 * 60 * 1000 || !isLockPidAlive(Number(existing.pid))) {
+                        stale = true;
+                    }
+                } catch (_) {
+                    stale = true;
+                }
+                if (stale) {
+                    try { fs.unlinkSync(LOCK_FILE); } catch (_) { }
+                    continue;
+                }
+                return false;
+            }
+        }
+    } catch (_) { }
+    return false;
+}
+
+function releaseUpdateLock() {
+    try { if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE); } catch (_) { }
+    try { if (fs.existsSync(UPDATING_FLAG_FILE)) fs.unlinkSync(UPDATING_FLAG_FILE); } catch (_) { }
+}
+
+function copyFileAtomic(srcPath, dstPath) {
+    const dir = path.dirname(dstPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tmpDst = `${dstPath}.updating-tmp`;
+    fs.copyFileSync(srcPath, tmpDst);
+    try {
+        fs.renameSync(tmpDst, dstPath);
+    } catch (renameErr) {
+        try {
+            fs.copyFileSync(tmpDst, dstPath);
+            try { fs.unlinkSync(tmpDst); } catch (_) { }
+        } catch (fallbackErr) {
+            try { fs.unlinkSync(tmpDst); } catch (_) { }
+            throw fallbackErr;
+        }
+    }
+}
+
+function collectFilesRecursively(baseDir, relBase = '', out = []) {
+    const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+    for (const entry of entries) {
+        const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+        if (isProtectedPath(rel)) continue;
+        const abs = path.join(baseDir, entry.name);
+        if (entry.isDirectory()) {
+            collectFilesRecursively(abs, rel, out);
+        } else if (entry.isFile()) {
+            out.push({ rel, abs });
+        }
+    }
+    return out;
 }
 
 function copyDirectorySafely(srcDir, dstDir, relBase = '') {
@@ -396,34 +575,123 @@ function copyDirectorySafely(srcDir, dstDir, relBase = '') {
             if (!fs.existsSync(dstPath)) fs.mkdirSync(dstPath, { recursive: true });
             copyDirectorySafely(srcPath, dstPath, rel);
         } else if (entry.isFile()) {
-            fs.copyFileSync(srcPath, dstPath);
+            copyFileAtomic(srcPath, dstPath);
         }
     }
 }
 
-function runSafeBackupBeforeUpdate() {
+function syncGoldenAppBackup() {
+    try {
+        const appJsPath = path.join(ROOT_DIR, 'public', 'app.js');
+        const goldenPath = path.join(ROOT_DIR, 'backups', 'app.js.golden.bak');
+        if (fs.existsSync(appJsPath) && fs.statSync(appJsPath).size > 100000) {
+            fs.mkdirSync(path.dirname(goldenPath), { recursive: true });
+            copyFileAtomic(appJsPath, goldenPath);
+        }
+    } catch (_) { }
+}
+
+function stageAndApplyDirectory(srcDir, dstDir) {
+    const rollbackRoot = path.join(dstDir, '.previous-release');
+    try { if (fs.existsSync(rollbackRoot)) fs.rmSync(rollbackRoot, { recursive: true, force: true }); } catch (_) { }
+    fs.mkdirSync(rollbackRoot, { recursive: true });
+
+    const files = collectFilesRecursively(srcDir);
+    const backedUp = [];
+    const newlyCreated = [];
+
+    try {
+        for (const item of files) {
+            const dstPath = path.join(dstDir, item.rel);
+            const snapPath = path.join(rollbackRoot, item.rel);
+            if (fs.existsSync(dstPath)) {
+                fs.mkdirSync(path.dirname(snapPath), { recursive: true });
+                fs.copyFileSync(dstPath, snapPath);
+                backedUp.push(item.rel);
+            } else {
+                newlyCreated.push(item.rel);
+            }
+            copyFileAtomic(item.abs, dstPath);
+        }
+    } catch (applyErr) {
+        try {
+            for (const rel of backedUp) {
+                const snapPath = path.join(rollbackRoot, rel);
+                const dstPath = path.join(dstDir, rel);
+                if (fs.existsSync(snapPath)) copyFileAtomic(snapPath, dstPath);
+            }
+            for (const rel of newlyCreated) {
+                const dstPath = path.join(dstDir, rel);
+                if (fs.existsSync(dstPath)) try { fs.unlinkSync(dstPath); } catch (_) { }
+            }
+        } catch (_) { }
+        throw applyErr;
+    }
+
+    return {
+        rollback() {
+            for (const rel of backedUp) {
+                try {
+                    const snapPath = path.join(rollbackRoot, rel);
+                    const dstPath = path.join(dstDir, rel);
+                    if (fs.existsSync(snapPath)) copyFileAtomic(snapPath, dstPath);
+                } catch (_) { }
+            }
+            for (const rel of newlyCreated) {
+                try {
+                    const dstPath = path.join(dstDir, rel);
+                    if (fs.existsSync(dstPath)) fs.unlinkSync(dstPath);
+                } catch (_) { }
+            }
+            try { if (fs.existsSync(rollbackRoot)) fs.rmSync(rollbackRoot, { recursive: true, force: true }); } catch (_) { }
+        },
+        commit() {
+            syncGoldenAppBackup();
+            try { if (fs.existsSync(rollbackRoot)) fs.rmSync(rollbackRoot, { recursive: true, force: true }); } catch (_) { }
+        }
+    };
+}
+
+async function runSafeBackupBeforeUpdate() {
     const dbPath = path.join(ROOT_DIR, 'database', 'data', 'cash_management.db');
     if (fs.existsSync(dbPath)) {
         try {
-            logUpdate('Running pre-update safety SQLite backup...');
+            logUpdate('Running pre-update online SQLite safety backup...');
             const backupDir = path.join(ROOT_DIR, 'backups');
             if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
             const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             const dest = path.join(backupDir, `pre_update_${stamp}.db`);
+            let backedUp = false;
             try {
                 const Database = require('better-sqlite3');
-                const db = new Database(dbPath, { readonly: true, timeout: 5000 });
-                try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) { }
-                fs.copyFileSync(dbPath, dest);
-                db.close();
+                const db = new Database(dbPath, { readonly: true, timeout: 7000 });
+                try {
+                    await db.backup(dest);
+                    backedUp = true;
+                } finally {
+                    try { db.close(); } catch (_) { }
+                }
             } catch (_) {
-                fs.copyFileSync(dbPath, dest);
+                backedUp = false;
             }
-            for (const ext of ['-wal', '-shm']) {
-                if (fs.existsSync(dbPath + ext)) {
-                    try { fs.copyFileSync(dbPath + ext, dest + ext); } catch (_) { }
+            if (!backedUp) {
+                fs.copyFileSync(dbPath, dest);
+                for (const ext of ['-wal', '-shm']) {
+                    if (fs.existsSync(dbPath + ext)) {
+                        try { fs.copyFileSync(dbPath + ext, dest + ext); } catch (_) { }
+                    }
                 }
             }
+            // Keep latest 15 pre-update backups
+            try {
+                const oldBackups = fs.readdirSync(backupDir)
+                    .filter(f => /^pre_update_.*\.db$/i.test(f))
+                    .map(f => ({ name: f, mtime: fs.statSync(path.join(backupDir, f)).mtimeMs }))
+                    .sort((a, b) => b.mtime - a.mtime);
+                for (const old of oldBackups.slice(15)) {
+                    try { fs.unlinkSync(path.join(backupDir, old.name)); } catch (_) { }
+                }
+            } catch (_) { }
             logUpdate(`Pre-update SQLite backup completed: ${path.basename(dest)}`);
             return;
         } catch (err) {
@@ -448,49 +716,71 @@ function runSafeBackupBeforeUpdate() {
 }
 
 async function applyCodeUpdateViaGit(gitBin, force = false) {
+    const safeDirArg = ['-c', `safe.directory=${ROOT_DIR.replace(/\\/g, '/')}`];
+    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+
+    // Remove stale .git/index.lock (> 3 min old)
+    const gitLockPath = path.join(ROOT_DIR, '.git', 'index.lock');
+    try {
+        if (fs.existsSync(gitLockPath)) {
+            const st = fs.statSync(gitLockPath);
+            if ((Date.now() - st.mtimeMs) > 3 * 60 * 1000) {
+                fs.unlinkSync(gitLockPath);
+                logUpdate('Removed stale .git/index.lock before fetch.');
+            }
+        }
+    } catch (_) { }
+
     logUpdate(`Fetching latest release from GitHub via Git (${BRANCH})...`);
-    execFileSync(gitBin, ['fetch', 'origin', BRANCH, '--quiet'], {
+    execFileSync(gitBin, [...safeDirArg, 'fetch', 'origin', BRANCH, '--quiet'], {
         cwd: ROOT_DIR,
         stdio: 'ignore',
-        timeout: 30000
+        timeout: 30000,
+        env: gitEnv
     });
 
-    // Safety guard: do not clobber local commits/edits unless forced.
-    // Fetch pehle hota hai taaki pichli ZIP update ke baad working tree agar
-    // origin se already identical hai to use local change na samjha jaye.
     if (!force) {
-        const ahead = parseInt(execFileSync(gitBin, ['rev-list', '--count', `origin/${BRANCH}..HEAD`], {
+        const ahead = parseInt(execFileSync(gitBin, [...safeDirArg, 'rev-list', '--count', `origin/${BRANCH}..HEAD`], {
             cwd: ROOT_DIR,
             encoding: 'utf8',
-            timeout: 10000
+            timeout: 10000,
+            env: gitEnv
         }).trim(), 10) || 0;
         if (ahead > 0) {
             throw new Error('LOCAL_COMMITS_PRESENT');
         }
 
-        const statusOut = execFileSync(gitBin, ['status', '--porcelain'], {
+        const statusOut = execFileSync(gitBin, [...safeDirArg, 'status', '--porcelain'], {
             cwd: ROOT_DIR,
             encoding: 'utf8',
-            timeout: 10000
-        }).trim();
+            timeout: 10000,
+            env: gitEnv
+        });
         const changedPaths = statusOut
             .split(/\r?\n/)
-            .map(line => line.slice(3).replace(/^"|"$/g, ''))
+            .filter(line => line.length >= 4)
+            .map(line => {
+                const raw = line.slice(3).trim();
+                const renamed = raw.includes(' -> ') ? raw.split(' -> ').pop() : raw;
+                return renamed.replace(/^["']|["']$/g, '').replace(/\\/g, '/');
+            })
             .filter(Boolean);
         const unexpectedChanges = changedPaths.filter(file => !LOCAL_DATA_FILES.has(file));
         if (unexpectedChanges.length > 0) {
             let diffVsRemote = '';
             try {
-                diffVsRemote = execFileSync(gitBin, ['diff', '--name-only', `origin/${BRANCH}`, '--'], {
+                diffVsRemote = execFileSync(gitBin, [...safeDirArg, 'diff', '--name-only', `origin/${BRANCH}`, '--'], {
                     cwd: ROOT_DIR,
                     encoding: 'utf8',
-                    timeout: 10000
+                    timeout: 10000,
+                    env: gitEnv
                 }).trim();
             } catch (_) {
                 diffVsRemote = 'unknown';
             }
             const realDifferences = diffVsRemote
                 .split(/\r?\n/)
+                .map(f => f.trim().replace(/\\/g, '/'))
                 .filter(file => file && !LOCAL_DATA_FILES.has(file));
             if (realDifferences.length > 0) {
                 throw new Error('LOCAL_CHANGES_PRESENT');
@@ -502,27 +792,56 @@ async function applyCodeUpdateViaGit(gitBin, force = false) {
         }
     }
 
-    // config/licenses.json tracked hai, isliye reset --hard use repo ki purani copy
-    // se replace kar dega. Admin ke banaye keys/blacklist ko restore karo.
     const licensePath = path.join(ROOT_DIR, 'config', 'licenses.json');
-    let licenseBackup = null;
+    const licenseDiskBackup = path.join(os.tmpdir(), `cmbc-licenses-backup-${process.pid}.json`);
+    let hasLicenseBackup = false;
     try {
-        if (fs.existsSync(licensePath)) licenseBackup = fs.readFileSync(licensePath);
+        if (fs.existsSync(licensePath)) {
+            fs.copyFileSync(licensePath, licenseDiskBackup);
+            hasLicenseBackup = true;
+        }
     } catch (_) { }
 
-    execFileSync(gitBin, ['reset', '--hard', `origin/${BRANCH}`], {
-        cwd: ROOT_DIR,
-        stdio: 'ignore',
-        timeout: 30000
-    });
+    let prevHead = null;
+    try {
+        prevHead = execFileSync(gitBin, [...safeDirArg, 'rev-parse', 'HEAD'], {
+            cwd: ROOT_DIR,
+            encoding: 'utf8',
+            timeout: 5000,
+            env: gitEnv
+        }).trim();
+    } catch (_) { }
 
-    if (licenseBackup) {
-        try {
-            fs.mkdirSync(path.dirname(licensePath), { recursive: true });
-            fs.writeFileSync(licensePath, licenseBackup);
-            logUpdate('Local license config preserved across Git update.');
-        } catch (err) {
-            logUpdate(`License config restore warning: ${err.message}`);
+    try {
+        execFileSync(gitBin, [...safeDirArg, 'reset', '--hard', `origin/${BRANCH}`], {
+            cwd: ROOT_DIR,
+            stdio: 'ignore',
+            timeout: 30000,
+            env: gitEnv
+        });
+        syncGoldenAppBackup();
+    } catch (resetErr) {
+        if (prevHead) {
+            try {
+                execFileSync(gitBin, [...safeDirArg, 'reset', '--hard', prevHead], {
+                    cwd: ROOT_DIR,
+                    stdio: 'ignore',
+                    timeout: 20000,
+                    env: gitEnv
+                });
+            } catch (_) { }
+        }
+        throw resetErr;
+    } finally {
+        if (hasLicenseBackup) {
+            try {
+                fs.mkdirSync(path.dirname(licensePath), { recursive: true });
+                copyFileAtomic(licenseDiskBackup, licensePath);
+                fs.unlinkSync(licenseDiskBackup);
+                logUpdate('Local license config preserved across Git update.');
+            } catch (err) {
+                logUpdate(`License config restore warning: ${err.message}`);
+            }
         }
     }
 }
@@ -574,8 +893,6 @@ async function applyCodeUpdateViaZip(expectedVersion) {
             if (topEntries.length === 0) throw new Error('Extracted ZIP archive was empty');
             const extractedRoot = path.join(extractDir, topEntries[0].name);
 
-            // Live install ko chhoone se pehle hi archive verify karo. Isse galat branch,
-            // stale CDN copy, ya adhoora ZIP kabhi bhi app files ko overwrite nahi karega.
             const archiveCheck = validateArchiveVersion(extractedRoot, expectedVersion);
             if (!archiveCheck.ok) {
                 throw new Error(archiveCheck.reason);
@@ -584,17 +901,18 @@ async function applyCodeUpdateViaZip(expectedVersion) {
             if (brokenArchive.length > 0) {
                 throw new Error(`Downloaded archive incomplete: ${brokenArchive.join(', ')}`);
             }
-            logUpdate(`Archive verified as v${archiveCheck.version}; applying files...`);
+            logUpdate(`Archive verified as v${archiveCheck.version}; applying files atomically...`);
 
-            copyDirectorySafely(extractedRoot, ROOT_DIR);
+            const tx = stageAndApplyDirectory(extractedRoot, ROOT_DIR);
 
             const broken = findBrokenFiles();
             if (broken.length > 0) {
+                tx.rollback();
                 throw new Error(`Update incomplete - missing/corrupt: ${broken.join(', ')}`);
             }
 
-            logUpdate('ZIP code files applied cleanly (user data & .env preserved).');
-            return;
+            logUpdate('ZIP code files staged & applied cleanly (user data & .env preserved).');
+            return tx;
         } catch (err) {
             lastErr = err;
             logUpdate(`ZIP update attempt ${round}/3 failed: ${err.message}`);
@@ -623,12 +941,17 @@ async function checkForUpdate() {
         let lastNetErr = null;
         for (const url of vUrls) {
             try {
-                const candidate = await fetchJson(`${url}?t=${Date.now()}`, 8000);
+                const sep = url.includes('?') ? '&' : '?';
+                const candidate = await fetchJson(`${url}${sep}t=${Date.now()}`, 8000);
                 if (candidate && candidate.version && isRemoteInfoForBranch(candidate)) {
-                    remoteInfo = candidate;
-                    break;
+                    if (!remoteInfo || compareVersions(candidate.version, remoteInfo.version) > 0) {
+                        remoteInfo = candidate;
+                    }
+                    // If primary raw.githubusercontent.com or api.github.com already returned an update, no need to wait on CDN mirrors
+                    if (isUpdateAvailable(localInfo.version, remoteInfo.version)) break;
+                } else {
+                    lastNetErr = new Error(`Manifest branch mismatch (${candidate && candidate.branch ? candidate.branch : 'unknown'})`);
                 }
-                lastNetErr = new Error(`Manifest branch mismatch (${candidate && candidate.branch ? candidate.branch : 'unknown'})`);
             } catch (netErr) {
                 lastNetErr = netErr;
             }
@@ -666,6 +989,11 @@ async function checkForUpdate() {
     }
 }
 
+let beforeRestartHandler = null;
+function setBeforeRestartHandler(fn) {
+    beforeRestartHandler = typeof fn === 'function' ? fn : null;
+}
+
 // Standalone restart helper. `timeout` command redirect ke saath turant fail ho
 // jata hai ("Input redirection is not supported"), isliye Node ka chhota helper
 // process spawn karte hain jo 2 second wait karke naya server start karta hai.
@@ -690,30 +1018,52 @@ function buildStandaloneRelaunch() {
 }
 
 function triggerCleanRestart() {
+    const runGracefulExit = async () => {
+        if (beforeRestartHandler) {
+            try {
+                await Promise.race([
+                    Promise.resolve(beforeRestartHandler()),
+                    new Promise(r => setTimeout(r, 6000))
+                ]);
+            } catch (_) { }
+        }
+        process.exit(0);
+    };
+
     // 0. Hidden supervisor mode: exit karo — supervisor khud naya code load karke restart karega
     if (process.env.CMBC_SUPERVISOR === '1') {
-        logUpdate('Supervisor mode: exiting so hidden supervisor restarts with updated code...');
-        setTimeout(() => process.exit(0), 1200);
+        logUpdate('Supervisor mode: flushing DB & exiting so hidden supervisor restarts cleanly...');
+        setTimeout(() => { runGracefulExit(); }, 600);
         return;
     }
 
     // 1. If running under PM2, exit cleanly so PM2 auto-restarts with updated code
     if (process.env.pm_id !== undefined || process.env.PM2_HOME) {
         logUpdate('Restarting server via PM2...');
-        setTimeout(() => process.exit(0), 1200);
+        setTimeout(() => { runGracefulExit(); }, 600);
         return;
     }
 
-    // 2. Standalone Node process: delayed detached relaunch, then exit cleanly
+    // 2. Standalone Node process: flush HTTP/SQLite WAL first, spawn delayed detached relaunch, then exit
     logUpdate('Respawning standalone server process with updated code...');
-    try {
-        const relaunch = buildStandaloneRelaunch();
-        const child = spawn(relaunch.command, relaunch.args, relaunch.options);
-        child.unref();
-    } catch (err) {
-        logUpdate(`Auto-respawn warning: ${err.message}`);
-    }
-    setTimeout(() => process.exit(0), 500);
+    setTimeout(async () => {
+        if (beforeRestartHandler) {
+            try {
+                await Promise.race([
+                    Promise.resolve(beforeRestartHandler()),
+                    new Promise(r => setTimeout(r, 6000))
+                ]);
+            } catch (_) { }
+        }
+        try {
+            const relaunch = buildStandaloneRelaunch();
+            const child = spawn(relaunch.command, relaunch.args, relaunch.options);
+            child.unref();
+        } catch (err) {
+            logUpdate(`Auto-respawn warning: ${err.message}`);
+        }
+        setTimeout(() => process.exit(0), 250);
+    }, 500);
 }
 
 function findMissingDependencies(dependencies, resolveModule = (name) => require.resolve(name, { paths: [ROOT_DIR] })) {
@@ -806,189 +1156,196 @@ function installDependenciesIfNeeded(force = false) {
 async function runSilentAutoUpdate(options = {}) {
     const { force = false, restartOnUpdate = true, isCli = false, forceCritical = false } = options;
 
-    if (state.updating) {
+    if (state.updating || !acquireUpdateLock()) {
         return { success: false, skipped: true, reason: 'Update already in progress' };
     }
 
-    // AUTO_UPDATE_DISABLED ko sirf explicit --force hi bypass karta hai.
-    // Purana boot retry `forceCritical` is setting ko boot ke ~1 minute baad
-    // override kar deta tha, jisse user ka disable decision bekaar ho jata tha.
-    const disabledFlag = String(process.env.AUTO_UPDATE_DISABLED || '').toLowerCase() === 'true';
-    if (disabledFlag && !force) {
-        state.lastResult = 'disabled-in-env';
-        return { success: true, updated: false, skipped: true, reason: 'AUTO_UPDATE_DISABLED=true in .env' };
-    }
-
-    // Busy guard: agar koi request abhi chal rahi hai (transaction/save), update skip karo.
-    // Critical update ya force mode is guard ko bypass karta hai.
-    if (!force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
-        state.lastResult = 'skipped-busy';
-        logUpdate('Update skipped: app busy hai (request in-flight). Next idle window me try hoga.');
-        return { success: true, updated: false, skipped: true, reason: 'App busy — update skipped safely' };
-    }
-
-    let dependenciesRepaired = false;
-    let dependencyRepairError = null;
-    try {
-        if (findMissingDependencies(JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')).dependencies).length > 0) {
-            state.updating = true;
-            state.lastResult = 'repairing-dependencies';
-            dependenciesRepaired = installDependenciesIfNeeded();
-        }
-    } catch (err) {
-        state.lastError = err.message;
-        state.lastResult = 'error';
-        logUpdate(`Dependency repair failed: ${err.message}`);
-        dependencyRepairError = err.message;
-    } finally {
-        state.updating = false;
-    }
-
-    const check = await checkForUpdate();
-    if (!check.success || !check.hasUpdate) {
-        return {
-            success: check.success && !dependencyRepairError,
-            updated: false,
-            dependenciesRepaired,
-            error: dependencyRepairError || undefined,
-            currentVersion: check.currentVersion,
-            latestVersion: check.latestVersion
-        };
-    }
-
-    // Same version ka update recently fail hua ho to 45 minute tak dobara
-    // download/restart loop mat chalao. Isse network/stale-CDN issues par
-    // app har 20 minute me restart hone se bachti hai.
-    const FAILED_UPDATE_COOLDOWN_MS = 45 * 60 * 1000;
-    if (!force && state.failedVersion === check.latestVersion && (Date.now() - state.failedAt) < FAILED_UPDATE_COOLDOWN_MS) {
-        state.lastResult = 'skipped-recent-failure';
-        return {
-            success: true,
-            updated: false,
-            skipped: true,
-            reason: `v${check.latestVersion} update recently fail hua; 45 min cooldown active`,
-            currentVersion: check.currentVersion,
-            latestVersion: check.latestVersion
-        };
-    }
-
-    // Critical update: force install even if busy (user safety fix)
-    const isCritical = check.critical || forceCritical;
-    if (isCritical && !force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
-        logUpdate('🚨 Critical update detected — forcing install at next idle window...');
-    }
-
     state.updating = true;
-    state.lastResult = 'updating';
-    state.currentVersion = check.currentVersion;
-    state.latestVersion = check.latestVersion;
-    setProgress('manifest', 15, `GitHub manifest verified. Target release: v${check.latestVersion}`);
-
-    const pkgHashBefore = fileHash(PKG_FILE);
-
+    let zipTx = null;
     try {
-        // Step 1: Safe pre-update DB backup
-        setProgress('safety', 28, 'Securing database & user records in safety vault (Zero Data Loss Guard)...');
-        runSafeBackupBeforeUpdate();
-        setProgress('safety', 38, 'Safety backup verified. Protected data safely isolated.');
+        const disabledFlag = String(process.env.AUTO_UPDATE_DISABLED || '').toLowerCase() === 'true';
+        if (disabledFlag && !force) {
+            state.lastResult = 'disabled-in-env';
+            return { success: true, updated: false, skipped: true, reason: 'AUTO_UPDATE_DISABLED=true in .env' };
+        }
 
-        // Step 2: Pull latest code safely.
-        // Git installs: fetch + reset (exact release, repo clean rehta hai).
-        // Non-git installs (most users): version-verified ZIP.
-        setProgress('download', 50, `Downloading latest release package v${check.latestVersion} from GitHub...`);
-        const gitBin = findGitBinary();
-        let codeApplied = false;
-        if (gitBin) {
-            try {
-                await applyCodeUpdateViaGit(gitBin, force);
-                codeApplied = true;
-                logUpdate('Git update applied successfully.');
-            } catch (gitErr) {
-                if (gitErr.message === 'LOCAL_CHANGES_PRESENT' || gitErr.message === 'LOCAL_COMMITS_PRESENT') {
-                    state.lastResult = 'skipped-local-changes';
-                    logUpdate('Local changes/commits mile — auto-update safely skip kiya gaya.');
-                    return {
-                        success: true,
-                        updated: false,
-                        skipped: true,
-                        reason: 'Local uncommitted changes ya local commits present hain; update skip kiya gaya (--force se override karein)',
-                        currentVersion: check.currentVersion,
-                        latestVersion: check.latestVersion
-                    };
+        if (!force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+            state.lastResult = 'skipped-busy';
+            logUpdate('Update skipped: app busy hai (request/transaction in-flight). Next idle window me try hoga.');
+            return { success: true, updated: false, skipped: true, reason: 'App busy — update skipped safely' };
+        }
+
+        let dependenciesRepaired = false;
+        let dependencyRepairError = null;
+        try {
+            if (findMissingDependencies(JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')).dependencies).length > 0) {
+                state.lastResult = 'repairing-dependencies';
+                dependenciesRepaired = installDependenciesIfNeeded();
+            }
+        } catch (err) {
+            state.lastError = err.message;
+            state.lastResult = 'error';
+            logUpdate(`Dependency repair failed: ${err.message}`);
+            dependencyRepairError = err.message;
+        }
+
+        const check = await checkForUpdate();
+        if (!check.success || !check.hasUpdate) {
+            return {
+                success: check.success && !dependencyRepairError,
+                updated: false,
+                dependenciesRepaired,
+                error: dependencyRepairError || undefined,
+                currentVersion: check.currentVersion,
+                latestVersion: check.latestVersion
+            };
+        }
+
+        const FAILED_UPDATE_COOLDOWN_MS = 45 * 60 * 1000;
+        if (!force && state.failedVersion === check.latestVersion && (Date.now() - state.failedAt) < FAILED_UPDATE_COOLDOWN_MS) {
+            state.lastResult = 'skipped-recent-failure';
+            return {
+                success: true,
+                updated: false,
+                skipped: true,
+                reason: `v${check.latestVersion} update recently fail hua; 45 min cooldown active`,
+                currentVersion: check.currentVersion,
+                latestVersion: check.latestVersion
+            };
+        }
+
+        // Re-check idle right before applying files/restarting so an in-flight txn started during manifest check isn't disrupted
+        if (!force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+            state.lastResult = 'skipped-busy';
+            logUpdate('Update deferred: active request/transaction detected right before apply.');
+            return { success: true, updated: false, skipped: true, reason: 'App busy — update deferred safely' };
+        }
+
+        const isCritical = check.critical || forceCritical;
+        if (isCritical && !force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
+            logUpdate('🚨 Critical update detected — waiting for safe window...');
+        }
+
+        state.lastResult = 'updating';
+        state.currentVersion = check.currentVersion;
+        state.latestVersion = check.latestVersion;
+        setProgress('manifest', 15, `GitHub manifest verified. Target release: v${check.latestVersion}`);
+
+        const pkgHashBefore = fileHash(PKG_FILE);
+
+        try {
+            // Step 1: Safe pre-update online SQLite DB backup
+            setProgress('safety', 28, 'Securing database & user records in safety vault (Zero Data Loss Guard)...');
+            await runSafeBackupBeforeUpdate();
+            setProgress('safety', 38, 'Safety backup verified. Protected data safely isolated.');
+
+            // Step 2: Pull latest code safely
+            setProgress('download', 50, `Downloading latest release package v${check.latestVersion} from GitHub...`);
+            const gitBin = findGitBinary();
+            let codeApplied = false;
+            if (gitBin && fs.existsSync(path.join(ROOT_DIR, '.git'))) {
+                try {
+                    await applyCodeUpdateViaGit(gitBin, force);
+                    codeApplied = true;
+                    logUpdate('Git update applied successfully.');
+                } catch (gitErr) {
+                    if (gitErr.message === 'LOCAL_CHANGES_PRESENT' || gitErr.message === 'LOCAL_COMMITS_PRESENT') {
+                        state.lastResult = 'skipped-local-changes';
+                        logUpdate('Local changes/commits mile — auto-update safely skip kiya gaya.');
+                        return {
+                            success: true,
+                            updated: false,
+                            skipped: true,
+                            reason: 'Local uncommitted changes ya local commits present hain; update skip kiya gaya (--force se override karein)',
+                            currentVersion: check.currentVersion,
+                            latestVersion: check.latestVersion
+                        };
+                    }
+                    logUpdate(`Git update failed (${gitErr.message}) — verified ZIP fallback try ho raha hai...`);
                 }
-                logUpdate(`Git update failed (${gitErr.message}) — verified ZIP fallback try ho raha hai...`);
+            } else {
+                logUpdate('Git install nahi hai — verified ZIP se update hoga.');
             }
-        } else {
-            logUpdate('Git install nahi hai — verified ZIP se update hoga.');
-        }
-        if (!codeApplied) {
-            await applyCodeUpdateViaZip(check.latestVersion);
-        }
-        const brokenAfterApply = findBrokenFiles();
-        if (brokenAfterApply.length > 0) {
-            throw new Error(`Update incomplete - missing/corrupt: ${brokenAfterApply.join(', ')}`);
-        }
-
-        setProgress('download', 72, 'Code package extracted cleanly. Validating dependencies...');
-
-        // Also repair missing modules, even when package.json itself did not change.
-        const pkgHashAfter = fileHash(PKG_FILE);
-        dependenciesRepaired = installDependenciesIfNeeded(pkgHashBefore !== pkgHashAfter) || dependenciesRepaired;
-
-        // Code apply hone ke baad confirm karo ki disk par expected version hi hai.
-        // Mismatch par restart/loop nahi karna — warna app bar-bar update karti rehti hai.
-        const appliedVersion = getLocalVersionInfo().version;
-        if (compareVersions(appliedVersion, check.latestVersion) < 0) {
-            throw new Error(`Update incomplete: installed v${appliedVersion}, expected v${check.latestVersion}`);
-        }
-        state.currentVersion = appliedVersion;
-        logUpdate(`Code version verified: v${appliedVersion}`);
-
-        // Step 4: Run safe idempotent database migration (zero data loss)
-        setProgress('database', 84, 'Applying database schema self-healing & indexes parity...');
-        const setupDbScript = path.join(ROOT_DIR, 'setup-database.js');
-        if (fs.existsSync(setupDbScript)) {
-            try {
-                logUpdate('Running safe database schema migration check...');
-                execFileSync(process.execPath, [setupDbScript], {
-                    cwd: ROOT_DIR,
-                    stdio: 'ignore',
-                    timeout: 60000
-                });
-            } catch (migErr) {
-                logUpdate(`DB migration warning (non-fatal): ${migErr.message}`);
+            if (!codeApplied) {
+                zipTx = await applyCodeUpdateViaZip(check.latestVersion);
             }
+            const brokenAfterApply = findBrokenFiles();
+            if (brokenAfterApply.length > 0) {
+                throw new Error(`Update incomplete - missing/corrupt: ${brokenAfterApply.join(', ')}`);
+            }
+
+            setProgress('download', 72, 'Code package extracted cleanly. Validating dependencies...');
+
+            const pkgHashAfter = fileHash(PKG_FILE);
+            dependenciesRepaired = installDependenciesIfNeeded(pkgHashBefore !== pkgHashAfter) || dependenciesRepaired;
+
+            const appliedVersion = getLocalVersionInfo().version;
+            if (compareVersions(appliedVersion, check.latestVersion) < 0) {
+                throw new Error(`Update incomplete: installed v${appliedVersion}, expected v${check.latestVersion}`);
+            }
+            state.currentVersion = appliedVersion;
+            logUpdate(`Code version verified: v${appliedVersion}`);
+
+            // Step 4: Run safe idempotent database migration (zero data loss)
+            setProgress('database', 84, 'Applying database schema self-healing & indexes parity...');
+            const setupDbScript = path.join(ROOT_DIR, 'setup-database.js');
+            if (fs.existsSync(setupDbScript)) {
+                try {
+                    logUpdate('Running safe database schema migration check...');
+                    execFileSync(process.execPath, [setupDbScript], {
+                        cwd: ROOT_DIR,
+                        stdio: 'ignore',
+                        timeout: 60000
+                    });
+                } catch (migErr) {
+                    logUpdate(`DB migration warning (non-fatal): ${migErr.message}`);
+                }
+            }
+            setProgress('database', 92, 'Database integrity & performance indexes verified.');
+
+            if (zipTx) {
+                zipTx.commit();
+                zipTx = null;
+            }
+
+            state.failedVersion = null;
+            state.failedAt = 0;
+            state.lastResult = 'updated';
+            setProgress('restarting', 96, 'Restarting application engine into latest version...');
+
+            if (restartOnUpdate && !isCli) {
+                triggerCleanRestart();
+            }
+
+            setProgress('completed', 100, `Successfully updated to v${state.currentVersion}!`);
+
+            return {
+                success: true,
+                updated: true,
+                dependenciesRepaired,
+                fromVersion: check.currentVersion,
+                toVersion: state.currentVersion,
+                notes: check.notes
+            };
+        } catch (err) {
+            if (zipTx) {
+                try {
+                    logUpdate('Rolling back staged update files to preserve working app...');
+                    zipTx.rollback();
+                    zipTx = null;
+                } catch (_) { }
+            }
+            state.lastError = err.message;
+            state.lastResult = 'error';
+            state.failedVersion = check.latestVersion;
+            state.failedAt = Date.now();
+            setProgress('error', 0, `Update failed safely (rolled back): ${err.message}`);
+            logUpdate(`Update failed safely (app unaffected): ${err.message}`);
+            return { success: false, updated: false, error: err.message };
         }
-        setProgress('database', 92, 'Database integrity & 115 performance indexes verified.');
-
-        state.failedVersion = null;
-        state.failedAt = 0;
-        state.lastResult = 'updated';
-        setProgress('restarting', 96, 'Restarting application engine into latest version...');
-
-        if (restartOnUpdate && !isCli) {
-            triggerCleanRestart();
-        }
-
-        setProgress('completed', 100, `Successfully updated to v${state.currentVersion}!`);
-
-        return {
-            success: true,
-            updated: true,
-            dependenciesRepaired,
-            fromVersion: check.currentVersion,
-            toVersion: state.currentVersion,
-            notes: check.notes
-        };
-    } catch (err) {
-        state.lastError = err.message;
-        state.lastResult = 'error';
-        state.failedVersion = check.latestVersion;
-        state.failedAt = Date.now();
-        logUpdate(`Update failed safely (app unaffected): ${err.message}`);
-        return { success: false, updated: false, error: err.message };
     } finally {
         state.updating = false;
+        releaseUpdateLock();
     }
 }
 
@@ -1085,5 +1442,6 @@ module.exports = {
     getUpdateStatus,
     getLocalVersionInfo,
     startPeriodicCheck,
-    stopPeriodicCheck
+    stopPeriodicCheck,
+    setBeforeRestartHandler
 };

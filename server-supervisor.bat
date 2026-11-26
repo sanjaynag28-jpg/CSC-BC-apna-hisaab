@@ -13,9 +13,10 @@ cd /d "%PROJ_DIR%"
 if not exist "logs" mkdir "logs"
 set "CMBC_SUPERVISOR=1"
 
-:: Resolve Node.js across ALL common install locations (User, Machine, NVM, Scoop, Winget, Volta)
+:: Resolve Node.js across local portable runtime first, then System/User/NVM/Scoop/Winget/Volta
 set "NODE_EXE="
 for %%P in (
+    "%PROJ_DIR%\.runtime\nodejs\node.exe"
     "%ProgramFiles%\nodejs\node.exe"
     "%LOCALAPPDATA%\Programs\nodejs\node.exe"
     "%ProgramFiles(x86)%\nodejs\node.exe"
@@ -59,9 +60,19 @@ if exist ".env" (
 
 set "IDLE=0"
 set "FAIL_STREAK=0"
+set "UPD_WAIT=0"
 
 :loop
 if exist "logs\.stop_supervisor" exit /b 0
+
+if exist "logs\.updating" (
+    set /a UPD_WAIT+=1
+    if %UPD_WAIT% LSS 40 (
+        ping -n 4 127.0.0.1 >nul
+        goto loop
+    )
+)
+set "UPD_WAIT=0"
 
 netstat -ano | findstr /R /C:":%CHECK_PORT% .*LISTENING" >nul 2>&1
 if not errorlevel 1 (

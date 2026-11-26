@@ -28298,17 +28298,20 @@ async function refreshAppVersionBadge(showGlow) {
                 renderDashboardUpdateBanner(data);
                 updateSettingsSystemTab(data);
 
-                // Zero-touch: Auto-apply critical updates without requiring manual click
+                // Zero-touch: Auto-apply critical updates only when user is not mid-form/modal
                 if (data.critical && !window._autoUpdateTriggered) {
-                    window._autoUpdateTriggered = true;
-                    if (typeof showToast === 'function') {
-                        showToast(`नया ज़रूरी अपडेट (v${data.latestVersion}) बैकग्राउंड में स्वतः लागू हो रहा है...`, 'info', 'Auto Update');
-                    }
-                    setTimeout(() => {
-                        if (typeof window.applyLiveUpdateFromWeb === 'function') {
-                            window.applyLiveUpdateFromWeb();
+                    const userBusy = document.querySelector('input:focus, textarea:focus, select:focus, .modal.active, .modal[style*="display: flex"], .modal[style*="display: block"]');
+                    if (!userBusy) {
+                        window._autoUpdateTriggered = true;
+                        if (typeof showToast === 'function') {
+                            showToast(`नया ज़रूरी अपडेट (v${escapeHtml(data.latestVersion)}) बैकग्राउंड में स्वतः लागू हो रहा है...`, 'info', 'Auto Update');
                         }
-                    }, 8000);
+                        setTimeout(() => {
+                            if (typeof window.applyLiveUpdateFromWeb === 'function') {
+                                window.applyLiveUpdateFromWeb(data);
+                            }
+                        }, 8000);
+                    }
                 }
             } else {
                 const dbBanner = document.getElementById('dashboardUpdateNotificationBanner');
@@ -28393,14 +28396,17 @@ async function refreshAppVersionBadge(showGlow) {
             document.body.appendChild(banner);
         }
 
+        const safeLatest = escapeHtml(info.latestVersion || '');
+        const safeNotes = escapeHtml(info.notes || 'Zaroori bug fixes aur self-repair updates');
+
         banner.innerHTML = `
             <div style="font-size: 22px; line-height: 1;">🚀</div>
             <div style="display: flex; flex-direction: column; gap: 2px;">
                 <div style="font-weight: 700; font-size: 13px; color: #60a5fa;">
-                    Naya Update Aaya Hai! (v${info.latestVersion})
+                    Naya Update Aaya Hai! (v${safeLatest})
                 </div>
                 <div style="font-size: 11px; color: #cbd5e1; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${info.notes || 'Zaroori bug fixes aur self-repair updates'}
+                    ${safeNotes}
                 </div>
             </div>
             <button id="cmbcBtnApplyUpdate" onclick="window.applyLiveUpdateFromWeb()" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);">
@@ -28420,10 +28426,12 @@ async function refreshAppVersionBadge(showGlow) {
             notice.style.cssText = 'margin-top: 12px; padding: 12px 16px; background: #eff6ff; border: 1.5px solid #3b82f6; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px;';
             host.appendChild(notice);
         }
+        const safeLatest = escapeHtml(info.latestVersion || '');
+        const safeNotes = escapeHtml(info.notes || 'Latest update ready to install.');
         notice.innerHTML = `
             <div>
-                <div style="font-weight: 700; color: #1e40af; font-size: 13px;">🚀 Naya Version Available: v${info.latestVersion}</div>
-                <div style="font-size: 11.5px; color: #475569;">${info.notes || 'Latest update ready to install.'}</div>
+                <div style="font-weight: 700; color: #1e40af; font-size: 13px;">🚀 Naya Version Available: v${safeLatest}</div>
+                <div style="font-size: 11.5px; color: #475569;">${safeNotes}</div>
             </div>
             <button onclick="window.applyLiveUpdateFromWeb()" class="btn-primary" style="padding: 6px 14px; font-size: 12px; font-weight: 700;">
                 ⚡ Abhi Update Karein
@@ -28491,6 +28499,9 @@ async function refreshAppVersionBadge(showGlow) {
         if (rebootPollerActive) return;
         rebootPollerActive = true;
 
+        const initialBootId = (typeof window !== 'undefined' && window.__SERVER_BOOT_ID__) ? window.__SERVER_BOOT_ID__ : null;
+        let sawOfflineCycle = false;
+
         if (typeof sessionStorage !== 'undefined') {
             sessionStorage.setItem('cmbc_update_in_progress', JSON.stringify({
                 targetVersion: info.latestVersion || '',
@@ -28507,25 +28518,35 @@ async function refreshAppVersionBadge(showGlow) {
                 const res = await fetch('/api/health?t=' + Date.now(), { cache: 'no-store' });
                 if (res.ok) {
                     const json = await res.json();
-                    if (json && json.success && json.dbReady) {
+                    const bootChanged = initialBootId && json && json.bootId && json.bootId !== initialBootId;
+                    const versionChanged = info && info.latestVersion && json && json.version === info.latestVersion && json.version !== window.__APP_VERSION__;
+                    if (json && json.success && json.dbReady && (bootChanged || sawOfflineCycle || versionChanged)) {
                         clearInterval(checkTimer);
+                        rebootPollerActive = false;
+                        try { sessionStorage.removeItem('cmbc_update_in_progress'); } catch (_) { }
                         if (typeof updateWizardUI === 'function') {
-                            updateWizardUI(98, 'सर्वर पुनः चालू हो गया! डैशबोर्ड खोला जा रहा है...', 'completed');
+                            updateWizardUI(100, 'सर्वर पुनः चालू हो गया! डैशबोर्ड खोला जा रहा है...', 'completed');
                         }
                         if (typeof addWizardLog === 'function') {
-                            addWizardLog('Server online and database ready! Opening dashboard...', '#34d399');
+                            addWizardLog('New server instance online and database ready! Opening dashboard...', '#34d399');
                         }
                         setTimeout(() => {
-                            window.location.reload(true);
+                            window.location.reload();
                         }, 500);
                         return;
                     }
+                } else {
+                    sawOfflineCycle = true;
                 }
-            } catch (_) { }
+            } catch (_) {
+                sawOfflineCycle = true;
+            }
 
             if (attempts >= maxAttempts) {
                 clearInterval(checkTimer);
-                window.location.reload(true);
+                rebootPollerActive = false;
+                try { sessionStorage.removeItem('cmbc_update_in_progress'); } catch (_) { }
+                showWizardErrorBanner('सर्वर रीस्टार्ट होने में अपेक्षा से अधिक समय लगा। कृपया ऐप को मैन्युअली रीलोड करें।');
             }
         }, 600);
     }
@@ -28663,20 +28684,27 @@ async function refreshAppVersionBadge(showGlow) {
                     </div>
 
                     <!-- Safety Guarantee Banner -->
-                    <div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #93c5fd; background: rgba(37,99,235,0.1); padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
-                        <span style="font-size: 14px;">🔒</span>
-                        <span><strong>डेटा सुरक्षा गारंटी:</strong> आपका कोई भी खाता, ग्राहक, बिल या .env डेटा कभी डिलीट नहीं होगा।</span>
+                    <div id="wizardSafetyBanner" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 11.5px; color: #93c5fd; background: rgba(37,99,235,0.1); padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(59,130,246,0.2);">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 14px;">🔒</span>
+                            <span><strong>डेटा सुरक्षा गारंटी:</strong> आपका कोई भी खाता, ग्राहक, बिल या .env डेटा कभी डिलीट नहीं होगा।</span>
+                        </div>
+                        <button id="wizardCloseBtn" onclick="document.getElementById('cmbcUpdateWizardModal')?.remove()" style="display: none; background: #ef4444; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;">बंद करें (Close)</button>
                     </div>
 
                 </div>
             </div>
         `;
 
+        lastWizardLogMsg = '';
         // Start real-time wizard tracking
         startWizardProcess(info, triggerBackend);
     }
 
+    let lastWizardLogMsg = '';
     function addWizardLog(msg, color = '#cbd5e1') {
+        if (!msg || msg === lastWizardLogMsg) return;
+        lastWizardLogMsg = msg;
         const box = document.getElementById('wizardTerminalLogs');
         if (!box) return;
         const div = document.createElement('div');
@@ -28684,6 +28712,19 @@ async function refreshAppVersionBadge(showGlow) {
         div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         box.appendChild(div);
         box.scrollTop = box.scrollHeight;
+    }
+
+    function showWizardErrorBanner(errText) {
+        const txtEl = document.getElementById('wizardActiveStatusText');
+        if (txtEl) {
+            txtEl.textContent = '❌ ' + (errText || 'अपडेट विफल रहा — आपका पुराना ऐप व डेटा सुरक्षित है');
+            txtEl.style.color = '#f87171';
+        }
+        const barEl = document.getElementById('wizardProgressBar');
+        if (barEl) barEl.style.background = '#ef4444';
+        const closeBtn = document.getElementById('wizardCloseBtn');
+        if (closeBtn) closeBtn.style.display = 'inline-block';
+        addWizardLog('Error: ' + errText, '#f87171');
     }
 
     function updateWizardUI(percent, statusText, stage) {
@@ -28769,25 +28810,55 @@ async function refreshAppVersionBadge(showGlow) {
         addWizardLog('Live Update Wizard connected.', '#38bdf8');
         updateWizardUI(15, 'GitHub रिपॉजिटरी से कोड सत्यापन किया जा रहा है...', 'manifest');
 
+        const initialBootId = (typeof window !== 'undefined' && window.__SERVER_BOOT_ID__) ? window.__SERVER_BOOT_ID__ : null;
+        let currentPercent = 15;
+        let pollCount = 0;
+        const maxPolls = 180;
+        let serverRebootDetected = false;
+        let aborted = false;
+
         if (triggerBackend) {
             addWizardLog('Calling backend auto-update engine (/api/system/apply-update)...', '#38bdf8');
             fetch('/api/system/apply-update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ force: true })
-            }).then(r => r.json()).then(res => {
+            }).then(async r => {
+                const res = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    clearInterval(updateTimer);
+                    aborted = true;
+                    showWizardErrorBanner(res.error || res.reason || `HTTP ${r.status}: अपडेट की अनुमति नहीं या डेटाबेस व्यस्त है`);
+                    return;
+                }
                 if (res && res.updated) {
                     addWizardLog(`Update applied cleanly: v${res.fromVersion} -> v${res.toVersion}`, '#34d399');
+                } else if (res && res.skipped) {
+                    if (!/already in progress/i.test(String(res.reason || ''))) {
+                        clearInterval(updateTimer);
+                        aborted = true;
+                        showWizardErrorBanner(res.reason || 'अपडेट सुरक्षित रूप से रोका गया');
+                    }
+                } else if (res && res.success && !res.updated) {
+                    clearInterval(updateTimer);
+                    aborted = true;
+                    updateWizardUI(100, `आपका ऐप पहले से नवीनतम वर्ज़न (v${res.currentVersion || info.currentVersion}) पर है`, 'completed');
+                    const closeBtn = document.getElementById('wizardCloseBtn');
+                    if (closeBtn) {
+                        closeBtn.textContent = 'ठीक है (Close)';
+                        closeBtn.style.background = '#10b981';
+                        closeBtn.style.display = 'inline-block';
+                    }
+                } else if (res && !res.success) {
+                    clearInterval(updateTimer);
+                    aborted = true;
+                    showWizardErrorBanner(res.error || 'अपडेट प्रक्रिया विफल रही');
                 }
             }).catch(() => { });
         }
 
-        let currentPercent = 15;
-        let pollCount = 0;
-        const maxPolls = 120;
-        let serverRebootDetected = false;
-
         const updateTimer = setInterval(async () => {
+            if (aborted) { clearInterval(updateTimer); return; }
             pollCount++;
 
             // 1. Fetch live backend update status
@@ -28797,6 +28868,12 @@ async function refreshAppVersionBadge(showGlow) {
                     const st = await sRes.json();
                     if (st && st.data) {
                         const d = st.data;
+                        if (d.stage === 'error') {
+                            clearInterval(updateTimer);
+                            aborted = true;
+                            showWizardErrorBanner(d.lastError || d.progressMessage || 'अपडेट सुरक्षित रूप से रोलबैक किया गया');
+                            return;
+                        }
                         if (d.progressPercent && d.progressPercent > currentPercent) {
                             currentPercent = d.progressPercent;
                         }
@@ -28804,11 +28881,14 @@ async function refreshAppVersionBadge(showGlow) {
                             addWizardLog(d.progressMessage, '#93c5fd');
                         }
                         updateWizardUI(currentPercent, d.progressMessage || 'अपडेट प्रगति पर है...', d.stage);
+                        if (d.stage === 'restarting' || d.stage === 'completed') {
+                            serverRebootDetected = true;
+                        }
                     }
                 }
             } catch (_) {
                 // If fetch failed, server might be restarting!
-                if (currentPercent >= 70 && !serverRebootDetected) {
+                if (currentPercent >= 65 && !serverRebootDetected) {
                     serverRebootDetected = true;
                     currentPercent = 95;
                     updateWizardUI(95, 'सर्वर इंजन रीस्टार्ट हो रहा है... नए वर्ज़न से कनेक्ट किया जा रहा है...', 'restarting');
@@ -28816,43 +28896,43 @@ async function refreshAppVersionBadge(showGlow) {
                 }
             }
 
-            // Simulated progress ramp-up if backend is working in background
-            if (!serverRebootDetected && currentPercent < 88) {
-                currentPercent += 2.5;
-                if (currentPercent === 30) addWizardLog('Zero Data Loss Guard: Database and credentials secured.', '#10b981');
-                if (currentPercent === 55) addWizardLog('Downloading release assets and verifying code tree...', '#38bdf8');
-                if (currentPercent === 80) addWizardLog('Applying SQLite schema self-repair & performance indexes...', '#a78bfa');
+            // Modest progress indicator while backend works (capped below reload threshold)
+            if (!serverRebootDetected && currentPercent < 68) {
+                currentPercent += 2;
                 updateWizardUI(currentPercent, 'अपडेट प्रक्रिया प्रगति पर है...');
             }
 
-            // 2. Health check to detect successful relaunch
-            if (pollCount > 3 || serverRebootDetected) {
+            // 2. Health check requiring true new server instance (bootId change or offline->online)
+            if (serverRebootDetected || pollCount > 5) {
                 try {
                     const hRes = await fetch('/api/health?t=' + Date.now(), { cache: 'no-store' });
-                    if (hRes.ok && (currentPercent >= 85 || serverRebootDetected)) {
-                        clearInterval(updateTimer);
-                        currentPercent = 100;
-                        updateWizardUI(100, 'अपडेट सफलतापूर्वक संपन्न हुआ! डैशबोर्ड खोला जा रहा है...', 'completed');
-                        addWizardLog('Connection re-established with new server build!', '#34d399');
-                        addWizardLog('🎉 100% Update Complete! Loading dashboard...', '#4ade80');
-                        if (typeof sessionStorage !== 'undefined') {
-                            sessionStorage.setItem('cmbc_update_in_progress', JSON.stringify({
-                                targetVersion: info.latestVersion || '',
-                                active: true,
-                                stage: 'launching_dashboard'
-                            }));
+                    if (hRes.ok) {
+                        const hJson = await hRes.json().catch(() => null);
+                        const bootChanged = initialBootId && hJson && hJson.bootId && hJson.bootId !== initialBootId;
+                        const versionUpgraded = info && info.latestVersion && hJson && hJson.version === info.latestVersion && hJson.version !== window.__APP_VERSION__;
+                        if (hJson && hJson.success && hJson.dbReady && (bootChanged || versionUpgraded || (serverRebootDetected && currentPercent >= 95))) {
+                            clearInterval(updateTimer);
+                            currentPercent = 100;
+                            updateWizardUI(100, 'अपडेट सफलतापूर्वक संपन्न हुआ! डैशबोर्ड खोला जा रहा है...', 'completed');
+                            addWizardLog('Connection re-established with new server build!', '#34d399');
+                            addWizardLog('🎉 100% Update Complete! Loading dashboard...', '#4ade80');
+                            try { sessionStorage.removeItem('cmbc_update_in_progress'); } catch (_) { }
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 600);
+                            return;
                         }
-                        setTimeout(() => {
-                            window.location.reload(true);
-                        }, 600);
-                        return;
+                    } else {
+                        serverRebootDetected = true;
                     }
-                } catch (_) { }
+                } catch (_) {
+                    if (currentPercent >= 65) serverRebootDetected = true;
+                }
             }
 
             if (pollCount >= maxPolls) {
                 clearInterval(updateTimer);
-                window.location.reload(true);
+                showWizardErrorBanner('अपडेट टाइमआउट — कृपया कुछ सेकंड बाद पेज रीलोड करें या सेटिंग्स से पुनः जांचें।');
             }
         }, 800);
     }
@@ -29111,8 +29191,8 @@ function executeAnnouncementAction(ann) {
     if (!ann) return;
     const actionType = ann.actionType || 'whatsapp';
     if (actionType === 'update') {
-        if (typeof checkForUpdates === 'function') {
-            checkForUpdates(false);
+        if (typeof window.checkLiveUpdate === 'function') {
+            window.checkLiveUpdate(true);
         } else {
             showToast('🔄 अपडेट की जांच की जा रही है...', 'info');
         }

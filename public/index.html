@@ -118,7 +118,21 @@
                         if (typeof window.applyLiveUpdateFromWeb === 'function') {
                             window.applyLiveUpdateFromWeb(result);
                         } else if (confirm('📦 नया अपडेट उपलब्ध है: v' + result.latestVersion + '\n\nक्या आप अभी अपडेट करना चाहते हैं?')) {
-                            window.location.href = '/api/system/apply-update?force=true';
+                            fetch('/api/system/apply-update', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ force: true })
+                            })
+                            .then(function (r) { return r.json(); })
+                            .then(function (u) {
+                                if (u && u.updated) {
+                                    alert('✅ अपडेट पूरा हो गया: v' + u.toVersion + '। पेज रीलोड हो रहा है...');
+                                    window.location.reload();
+                                } else {
+                                    alert('⚠️ अपडेट: ' + ((u && (u.error || u.reason)) || 'प्रक्रिया पूरी नहीं हो सकी'));
+                                }
+                            })
+                            .catch(function (e) { alert('❌ अपडेट त्रुटि: ' + (e.message || 'सर्वर से संपर्क टूटा')); });
                         }
                     } else if (result && result.success) {
                         alert('✅ आपका ऐप बिल्कुल नवीनतम वर्ज़न (v' + (result.currentVersion || '1.0.73') + ') पर है!');

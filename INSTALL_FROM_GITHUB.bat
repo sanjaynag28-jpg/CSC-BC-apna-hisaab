@@ -11,7 +11,9 @@ if not exist "%PS_EXE%" set "PS_EXE=powershell.exe"
 :: 1. Seamless Auto-Elevation (No Quote Injection, No Loop, Non-Admin Fallback)
 :: ====================================================================
 set "ALREADY_ELEVATED=0"
+set "NO_PAUSE=0"
 echo %* | findstr /I "\--elevated" >nul 2>&1 && set "ALREADY_ELEVATED=1"
+echo %* | findstr /I "\--no-pause" >nul 2>&1 && set "NO_PAUSE=1"
 
 fltmc >nul 2>&1
 if not errorlevel 1 goto :elevated_ok
@@ -21,7 +23,9 @@ if not errorlevel 1 goto :elevated_ok
 if "%ALREADY_ELEVATED%"=="0" (
     echo [..] Administrator permission mang rahe hain...
     set "_CMBC_SELF=%~f0"
-    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('\"\"' + $env:_CMBC_SELF + '\" --elevated\"')) -Verb RunAs -ErrorAction Stop; exit 0 } catch { exit 1 }"
+    set "_CMBC_NP="
+    if "%NO_PAUSE%"=="1" set "_CMBC_NP= --no-pause"
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('\"\"' + $env:_CMBC_SELF + '\" --elevated' + $env:_CMBC_NP + '\"')) -Verb RunAs -ErrorAction Stop; exit 0 } catch { exit 1 }"
     if not errorlevel 1 exit /b 0
     echo [!] Admin permission nahi mili - Standard User mode me setup continue ho raha hai...
 )
@@ -70,9 +74,9 @@ ipconfig /flushdns >nul 2>&1
 set "_CMBC_TDIR=%TARGET_DIR%"
 "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command ^
   "$td = $env:_CMBC_TDIR;" ^
-  "Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like '*server-supervisor.bat*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };" ^
-  "Get-CimInstance Win32_Process -Filter \"Name='wscript.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and ($_.CommandLine -like '*open-app.vbs*' -or $_.CommandLine -like '*start-hidden.vbs*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };" ^
-  "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and (($_.CommandLine -like \"*$td*\") -or ($_.CommandLine -like '*server.js*')) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+  "Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like '*server-supervisor.bat*' -and $_.CommandLine -like \"*$td*\" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };" ^
+  "Get-CimInstance Win32_Process -Filter \"Name='wscript.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and ($_.CommandLine -like '*open-app.vbs*' -or $_.CommandLine -like '*start-hidden.vbs*') -and $_.CommandLine -like \"*$td*\" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };" ^
+  "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine -like \"*$td*\" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
 del /f /q "%TEMP%\cmbc_installer_wizard_sqlite*.ps1" >nul 2>&1
 set "WIZ_SCRIPT=%TEMP%\cmbc_installer_wizard_sqlite_%RANDOM%.ps1"
@@ -157,8 +161,7 @@ if not exist "%WIZ_SCRIPT%" (
 
 "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -LiteralPath $env:WIZ_SCRIPT -ErrorAction SilentlyContinue" >nul 2>&1
 
-:: Remove STOP sentinel before launching server at end of Wizard
-if exist "%TARGET_DIR%\logs\.stop_supervisor" del /f /q "%TARGET_DIR%\logs\.stop_supervisor" >nul 2>&1
+:: .stop_supervisor Wizard Step 8 khud remove karega jab files/DB ready ho jayenge
 
 :: ====================================================================
 :: 5. Launch Graphical Setup & Health Wizard with GPO Policy Fallback
@@ -192,12 +195,14 @@ if not "%EXIT_CODE%"=="0" (
     )
 )
 
+if exist "%TARGET_DIR%\logs\.stop_supervisor" del /f /q "%TARGET_DIR%\logs\.stop_supervisor" >nul 2>&1
+
 echo.
 echo ======================================================================
 echo   [4/4] Installation Completed ^(Exit Code: %EXIT_CODE%^)
 echo   Log File: "%TARGET_DIR%\logs\install_wizard_sqlite.log"
 echo.
-echo   Window band karne ke liye koi bhi key dabayein...
+if "%NO_PAUSE%"=="0" echo   Window band karne ke liye koi bhi key dabayein...
 echo ======================================================================
-pause >nul
+if "%NO_PAUSE%"=="0" pause >nul
 exit /b %EXIT_CODE%

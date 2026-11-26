@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$InstallDir = (Join-Path $env:USERPROFILE 'CSC-BC-Apna-Hisaab-SQLite')
 )
 

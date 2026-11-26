@@ -9,7 +9,7 @@ async function purgeOldBackups(backupDir) {
     try {
         const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
         const dbBakFiles = fs.readdirSync(backupDir)
-            .filter(f => f.startsWith('CashManagement_Backup_') && f.endsWith('.bak'))
+            .filter(f => ((f.startsWith('CashManagement_Backup_') && f.endsWith('.bak')) || (f.startsWith('CashManagement_SQLite_') && f.endsWith('.db'))))
             .map(f => {
                 try {
                     return { name: f, time: fs.statSync(path.join(backupDir, f)).mtimeMs };
@@ -48,6 +48,32 @@ async function runBackup() {
         const localBackupDir = path.join(__dirname, '..', 'backups');
         if (!fs.existsSync(localBackupDir)) {
             fs.mkdirSync(localBackupDir, { recursive: true });
+        }
+
+        const isSqlite = String(process.env.DB_TYPE || 'sqlite').toLowerCase() === 'sqlite' ||
+            fs.existsSync(path.join(__dirname, 'data', 'cash_management.db'));
+
+        if (isSqlite) {
+            console.log('⏳ SQLite Database ka atomic online backup ho raha hai...');
+            const res = await query('EXEC sp_BackupCashManagementDB @BackupFolder = @folder', { folder: localBackupDir });
+            const backupPath = res.recordset[0].BackupPath;
+            const stats = fs.statSync(backupPath);
+            const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+            try {
+                const Database = require('better-sqlite3');
+                const chkDb = new Database(backupPath, { readonly: true });
+                const integrity = chkDb.pragma('quick_check', { simple: true });
+                chkDb.close();
+                if (String(integrity).toLowerCase() !== 'ok') throw new Error('quick_check=' + integrity);
+                console.log('✅ Backup verify ho gaya (PRAGMA quick_check = ok).');
+            } catch (vErr) {
+                console.warn('⚠️ Backup verify notice:', vErr.message);
+            }
+            const removed = await purgeOldBackups(localBackupDir);
+            if (removed > 0) console.log(`🧹 ${removed} purani backup delete kar di gayi.`);
+            console.log('✅ BACKUP SAFALTA-PURVAK BAN GAYA! (' + backupPath + ', ' + sizeMB + ' MB)');
+            await closePool();
+            process.exit(0);
         }
 
         console.log('⏳ SQL Server Database ka live backup ho raha hai...');

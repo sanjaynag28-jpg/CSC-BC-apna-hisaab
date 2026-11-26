@@ -5,6 +5,9 @@
 
 # Dependencies
 node_modules/
+.runtime/
+.previous-release/
+.auto-update-tmp/
 
 # Environment & Secrets (NEVER commit real .env)
 .env

@@ -1,8 +1,8 @@
 {
-  "version": "1.0.92",
+  "version": "1.0.93",
   "critical": true,
   "releasedAt": "2026-11-26",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Bulletproof Windows BAT installer, AI Self-Healing Engine v2.0, Node v22 portable ZIP fallback, Hyper-V port auto-heal, zero-crash boot"
+  "notes": "100% Zero Data Loss Atomic Auto-Updater: staging rollback, online SQLite db.backup(), schema ADD COLUMN & TxnModules repair, bootId reload verification, dynamic asset cache-busting, lock-safe supervisor & wizard"
 }
