@@ -124,6 +124,19 @@ router.post('/client-error', async (req, res) => {
 
         const istTime = getISTTimestamp();
 
+        try {
+            const telemetry = require('../utils/telemetryAgent');
+            setImmediate(() => {
+                telemetry.reportError({
+                    source,
+                    errorType: type,
+                    message,
+                    stack,
+                    url: url || activePage || ''
+                }).catch(() => { });
+            });
+        } catch (_) { }
+
         // 1. Format human-readable entry for browser_errors.log
         const logEntry = [
             '================================================================================',
@@ -206,12 +219,29 @@ router.post('/client-error', async (req, res) => {
     }
 });
 
-// Root redirect to client errors list
-router.get('/', (req, res) => res.redirect('/api/logs/client-errors'));
+function isSuperAdminUser(req) {
+    if (!req.user) return false;
+    if (req.user.Role === 'Staff' || req.user.ParentUserID) return false;
+    const actualUserId = Number(req.user.ActualUserID || req.user.UserID);
+    return req.user.Role === 'SuperAdmin' || actualUserId === 1;
+}
 
-// GET /api/logs/db-errors - Retrieve client error logs from SQL Server (with user/shop info)
+// Root redirect to client errors list
+router.get('/', (req, res) => {
+    if (!isSuperAdminUser(req)) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
+    return res.redirect('/api/logs/client-errors');
+});
+
+// GET /api/logs/db-errors - Retrieve client error logs (SuperAdmin sees all; shops see only their own)
 router.get('/db-errors', async (req, res) => {
+    if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
     try {
+        const isSuper = isSuperAdminUser(req);
+        const userId = Number(req.user.ActualUserID || req.user.UserID);
         const sql = `
             SELECT TOP 100
                 e.ErrorID, e.UserID, e.ErrorType, e.ErrorMessage, e.ErrorStack, e.Url, 
@@ -221,17 +251,21 @@ router.get('/db-errors', async (req, res) => {
                 COALESCE(u.Username, 'N/A') AS Username
             FROM ClientErrorLogs e
             LEFT JOIN Users u ON e.UserID = u.UserID
+            ${isSuper ? '' : 'WHERE e.UserID = @userId'}
             ORDER BY e.CreatedAt DESC
         `;
-        const result = await query(sql);
+        const result = await query(sql, isSuper ? {} : { userId });
         res.json({ success: true, total: result.recordset.length, errors: result.recordset });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// GET /api/logs/client-errors - Inspect recent errors
+// GET /api/logs/client-errors - Inspect recent errors (SuperAdmin only)
 router.get('/client-errors', (req, res) => {
+    if (!isSuperAdminUser(req)) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
     try {
         if (req.query.format === 'text') {
             if (!fs.existsSync(LOG_FILE)) {
@@ -258,8 +292,11 @@ router.get('/client-errors', (req, res) => {
     }
 });
 
-// PUT /api/logs/client-errors/:id/fix - Mark single error as Fixed
+// PUT /api/logs/client-errors/:id/fix - Mark single error as Fixed (SuperAdmin only)
 router.put('/client-errors/:id/fix', (req, res) => {
+    if (!isSuperAdminUser(req)) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
     try {
         const { id } = req.params;
         const note = (req.body && req.body.note) || 'Bug fixed and verified';
@@ -290,8 +327,11 @@ router.put('/client-errors/:id/fix', (req, res) => {
     }
 });
 
-// DELETE /api/logs/client-errors/:id - Delete single error log
+// DELETE /api/logs/client-errors/:id - Delete single error log (SuperAdmin only)
 router.delete('/client-errors/:id', (req, res) => {
+    if (!isSuperAdminUser(req)) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
     try {
         const { id } = req.params;
         let list = [];
@@ -309,8 +349,11 @@ router.delete('/client-errors/:id', (req, res) => {
     }
 });
 
-// DELETE /api/logs/client-errors - Clear all logs
+// DELETE /api/logs/client-errors - Clear all logs (SuperAdmin only)
 router.delete('/client-errors', (req, res) => {
+    if (!isSuperAdminUser(req)) {
+        return res.status(403).json({ success: false, error: 'SuperAdmin access required' });
+    }
     try {
         if (fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, '');
         if (fs.existsSync(JSON_FILE)) fs.writeFileSync(JSON_FILE, JSON.stringify([], null, 2));

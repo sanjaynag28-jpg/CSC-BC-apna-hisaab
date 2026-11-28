@@ -351,12 +351,17 @@ function parseAEPSReceiptText(rawText) {
         result.PortalName = 'PayNearby AEPS';
     }
 
-    // 14. Customer Charge & Commission defaults
+    // 14. Customer Charge & Commission defaults (aligned with extension/content.js AEPS slab)
     if (result.Amount && result.Amount > 0) {
-        if (result.Amount >= 1000) {
-            result.CustomerCharge = 10;
+        result.CustomerCharge = Math.ceil(result.Amount / 1000) * 10;
+        const hundreds = Math.floor(result.Amount / 100);
+        if (hundreds >= 1 && hundreds <= 100) {
+            result.CommissionEarned = Number((0.32 + (hundreds - 1) * 0.40).toFixed(2));
+        } else if (hundreds > 100) {
+            result.CommissionEarned = Number((0.32 + 99 * 0.40).toFixed(2));
+        } else {
+            result.CommissionEarned = 0;
         }
-        result.CommissionEarned = parseFloat((result.Amount * 0.002).toFixed(2));
     }
 
     return result;
@@ -518,8 +523,8 @@ Thank you for using Digipay!
     assert.strictEqual(res.RRN_UTR, '430912345678');
     assert.strictEqual(res.Amount, 2500);
     assert.strictEqual(res.AccountBalance, 3450.25);
-    assert.strictEqual(res.CustomerCharge, 10);
-    assert.strictEqual(res.CommissionEarned, 5);
+    assert.strictEqual(res.CustomerCharge, 30);
+    assert.strictEqual(res.CommissionEarned, 9.92);
     assert.strictEqual(res.TransDate, '2026-11-04');
 });
 
@@ -546,7 +551,7 @@ Status: SUCCESSFUL
     assert.strictEqual(res.RRN_UTR, '876543210987');
     assert.strictEqual(res.Amount, 10000);
     assert.strictEqual(res.AccountBalance, 15420);
-    assert.strictEqual(res.CustomerCharge, 10);
+    assert.strictEqual(res.CustomerCharge, 100);
 });
 
 // TEST 3: Spice Money AEPS Cash Withdrawal Receipt

@@ -78,6 +78,14 @@ process.on('uncaughtException', (err) => {
     uncaughtCount++;
     console.error(`💥 [Server] Uncaught Exception (#${uncaughtCount}):`, err.message);
     console.error('💥 [Server] Exiting so the process supervisor can restart cleanly...');
+    try {
+        require('./utils/telemetryAgent').queueErrorSync({
+            source: 'server',
+            errorType: 'uncaughtException',
+            message: err && err.message ? err.message : String(err),
+            stack: err && err.stack ? err.stack : ''
+        });
+    } catch (_) { }
     // SSE clients ko close karo
     try { for (const c of sseClients) { try { c.end(); } catch (_) {} } } catch (_) {}
     sseClients.clear();
@@ -157,7 +165,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', origin || `http://localhost:${PORT}`);
     res.header('Vary', 'Origin');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Idempotency-Key, Access-Control-Request-Private-Network');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Idempotency-Key, Access-Control-Request-Private-Network, X-Api-Token');
     res.header('Access-Control-Allow-Private-Network', 'true');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(204);
@@ -170,8 +178,8 @@ app.use(cors((req, callback) => {
     if (!allowed) return callback(new Error('Origin not allowed by CORS'));
     return callback(null, {
         origin: true,
-        methods: ['GET', 'POST', 'PUT, PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Access-Control-Request-Private-Network']
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'Access-Control-Request-Private-Network', 'X-Api-Token']
     });
 }));
 // Active request tracking — auto-update sirf tab chalega jab koi request in-flight na ho.
@@ -478,31 +486,11 @@ app.get('/api/extension/version', (req, res) => {
     }
 });
 
-// Diagnostics: extension folder + file list, taaki user ko pata chale ki
-// browser me loaded extension isi folder se hai ya nahi.
-app.get('/api/extension/diagnostics', (req, res) => {
-    try {
-        const build = getExtensionBuild();
-        res.json({
-            success: true,
-            extPath: EXT_DIR,
-            buildId: build.buildId,
-            maxMtime: build.maxMtime,
-            fileCount: build.fileCount,
-            files: build.files,
-            serverTime: Date.now()
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// Extension ZIP download - fresh install ke liye (Load unpacked folder se
-// install karne ka bhi option hai, dono ek click me).
+// Extension ZIP download - fresh install ke liye (public)
 app.get('/api/extension/download', (req, res) => {
     try {
         const { createZipFromFolder } = require('./utils/zip');
-        const zip = createZipFromFolder(EXT_DIR, { skip: ['test_parser.js', 'README.txt'] });
+        const zip = createZipFromFolder(EXT_DIR, { skip: ['test_parser.js', 'test_aadhaar_input.js', 'README.txt'] });
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', 'attachment; filename="cash-management-bc-extension.zip"');
         res.setHeader('Content-Length', zip.length);
@@ -513,98 +501,8 @@ app.get('/api/extension/download', (req, res) => {
     }
 });
 
-// Extension self-test run karo (parser + URL rules regression suite)
-app.get('/api/extension/test', (req, res) => {
-    const { execFile } = require('child_process');
-    const script = path.join(EXT_DIR, 'test_parser.js');
-    if (!fs.existsSync(script)) {
-        return res.status(404).send('test_parser.js not found');
-    }
-    execFile(process.execPath, [script], { cwd: __dirname, timeout: 60000, windowsHide: true },
-        (err, stdout, stderr) => {
-            res.type('text/plain').send((stdout || '') + (stderr || '') + (err ? '\n[exit ' + err.code + ']' : ''));
-        }
-    );
-});
-
-// Dynamic Configuration for Extension (Banks, Portals, Accounts, Commission Rules)
-app.get('/api/extension/config', async (req, res) => {
-    try {
-        const { query } = require('./database/db');
-        let accounts = [];
-        let cscServices = [];
-        try {
-            const accRes = await query("SELECT AccountID, AccountName, AccountType, CurrentBalance FROM Accounts WHERE IsActive = 1");
-            accounts = accRes.recordset || [];
-        } catch (e) { }
-
-        try {
-            const sRes = await query("SELECT ServiceID, ServiceName, GovtFee, OperatorFee, (GovtFee + OperatorFee) AS TotalFee, DefaultDays, Icon FROM CSCServices WHERE IsActive = 1 ORDER BY SortOrder ASC, ServiceName ASC");
-            cscServices = sRes.recordset || [];
-        } catch (e) { }
-
-        res.json({
-            success: true,
-            banks: [
-                'State Bank of India', 'Punjab National Bank', 'Bank of Baroda',
-                'Central Bank of India', 'Union Bank of India', 'Canara Bank',
-                'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Kotak Mahindra Bank',
-                'Indian Bank', 'Bank of India', 'UCO Bank', 'Indian Overseas Bank',
-                'Aryavart Bank', 'Baroda UP Bank', 'Prathama UP Gramin Bank',
-                'Paytm Payments Bank', 'Airtel Payments Bank', 'India Post Payments Bank',
-                'Fino Payments Bank'
-            ],
-            accounts: accounts,
-            cscServices: cscServices,
-            commissionRules: {
-                minComm: 0,
-                maxComm: 10,
-                defaultPercent: 0.2
-            },
-            supportedPortals: [
-                { name: 'CSC AEPS', domain: 'csc.gov.in' },
-                { name: 'Digipay Lite', domain: 'digipaylite.in' },
-                { name: 'Digipay', domain: 'digipay.csc.gov.in' },
-                { name: 'SBI Kiosk', domain: 'sbi' },
-                { name: 'Spice Money', domain: 'spicemoney' },
-                { name: 'Payworld', domain: 'payworld' }
-            ],
-            // Grab button sirf in URL patterns wale pages par dikhega.
-            // Pattern me '*' koi bhi character match karta hai.
-            // User inhe extension ke Settings panel se kabhi bhi badal sakta hai.
-            urlRules: {
-                enabled: true,
-                patterns: [
-                    '*://*.csc.gov.in/*receipt*',
-                    '*://*.csc.gov.in/*success*',
-                    '*://*.csc.gov.in/*transaction*',
-                    '*://*.csc.gov.in/*print*',
-                    '*://*.digipaylite.in/*receipt*',
-                    '*://*.digipaylite.in/*success*',
-                    '*://*.digipaylite.in/*transaction*',
-                    '*://*.digipay.csc.gov.in/*receipt*',
-                    '*://*.digipay.csc.gov.in/*success*',
-                    '*://*.digipay.csc.gov.in/*transaction*',
-                    '*://*.spicemoney.in/*receipt*',
-                    '*://*.spicemoney.in/*success*',
-                    '*://*.spicemoney.com/*receipt*',
-                    '*://*.payworld.in/*receipt*',
-                    '*://*.payworld.com/*receipt*',
-                    '*://*.sbi.co.in/*receipt*',
-                    '*://*.sbi/*receipt*'
-                ]
-            },
-            extension: (() => {
-                try {
-                    const b = getExtensionBuild();
-                    return { buildId: b.buildId, fileCount: b.fileCount };
-                } catch (e) { return {}; }
-            })()
-        });
-    } catch (err) {
-        res.json({ success: false, error: err.message });
-    }
-});
+// Extension diagnostics, test, and config are mounted after authenticateUser below
+// to avoid exposing account balances or local paths to unauthenticated callers.
 
 // 3. Real-Time Server-Sent Events (SSE) Live Stream
 // "kisi bhi tranjectin karne par sab kuch auto update hoga realtime koi refresh karne ki jaroorat na pade"
@@ -711,7 +609,7 @@ async function getDbAliveCached() {
 }
 
 app.use('/api', async (req, res, next) => {
-    if (req.path === '/api/health' || req.path === '/api/live-events' || req.path.startsWith('/api/logs') ||
+    if (req.path === '/health' || req.path === '/live-events' || req.path.startsWith('/logs') ||
         req.headers['idempotency-key'] !== undefined) return next();
     let alive = false;
     try {
@@ -781,65 +679,7 @@ app.get('/api/system/update-status', (req, res) => {
     res.json({ success: true, data: autoUpdater.getUpdateStatus() });
 });
 
-app.get('/api/system/check-update', async (req, res) => {
-    const result = await autoUpdater.checkForUpdate();
-    if (result && result.hasUpdate) {
-        broadcastDataChange({
-            type: 'UPDATE_AVAILABLE',
-            module: 'SYSTEM_UPDATE',
-            latestVersion: result.latestVersion,
-            currentVersion: result.currentVersion,
-            notes: result.notes,
-            releasedAt: result.releasedAt,
-            critical: result.critical
-        });
-    }
-    res.json(result);
-});
-
-// Version Report endpoint — har PC apna version report karega taaki admin jaan sake
-// kaunsa PC kis version par hai aur kaunsa update nahi hua.
-app.post('/api/system/version-report', async (req, res) => {
-    try {
-        const { version, pcName, hostname, ip, timestamp, notes } = req.body || {};
-        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
-
-        let reports = [];
-        try {
-            if (fs.existsSync(reportFile)) {
-                reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
-            }
-        } catch (_) { reports = []; }
-
-        const entry = {
-            version: version || autoUpdater.getLocalVersionInfo().version,
-            pcName: pcName || hostname || 'unknown-pc',
-            hostname: hostname || 'unknown',
-            ip: ip || req.ip || req.connection?.remoteAddress || 'unknown',
-            reportedAt: timestamp || new Date().toISOString(),
-            notes: notes || ''
-        };
-
-        // Same PC ka purana entry replace karo, naya add karo
-        const existingIdx = reports.findIndex(r => r.hostname === entry.hostname && r.pcName === entry.pcName);
-        if (existingIdx >= 0) {
-            reports[existingIdx] = entry;
-        } else {
-            reports.push(entry);
-        }
-
-        // Sirf last 500 reports rakho
-        if (reports.length > 500) reports = reports.slice(-500);
-
-        const logDir = path.join(__dirname, 'logs');
-        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-        fs.writeFileSync(reportFile, JSON.stringify(reports, null, 2) + '\n', 'utf8');
-
-        res.json({ success: true, message: 'Version report save ho gaya', data: entry });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+// Check-update & version-report routes are mounted after authenticateUser below.
 
 // Version report list — moved behind authenticateUser + SuperAdmin/loopback check (see below)
 
@@ -919,12 +759,26 @@ const staticOptions = {
         res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     }
 };
+// Block direct HTTP serving of installer/repair batch/script files if any exist under public/
+app.use((req, res, next) => {
+    if (/\.(bat|cmd|ps1|vbs|wsf|msi)$/i.test(req.path || '')) {
+        return res.status(404).end();
+    }
+    next();
+});
 app.use(express.static(path.join(__dirname, 'public'), staticOptions));
 app.use('/extension', express.static(path.join(__dirname, 'extension'), staticOptions));
 
-// Multi-Tenant Authentication Middleware
+// Multi-Tenant Authentication Middleware & Shared-Shop Staff Context
 const { authenticateUser } = require('./middleware/auth');
+const { runWithActor } = require('./utils/requestContext');
+const { enforceStaffPermissions } = require('./middleware/staffPermissions');
 app.use('/api', authenticateUser);
+app.use('/api', (req, res, next) => {
+    if (req.user) return runWithActor(req.user, () => next());
+    return next();
+});
+app.use('/api', enforceStaffPermissions);
 app.use('/api', createIdempotencyMiddleware(createSqlIdempotencyStore(query, sql)));
 
 function isStrictLoopback(req) {
@@ -932,6 +786,175 @@ function isStrictLoopback(req) {
     const remoteAddr = String((req.socket && req.socket.remoteAddress) || req.ip || '').replace(/^::ffff:/, '');
     return remoteAddr === '127.0.0.1' || remoteAddr === '::1';
 }
+
+// Authenticated extension diagnostics, test runner & tenant-scoped config
+app.get('/api/extension/diagnostics', (req, res) => {
+    try {
+        const build = getExtensionBuild();
+        res.json({
+            success: true,
+            extPath: EXT_DIR,
+            buildId: build.buildId,
+            maxMtime: build.maxMtime,
+            fileCount: build.fileCount,
+            files: build.files,
+            serverTime: Date.now()
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/extension/test', (req, res) => {
+    const { execFile } = require('child_process');
+    const script = path.join(EXT_DIR, 'test_parser.js');
+    if (!fs.existsSync(script)) {
+        return res.status(404).send('test_parser.js not found');
+    }
+    execFile(process.execPath, [script], { cwd: __dirname, timeout: 60000, windowsHide: true },
+        (err, stdout, stderr) => {
+            res.type('text/plain').send((stdout || '') + (stderr || '') + (err ? '\n[exit ' + err.code + ']' : ''));
+        }
+    );
+});
+
+app.get('/api/extension/config', async (req, res) => {
+    try {
+        const { query } = require('./database/db');
+        const userId = req.user.UserID;
+        let accounts = [];
+        let cscServices = [];
+        try {
+            const accRes = await query(
+                "SELECT AccountID, AccountName, AccountType, CurrentBalance FROM Accounts WHERE IsActive = 1 AND UserID = @userId",
+                { userId }
+            );
+            accounts = accRes.recordset || [];
+        } catch (e) { }
+
+        try {
+            const sRes = await query(
+                "SELECT ServiceID, ServiceName, GovtFee, OperatorFee, (GovtFee + OperatorFee) AS TotalFee, DefaultDays, Icon FROM CSCServices WHERE IsActive = 1 AND (UserID = @userId OR UserID = 1 OR UserID IS NULL) ORDER BY SortOrder ASC, ServiceName ASC",
+                { userId }
+            );
+            cscServices = sRes.recordset || [];
+        } catch (e) { }
+
+        res.json({
+            success: true,
+            banks: [
+                'State Bank of India', 'Punjab National Bank', 'Bank of Baroda',
+                'Central Bank of India', 'Union Bank of India', 'Canara Bank',
+                'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Kotak Mahindra Bank',
+                'Indian Bank', 'Bank of India', 'UCO Bank', 'Indian Overseas Bank',
+                'Aryavart Bank', 'Baroda UP Bank', 'Prathama UP Gramin Bank',
+                'Paytm Payments Bank', 'Airtel Payments Bank', 'India Post Payments Bank',
+                'Fino Payments Bank'
+            ],
+            accounts: accounts,
+            cscServices: cscServices,
+            commissionRules: {
+                minComm: 0,
+                maxComm: 10,
+                defaultPercent: 0.2
+            },
+            supportedPortals: [
+                { name: 'CSC AEPS', domain: 'csc.gov.in' },
+                { name: 'Digipay Lite', domain: 'digipaylite.in' },
+                { name: 'Digipay', domain: 'digipay.csc.gov.in' },
+                { name: 'SBI Kiosk', domain: 'sbi' },
+                { name: 'Spice Money', domain: 'spicemoney' },
+                { name: 'Payworld', domain: 'payworld' }
+            ],
+            urlRules: {
+                enabled: true,
+                patterns: [
+                    '*://*.csc.gov.in/*receipt*',
+                    '*://*.csc.gov.in/*success*',
+                    '*://*.csc.gov.in/*transaction*',
+                    '*://*.csc.gov.in/*print*',
+                    '*://*.digipaylite.in/*receipt*',
+                    '*://*.digipaylite.in/*success*',
+                    '*://*.digipaylite.in/*transaction*',
+                    '*://*.digipay.csc.gov.in/*receipt*',
+                    '*://*.digipay.csc.gov.in/*success*',
+                    '*://*.digipay.csc.gov.in/*transaction*',
+                    '*://*.spicemoney.in/*receipt*',
+                    '*://*.spicemoney.in/*success*',
+                    '*://*.spicemoney.com/*receipt*',
+                    '*://*.payworld.in/*receipt*',
+                    '*://*.payworld.com/*receipt*',
+                    '*://*.sbi.co.in/*receipt*',
+                    '*://*.sbi/*receipt*'
+                ]
+            },
+            extension: (() => {
+                try {
+                    const b = getExtensionBuild();
+                    return { buildId: b.buildId, fileCount: b.fileCount };
+                } catch (e) { return {}; }
+            })()
+        });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/system/check-update', async (req, res) => {
+    const result = await autoUpdater.checkForUpdate();
+    if (result && result.hasUpdate) {
+        broadcastDataChange({
+            type: 'UPDATE_AVAILABLE',
+            module: 'SYSTEM_UPDATE',
+            latestVersion: result.latestVersion,
+            currentVersion: result.currentVersion,
+            notes: result.notes,
+            releasedAt: result.releasedAt,
+            critical: result.critical
+        });
+    }
+    res.json(result);
+});
+
+app.post('/api/system/version-report', async (req, res) => {
+    try {
+        const { version, pcName, hostname, ip, timestamp, notes } = req.body || {};
+        const reportFile = path.join(__dirname, 'logs', 'version-reports.json');
+
+        let reports = [];
+        try {
+            if (fs.existsSync(reportFile)) {
+                reports = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+            }
+        } catch (_) { reports = []; }
+
+        const entry = {
+            version: version || autoUpdater.getLocalVersionInfo().version,
+            pcName: pcName || hostname || 'unknown-pc',
+            hostname: hostname || 'unknown',
+            ip: ip || req.ip || req.connection?.remoteAddress || 'unknown',
+            reportedAt: timestamp || new Date().toISOString(),
+            notes: notes || ''
+        };
+
+        const existingIdx = reports.findIndex(r => r.hostname === entry.hostname && r.pcName === entry.pcName);
+        if (existingIdx >= 0) {
+            reports[existingIdx] = entry;
+        } else {
+            reports.push(entry);
+        }
+
+        if (reports.length > 500) reports = reports.slice(-500);
+
+        const logDir = path.join(__dirname, 'logs');
+        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+        fs.writeFileSync(reportFile, JSON.stringify(reports, null, 2) + '\n', 'utf8');
+
+        res.json({ success: true, message: 'Version report save ho gaya', data: entry });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 app.get('/api/system/version-reports', (req, res) => {
     const isAllowed = isStrictLoopback(req) || (req.user && (req.user.Role === 'SuperAdmin' || req.user.UserID === 1));
@@ -1264,12 +1287,19 @@ function startServer() {
                 console.warn('⚠️ [License] Engine error:', e.message);
             }
 
-            // Windows self-heal: PC boot par silent auto-start (task + startup entry)
-            // aur Desktop/Start Menu shortcut ensure karo. Purane installs par bhi
-            // update ke baad ye khud lag jata hai - user ko kuch karna nahi padta.
+            // Windows self-heal + Fleet Telemetry heartbeat
+            let lastAutostartSummary = null;
             setTimeout(() => {
-                try { require('./utils/windows_autostart').ensureWindowsAutostart(); } catch (e) { }
+                try { lastAutostartSummary = require('./utils/windows_autostart').ensureWindowsAutostart(); } catch (e) { }
             }, 10000);
+            try {
+                const telemetry = require('./utils/telemetryAgent');
+                telemetry.startPeriodicTelemetry({
+                    getPort: () => PORT,
+                    getAppVersion,
+                    getAutostartStatus: () => lastAutostartSummary
+                });
+            } catch (_) { }
 
 // Smart Proactive Auto-Update Engine (Immediate Zero-Touch Delivery):
 // 1. Boot ke 8s baad pehla check, agar app busy ho to har 15s me retry karega (max 8 attempts).
@@ -1321,6 +1351,13 @@ scheduleNightlyUpdate();
                 port: PORT,
                 version: getAppVersion()
             });
+            try {
+                require('./utils/telemetryAgent').queueErrorSync({
+                    source: 'server',
+                    errorType: `listen_${code}`,
+                    message: `Listen Error (${code}) on ${HOST}:${PORT}: ${listenErr.message}`
+                });
+            } catch (_) { }
             try {
                 const errLogDir = path.join(__dirname, 'logs');
                 if (!fs.existsSync(errLogDir)) fs.mkdirSync(errLogDir, { recursive: true });

@@ -109,8 +109,14 @@ async function writeBillPayLedger(tQuery, bp, action, options = {}) {
             await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: effCashId });
         }
 
-        // Also update old accounts if accounts changed on UPDATE (scoped to userId)
+        // Reconcile current & old accounts even when amounts become 0 on UPDATE
         if (action === 'UPDATE') {
+            if (effWalletId && numBillAmount <= 0) {
+                await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: effWalletId });
+            }
+            if (effCashId && numTotalCollected <= 0 && effCashId !== effWalletId) {
+                await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: effCashId });
+            }
             if (oldWalletId && oldWalletId !== effWalletId) {
                 const oWChk = await tQuery('SELECT AccountID FROM Accounts WHERE AccountID = @id AND UserID = @userId', { id: oldWalletId, userId });
                 if (oWChk.recordset.length > 0) {

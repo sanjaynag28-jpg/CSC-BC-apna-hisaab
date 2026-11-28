@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
+const { assertOwnedEntity, cleanString } = require('../utils/helpers');
 
 // GET all categories
 router.get('/', async (req, res) => {
@@ -27,19 +28,25 @@ router.post('/', async (req, res) => {
     try {
         const userId = req.user.UserID;
         const { CategoryName, CategoryType, Icon, Color, ParentID } = req.body;
+        const cleanName = cleanString(CategoryName);
+        if (!cleanName) {
+            return res.status(400).json({ success: false, error: 'CategoryName zaroori hai' });
+        }
+        const parentId = await assertOwnedEntity(query, 'Categories', 'CategoryID', ParentID, userId, 'Parent Category');
+
         const result = await query(`
             INSERT INTO Categories (UserID, CategoryName, CategoryType, Icon, Color, ParentID)
             OUTPUT INSERTED.*
             VALUES (@userId, @name, @type, @icon, @color, @parentId)
         `, {
             userId,
-            name: CategoryName, type: CategoryType || 'Expense',
+            name: cleanName, type: CategoryType || 'Expense',
             icon: Icon || 'tag', color: Color || '#8b5cf6',
-            parentId: ParentID || null
+            parentId: parentId || null
         });
         res.json({ success: true, data: result.recordset[0] });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(err.status || 500).json({ success: false, error: err.message });
     }
 });
 

@@ -1,8 +1,8 @@
 {
-  "version": "1.0.98",
+  "version": "1.0.99",
   "critical": true,
-  "releasedAt": "2026-11-26",
+  "releasedAt": "2026-11-28",
   "repo": "sanjaynag28-jpg/CSC-BC-apna-hisaab",
   "branch": "sqlite",
-  "notes": "Fix premature Port 4001 fallback (wait for port release & auto-restore Port 4000 whenever free) + Chrome/Edge Splash + 100% Auto-Start + Scroll-Persistent 3-Dot Menus"
+  "notes": "Security, Stability & Accuracy Hardening: Idempotency SQL types, BC Khata & KPI double-counting fixes, Staff Shared Shop (Model A), RecordEngine/BillPay ledger sync, XSS hardening, Passbook layout restore & Extension Aadhaar/UPPCL fixes"
 }

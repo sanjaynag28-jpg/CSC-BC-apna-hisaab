@@ -132,16 +132,25 @@ async function upsertModule({
     const cleanPrefix = String(prefix).trim().toUpperCase();
     const table = targetTable || 'ServiceRecords';
     const pk = primaryKeyColumn || 'RecordID';
-    await query(`
-        IF NOT EXISTS (SELECT 1 FROM dbo.TxnModules WHERE ModuleCode = @code)
-        BEGIN
+    const modParams = {
+        code: moduleCode,
+        name: moduleName,
+        prefix: cleanPrefix,
+        table,
+        pk,
+        isCore: isCore ? 1 : 0,
+        order: displayOrder
+    };
+    const existingMod = await query('SELECT ModuleCode FROM dbo.TxnModules WHERE ModuleCode = @code', { code: moduleCode });
+    if (!existingMod.recordset || existingMod.recordset.length === 0) {
+        await query(`
             INSERT INTO dbo.TxnModules
                 (ModuleCode, ModuleName, Prefix, DocPrefix, TargetTable, RecordTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder, SortOrder, UserID)
             VALUES
-                (@code, @name, @prefix, @prefix, @table, @table, @pk, @isCore, 1, @order, @order, 1);
-        END
-        ELSE
-        BEGIN
+                (@code, @name, @prefix, @prefix, @table, @table, @pk, @isCore, 1, @order, @order, 1)
+        `, modParams);
+    } else {
+        await query(`
             UPDATE dbo.TxnModules
             SET ModuleName = @name,
                 Prefix = @prefix,
@@ -152,17 +161,9 @@ async function upsertModule({
                 DisplayOrder = @order,
                 SortOrder = @order,
                 UpdatedAt = GETDATE()
-            WHERE ModuleCode = @code;
-        END
-    `, {
-        code: moduleCode,
-        name: moduleName,
-        prefix: cleanPrefix,
-        table,
-        pk,
-        isCore: isCore ? 1 : 0,
-        order: displayOrder
-    });
+            WHERE ModuleCode = @code
+        `, modParams);
+    }
     clearModuleCache();
     return await resolveModule(moduleCode);
 }
@@ -171,11 +172,39 @@ function clearModuleCache() {
     cache = { loadedAt: 0, map: null };
 }
 
+/**
+ * Ensure a moduleCode exists in TxnModules before inserting/updating ServiceRecords
+ * (satisfies ServiceRecords.ModuleCode -> TxnModules.ModuleCode FK for custom modules).
+ */
+async function ensureModuleRegistered(moduleCode, execQuery = query) {
+    const mod = await resolveModule(moduleCode);
+    if (!mod) return null;
+    const existing = await execQuery('SELECT ModuleCode FROM dbo.TxnModules WHERE ModuleCode = @code', { code: mod.moduleCode });
+    if (!existing.recordset || existing.recordset.length === 0) {
+        await execQuery(`
+            INSERT INTO dbo.TxnModules
+                (ModuleCode, ModuleName, Prefix, DocPrefix, TargetTable, RecordTable, PrimaryKeyColumn, IsCore, IsActive, DisplayOrder, SortOrder, UserID)
+            VALUES
+                (@code, @name, @prefix, @prefix, @table, @table, @pk, 0, 1, @order, @order, 1)
+        `, {
+            code: mod.moduleCode,
+            name: mod.moduleName || mod.moduleCode,
+            prefix: mod.prefix || 'MOD',
+            table: mod.table || 'ServiceRecords',
+            pk: mod.pk || 'RecordID',
+            order: mod.displayOrder || 999
+        });
+        clearModuleCache();
+    }
+    return mod;
+}
+
 module.exports = {
     FALLBACK_MODULES,
     loadModules,
     resolveModule,
     listModules,
     upsertModule,
+    ensureModuleRegistered,
     clearModuleCache
 };

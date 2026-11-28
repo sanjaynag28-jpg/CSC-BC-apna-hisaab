@@ -589,11 +589,11 @@ router.put('/:id/description', async (req, res) => {
         const userId = req.user.UserID;
         const docId = parseInt(req.params.id);
         const desc = (req.body.description || '').trim().substring(0, 500) || null;
-        const result = await query(`
-            UPDATE Documents SET Description = @desc, UpdatedAt = GETDATE() WHERE DocumentID = @id AND UserID = @userId;
-            SELECT @@ROWCOUNT AS affected;
-        `, { desc, id: docId, userId });
-        if (!result.recordset[0].affected) return res.status(404).json({ success: false, error: 'Document nahi mila' });
+        const result = await query(
+            'UPDATE Documents SET Description = @desc, UpdatedAt = GETDATE() WHERE DocumentID = @id AND UserID = @userId',
+            { desc, id: docId, userId }
+        );
+        if (!result.rowsAffected || !result.rowsAffected[0]) return res.status(404).json({ success: false, error: 'Document nahi mila' });
         res.json({ success: true, message: 'Description update ho gaya' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });

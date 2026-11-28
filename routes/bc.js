@@ -105,17 +105,18 @@ router.get('/dashboard', async (req, res) => {
                     WHEN ServiceType = 'QR Pay' AND QROperation = 'Send - Cash Taken from Customer' THEN Amount
                     ELSE 0 
                 END), 0) as TotalCashIn,
-                -- Customer cash charges
+                -- Customer cash charges (excluding Khata-charged fees from KhataEntries)
                 ISNULL(SUM(ISNULL(CustomerCharge, 0)), 0) as TotalCashCharges,
+                ISNULL((SELECT SUM(k.Amount) FROM KhataEntries k INNER JOIN BCTransactions kb ON k.BCID = kb.BCID WHERE k.EntryType = 'Gave' AND k.UserID = @userId AND kb.TransDate = @today AND kb.Status = 'Success' AND kb.UserID = @userId), 0) as _KhataCharges,
                 -- Total bank commissions
                 ISNULL(SUM(ISNULL(CommissionEarned, 0)), 0) as TotalBankCommissions,
                 -- ATM / Bank Cash Refills or Outside Cash brought into Galla today
-                ISNULL((SELECT SUM(Amount) FROM Transactions WHERE TransDate = @today AND UserID = @userId AND (
+                ISNULL((SELECT SUM(Amount) FROM Transactions WHERE TransDate = @today AND UserID = @userId AND IsDeleted = 0 AND (
                     (TransType = 'Transfer' AND ToAccountID IN (SELECT AccountID FROM Accounts WHERE AccountType = 'Cash' AND UserID = @userId))
                     OR (TransType = 'Income' AND AccountID IN (SELECT AccountID FROM Accounts WHERE AccountType = 'Cash' AND UserID = @userId))
                 )), 0) as TotalATMRefill,
                 -- Cash expenses paid from Galla today
-                ISNULL((SELECT SUM(Amount) FROM Transactions WHERE TransDate = @today AND TransType = 'Expense' AND UserID = @userId AND AccountID IN (SELECT AccountID FROM Accounts WHERE AccountType = 'Cash' AND UserID = @userId)), 0) as TotalCashExpense
+                ISNULL((SELECT SUM(Amount) FROM Transactions WHERE TransDate = @today AND TransType = 'Expense' AND UserID = @userId AND IsDeleted = 0 AND AccountID IN (SELECT AccountID FROM Accounts WHERE AccountType = 'Cash' AND UserID = @userId)), 0) as TotalCashExpense
             FROM BCTransactions
             WHERE TransDate = @today AND Status = 'Success' AND UserID = @userId
         `, { today, userId });
@@ -145,12 +146,16 @@ router.get('/dashboard', async (req, res) => {
             WHERE IsActive = 1 AND UserID = @userId
         `, { userId });
 
+        const cashFlowRow = cashFlow.recordset[0] || {};
+        cashFlowRow.TotalCashCharges = Math.max(0, Number(cashFlowRow.TotalCashCharges || 0) - Number(cashFlowRow._KhataCharges || 0));
+        delete cashFlowRow._KhataCharges;
+
         res.json({
             success: true,
             data: {
                 today: todayStats.recordset,
                 month: monthStats.recordset[0] || {},
-                cashFlow: cashFlow.recordset[0] || {},
+                cashFlow: cashFlowRow,
                 session: session.recordset[0] || null,
                 recent: recent.recordset,
                 accounts: accounts.recordset
@@ -218,8 +223,9 @@ router.get(['/', '/transactions'], async (req, res) => {
                 b.Amount, b.CommissionEarned, b.CustomerCharge, b.NetProfit,
                 b.CashAccountID, b.PortalAccountID, b.PortalName, b.QRProvider, b.QROperation, b.RRN_UTR,
                 b.Status, b.Notes, b.CreatedAt, b.UpdatedAt, b.Metadata, b.CustomerID, b.DateOfBirth,
+                b.CreatedByUserID, b.CreatedByName,
                 -- Portal fallback: PortalName khali ho to Notes se pehla segment (purana data)
-                CASE WHEN b.PortalName IS NULL OR LTRIM(RTRIM(b.PortalName)) = '' THEN NULLIF(LTRIM(RTRIM(SUBSTRING(b.Notes, 1, CHARINDEX('|', b.Notes + '|') - 1))), '') ELSE b.PortalName END AS PortalNameDisplay,
+                CASE WHEN b.PortalName IS NULL OR LTRIM(RTRIM(b.PortalName)) = '' THEN NULLIF(LTRIM(RTRIM(SUBSTRING(b.Notes, 1, INSTR(IFNULL(b.Notes, '') || '|', '|') - 1))), '') ELSE b.PortalName END AS PortalNameDisplay,
                 -- A/C Balance: direct column or from Metadata JSON (auto-detected from AEPS receipt)
                 ISNULL(b.AccountBalance, CASE 
                     WHEN b.Metadata IS NOT NULL 
@@ -268,7 +274,8 @@ router.get('/:id', async (req, res, next) => {
                 b.Amount, b.CommissionEarned, b.CustomerCharge, b.NetProfit,
                 b.CashAccountID, b.PortalAccountID, b.PortalName, b.QRProvider, b.QROperation, b.RRN_UTR,
                 b.Status, b.Notes, b.CreatedAt, b.UpdatedAt, b.Metadata, b.CustomerID, b.DateOfBirth,
-                CASE WHEN b.PortalName IS NULL OR LTRIM(RTRIM(b.PortalName)) = '' THEN NULLIF(LTRIM(RTRIM(SUBSTRING(b.Notes, 1, CHARINDEX('|', b.Notes + '|') - 1))), '') ELSE b.PortalName END AS PortalNameDisplay,
+                b.CreatedByUserID, b.CreatedByName,
+                CASE WHEN b.PortalName IS NULL OR LTRIM(RTRIM(b.PortalName)) = '' THEN NULLIF(LTRIM(RTRIM(SUBSTRING(b.Notes, 1, INSTR(IFNULL(b.Notes, '') || '|', '|') - 1))), '') ELSE b.PortalName END AS PortalNameDisplay,
                 ISNULL(b.AccountBalance, CASE 
                     WHEN b.Metadata IS NOT NULL 
                     THEN TRY_CAST(JSON_VALUE(b.Metadata, '$.accountBalance') AS DECIMAL(18,2))
@@ -368,9 +375,21 @@ router.post('/session', async (req, res) => {
 
         const sessionStatus = (actualClosing > 0 || n500 > 0 || n200 > 0 || n100 > 0 || n50 > 0 || n20 > 0 || n10 > 0 || c > 0) ? 'Closed' : 'Open';
 
-        await query(`
-            IF EXISTS (SELECT 1 FROM BCCounterSessions WHERE SessionDate = @date AND UserID = @userId)
-            BEGIN
+        const sessionParams = {
+            date,
+            opening: parseFloat(OpeningCash) || 0,
+            n500, n200, n100, n50, n20, n10, c,
+            actualClosing, expected, diff,
+            status: sessionStatus,
+            notes: Notes || null,
+            userId
+        };
+        const existingSession = await query(
+            'SELECT SessionID FROM BCCounterSessions WHERE SessionDate = @date AND UserID = @userId',
+            { date, userId }
+        );
+        if (existingSession.recordset && existingSession.recordset.length > 0) {
+            await query(`
                 UPDATE BCCounterSessions SET
                     OpeningCash = @opening,
                     Note500 = @n500, Note200 = @n200, Note100 = @n100, Note50 = @n50,
@@ -382,23 +401,15 @@ router.post('/session', async (req, res) => {
                     Notes = @notes,
                     UpdatedAt = GETDATE()
                 WHERE SessionDate = @date AND UserID = @userId
-            END
-            ELSE
-            BEGIN
+            `, sessionParams);
+        } else {
+            await query(`
                 INSERT INTO BCCounterSessions 
                     (SessionDate, OpeningCash, Note500, Note200, Note100, Note50, Note20, Note10, Coins, ActualClosingCash, ExpectedClosingCash, CashDifference, Status, Notes, UserID)
                 VALUES 
                     (@date, @opening, @n500, @n200, @n100, @n50, @n20, @n10, @c, @actualClosing, @expected, @diff, @status, @notes, @userId)
-            END
-        `, {
-            date,
-            opening: parseFloat(OpeningCash) || 0,
-            n500, n200, n100, n50, n20, n10, c,
-            actualClosing, expected, diff,
-            status: sessionStatus,
-            notes: Notes || null,
-            userId
-        });
+            `, sessionParams);
+        }
 
         res.json({ success: true, message: 'Galla hisaab save ho gaya!', actualClosing, diff, status: sessionStatus });
     } catch (err) {
@@ -1034,6 +1045,13 @@ router.post('/settlement', async (req, res) => {
 
             // 2. If there are Payout Charges (e.g. �5 fee deducted from wallet)
             if (fee > 0) {
+                const catRes = await tQuery(`
+                    SELECT TOP 1 CategoryID FROM Categories
+                    WHERE IsActive = 1 AND (UserID = @userId OR UserID = 1 OR UserID IS NULL)
+                    ORDER BY CASE WHEN LOWER(CategoryName) LIKE '%bank%' OR LOWER(CategoryName) LIKE '%payout%' OR LOWER(CategoryName) LIKE '%fee%' THEN 0 WHEN CategoryType = 'Expense' THEN 1 ELSE 2 END, CategoryID ASC
+                `, { userId });
+                const feeCategoryId = catRes.recordset?.length ? catRes.recordset[0].CategoryID : null;
+
                 await tQuery(`
                     INSERT INTO Transactions (
                         TransDate, TransType, Amount, AccountID,
@@ -1041,7 +1059,7 @@ router.post('/settlement', async (req, res) => {
                     )
                     VALUES (
                         @date, 'Expense', @fee, @fromAcc,
-                        @desc, @ref, 'BC Payout Fee', 16, @userId
+                        @desc, @ref, 'BC Payout Fee', @feeCatId, @userId
                     )
                 `, {
                     date,
@@ -1049,6 +1067,7 @@ router.post('/settlement', async (req, res) => {
                     fromAcc: parseInt(FromAccountID),
                     desc: `${TransferType} Service Fee / Payout Charge`,
                     ref: Reference || null,
+                    feeCatId: feeCategoryId,
                     userId
                 });
             }
@@ -1099,38 +1118,52 @@ router.post('/relink', async (req, res) => {
     try {
         const userId = req.user.UserID;
 
-        // 1. Relink strictly by matching 10-digit Phone numbers within the same UserID
+        // 1. Relink strictly by matching 10-digit Phone numbers within the same UserID (SQLite-safe)
+        const cleanPhoneExpr = "substr(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(CustomerPhone,''),' ',''),'-',''),'+',''),'.',''), -10)";
+        const custPhoneExpr = "substr(REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(Phone,''),' ',''),'-',''),'+',''),'.',''), -10)";
         const r1 = await query(`
-            UPDATE b SET b.CustomerID = c.CustomerID
-            FROM BCTransactions b
-            JOIN (
-                SELECT MIN(CustomerID) as CustomerID,
-                       RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(Phone,''),' ',''),'-',''),'+',''),'.',''), 10) as CleanPhone,
-                       UserID
-                FROM Customers
-                WHERE IsActive = 1
-                GROUP BY RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(Phone,''),' ',''),'-',''),'+',''),'.',''), 10), UserID
-                HAVING LEN(RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(Phone,''),' ',''),'-',''),'+',''),'.',''), 10)) = 10
-            ) c ON RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(b.CustomerPhone,''),' ',''),'-',''),'+',''),'.',''), 10) = c.CleanPhone AND b.UserID = c.UserID
-            WHERE b.CustomerID IS NULL AND b.UserID = @userId
-              AND LEN(RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(b.CustomerPhone,''),' ',''),'-',''),'+',''),'.',''), 10)) = 10
+            UPDATE BCTransactions
+            SET CustomerID = (
+                SELECT MIN(c.CustomerID)
+                FROM Customers c
+                WHERE c.IsActive = 1
+                  AND c.UserID = BCTransactions.UserID
+                  AND LENGTH(${custPhoneExpr}) = 10
+                  AND ${custPhoneExpr} = ${cleanPhoneExpr}
+            )
+            WHERE CustomerID IS NULL AND UserID = @userId
+              AND LENGTH(${cleanPhoneExpr}) = 10
+              AND EXISTS (
+                  SELECT 1 FROM Customers c
+                  WHERE c.IsActive = 1
+                    AND c.UserID = BCTransactions.UserID
+                    AND LENGTH(${custPhoneExpr}) = 10
+                    AND ${custPhoneExpr} = ${cleanPhoneExpr}
+              )
         `, { userId });
 
-        // 2. Relink strictly by matching clean 12-digit Aadhaar within the same UserID
+        // 2. Relink strictly by matching clean 12-digit Aadhaar within the same UserID (SQLite-safe)
+        const cleanAadhaarExpr = "REPLACE(REPLACE(IFNULL(CustomerAadhaarLast4,''),' ',''),'-','')";
+        const custAadhaarExpr = "REPLACE(REPLACE(IFNULL(AadhaarNumber,''),' ',''),'-','')";
         const r2 = await query(`
-            UPDATE b SET b.CustomerID = c.CustomerID
-            FROM BCTransactions b
-            JOIN (
-                SELECT MIN(CustomerID) as CustomerID,
-                       REPLACE(REPLACE(ISNULL(AadhaarNumber,''),' ',''),'-','') as CleanAadhaar,
-                       UserID
-                FROM Customers
-                WHERE IsActive = 1
-                GROUP BY REPLACE(REPLACE(ISNULL(AadhaarNumber,''),' ',''),'-',''), UserID
-                HAVING LEN(REPLACE(REPLACE(ISNULL(AadhaarNumber,''),' ',''),'-','')) = 12
-            ) c ON REPLACE(REPLACE(ISNULL(b.CustomerAadhaarLast4,''),' ',''),'-','') = c.CleanAadhaar AND b.UserID = c.UserID
-            WHERE b.CustomerID IS NULL AND b.UserID = @userId
-              AND LEN(REPLACE(REPLACE(ISNULL(b.CustomerAadhaarLast4,''),' ',''),'-','')) = 12
+            UPDATE BCTransactions
+            SET CustomerID = (
+                SELECT MIN(c.CustomerID)
+                FROM Customers c
+                WHERE c.IsActive = 1
+                  AND c.UserID = BCTransactions.UserID
+                  AND LENGTH(${custAadhaarExpr}) = 12
+                  AND ${custAadhaarExpr} = ${cleanAadhaarExpr}
+            )
+            WHERE CustomerID IS NULL AND UserID = @userId
+              AND LENGTH(${cleanAadhaarExpr}) = 12
+              AND EXISTS (
+                  SELECT 1 FROM Customers c
+                  WHERE c.IsActive = 1
+                    AND c.UserID = BCTransactions.UserID
+                    AND LENGTH(${custAadhaarExpr}) = 12
+                    AND ${custAadhaarExpr} = ${cleanAadhaarExpr}
+              )
         `, { userId });
 
         // Blind name-only matching is permanently eliminated to prevent wrong customer data corruption.

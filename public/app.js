@@ -1,4 +1,16 @@
 
+// Safe fallback when offline / CDN unavailable so lucide.createIcons() never throws
+if (typeof window !== 'undefined' && typeof window.lucide === 'undefined') {
+    window.lucide = { createIcons: function () {} };
+}
+
+// Safe Staff / Agent chip helper (shows who created the entry in Shared Shop mode)
+window.renderStaffActorBadge = function (row) {
+    if (!row || !row.CreatedByName) return '';
+    const safeName = String(row.CreatedByName).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<span class="staff-actor-chip" title="Entry karne wale Staff/Admin">👤 ${safeName}</span>`;
+};
+
 // ============================================================================
 // DASHBOARD FULLY LOADED HOOK: Dismisses foreground update wizard/splash only when dashboard opens
 // ============================================================================
@@ -159,7 +171,7 @@ function getContextualLoadingText(url, method = 'GET') {
         if (u.includes('/api/customers')) return { title: 'Grahak Data Save Ho Raha Hai...', msg: 'Live database me customer record darz ho raha hai...' };
         if (u.includes('/api/csc')) return { title: 'CSC Aavedan Save Ho Raha Hai...', msg: 'Work Tracker aur fees details sync ho rahi hain...' };
         if (u.includes('/api/transactions')) return { title: 'Transaction Save Ho Rahi Hai...', msg: 'Rokad khata aur balance live update ho raha hai...' };
-        if (u.includes('/api/bills') || u.includes('/api/billing')) return { title: 'Bill / Invoice Process Ho Raha Hai...', msg: 'Invoice generate ho kar account me jud raha hai...' };
+        if (u.includes('/api/bills') || u.includes('/api/invoices') || u.includes('/api/bill-payments')) return { title: 'Bill / Invoice Process Ho Raha Hai...', msg: 'Invoice generate ho kar account me jud raha hai...' };
         return { title: 'Data Surakshit Process Ho Raha Hai...', msg: 'Real-time database me record update ho raha hai...' };
     }
 
@@ -167,8 +179,8 @@ function getContextualLoadingText(url, method = 'GET') {
     if (u.includes('/api/csc')) return { title: 'CSC Sewayein Load Ho Rahi Hain...', msg: 'Work Tracker aavedan aur services sync ho rahe hain...' };
     if (u.includes('/api/transactions')) return { title: 'Transactions Load Ho Rahi Hain...', msg: 'Len-den rokad bahi live fetch ho rahi hai...' };
     if (u.includes('/api/reports')) return { title: 'Reports & Analytics Load Ho Rahi Hain...', msg: 'Audit data aur hisaab-kitaab generate ho raha hai...' };
-    if (u.includes('/api/daybook')) return { title: 'Day Book Load Ho Rahi Hai...', msg: 'Aaj ki rokad aur cash-flow aa raha hai...' };
-    if (u.includes('/api/khata')) return { title: 'Khatabook Ledger Load Ho Raha Hai...', msg: 'Customer ka master khata hisaab sync ho raha hai...' };
+    if (u.includes('/api/bill-payments')) return { title: 'Bill Payments Load Ho Rahi Hain...', msg: 'Bill & EMI payment records fetch ho rahe hain...' };
+    if (u.includes('/api/khatabook')) return { title: 'Khatabook Ledger Load Ho Raha Hai...', msg: 'Customer ka master khata hisaab sync ho raha hai...' };
     if (u.includes('/api/accounts')) return { title: 'Bank Khate Load Ho Rahe Hain...', msg: 'Bank balance aur cash accounts sync ho rahe hain...' };
     if (u.includes('/api/documents')) return { title: 'Documents Vault Load Ho Raha Hai...', msg: 'Surakshit dastavez fetch ho rahe hain...' };
     if (u.includes('/api/database')) return { title: 'Database Live Table Load Ho Rahi Hai...', msg: 'SQLite database tables se live data aa raha hai...' };
@@ -327,7 +339,6 @@ window.fetch = async function (resource, init = {}) {
     const isApiCall = typeof url === 'string' && (url.includes('/api/') || url.startsWith('/api') || url.includes('/api'));
     const isBackgroundApi = typeof url === 'string' && (
         url.includes('/api/health') ||
-        url.includes('/api/sync/version') ||
         url.includes('/api/auth/me') ||
         url.includes('/api/app-version') ||
         url.includes('/api/system/check-update') ||
@@ -433,10 +444,11 @@ window.fetch = async function (resource, init = {}) {
                 }
             } catch (e) { }
         } else if (!response.ok && response.status >= 400 && response.status !== 401 && !url.includes('/api/logs') && !url.includes('/api/health')) {
-            // Auto capture API 4xx/5xx errors
+            // Auto capture API 4xx/5xx errors (skip expected LICENSE_EXPIRED 403 handled by license interceptor)
             try {
                 const clone = response.clone();
                 clone.text().then(bodyText => {
+                    if (response.status === 403 && bodyText && bodyText.includes('LICENSE_EXPIRED')) return;
                     if (typeof window.reportManualError === 'function') {
                         window.reportManualError(`API Error (${response.status}): ${url}`, new Error(`HTTP ${response.status}: ${bodyText ? bodyText.substring(0, 300) : response.statusText}`), { url, status: response.status, method: init.method || 'GET' });
                     }
@@ -1541,9 +1553,10 @@ async function apiFetch(endpoint, options = {}) {
         : (rawUrl.startsWith('/') ? `${API}${rawUrl}` : `${API}/${rawUrl}`);
 
     const config = { ...options };
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    const isFormData = (typeof FormData !== 'undefined') && (config.body instanceof FormData);
+    const headers = isFormData ? { ...(options.headers || {}) } : { 'Content-Type': 'application/json', ...(options.headers || {}) };
 
-    if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData)) {
+    if (config.body && typeof config.body === 'object' && !isFormData) {
         config.body = JSON.stringify(config.body);
     }
     config.headers = headers;
@@ -3617,8 +3630,8 @@ function renderAccountMiniCards(accounts) {
                     <span>${icon}</span>
                 </div>
                 <div class="acc-info">
-                    <div class="acc-name">${a.AccountName}</div>
-                    <div class="acc-type">${a.AccountType}</div>
+                    <div class="acc-name">${escapeHtml(a.AccountName)}</div>
+                    <div class="acc-type">${escapeHtml(a.AccountType)}</div>
                 </div>
                 <div class="acc-balance ${bal >= 0 ? 'positive' : 'negative'}">${formatMoney(bal)}</div>
             </div>`;
@@ -3645,6 +3658,11 @@ function renderExpenseChart(categories) {
     if (!ctx) {
         container.innerHTML = '<canvas id="expenseChart"></canvas>';
         ctx = document.getElementById('expenseChart');
+    }
+
+    if (typeof Chart === 'undefined') {
+        container.innerHTML = '<div class="empty-state" style="padding: 30px 10px; text-align: center;"><p>Offline mode — Chart library load nahi hui</p></div>';
+        return;
     }
 
     charts.expense = new Chart(ctx, {
@@ -3678,7 +3696,7 @@ function renderExpenseChart(categories) {
     legend.innerHTML = categories.slice(0, 6).map(c => `
         <div class="legend-item">
             <div class="legend-dot" style="background:${c.Color}"></div>
-            <span>${c.CategoryName}</span>
+            <span>${escapeHtml(c.CategoryName)}</span>
         </div>
     `).join('');
 }
@@ -3686,6 +3704,7 @@ function renderExpenseChart(categories) {
 function renderFlowChart(dailyFlow) {
     const ctx = document.getElementById('flowChart');
     if (charts.flow) charts.flow.destroy();
+    if (!ctx || typeof Chart === 'undefined') return;
 
     charts.flow = new Chart(ctx, {
         type: 'bar',
@@ -3754,11 +3773,12 @@ function renderTransRow(t) {
                 ${emoji[t.TransType] || '💰'}
             </div>
             <div class="trans-info">
-                <div class="trans-desc">${t.Description || t.CategoryName || t.TransType}</div>
+                <div class="trans-desc">${escapeHtml(t.Description || t.CategoryName || t.TransType)}</div>
                 <div class="trans-meta">
-                    <span>${t.AccountName || ''}</span>
-                    ${t.CategoryName ? `<span class="dot">•</span><span>${t.CategoryName}</span>` : ''}
-                    ${t.PartyName ? `<span class="dot">•</span><span>${t.PartyName}</span>` : ''}
+                    <span>${escapeHtml(t.AccountName || '')}</span>
+                    ${t.CategoryName ? `<span class="dot">•</span><span>${escapeHtml(t.CategoryName)}</span>` : ''}
+                    ${t.PartyName ? `<span class="dot">•</span><span>${escapeHtml(t.PartyName)}</span>` : ''}
+                    ${t.CreatedByName ? `<span class="dot">•</span>${renderStaffActorBadge(t)}` : ''}
                 </div>
             </div>
             <div class="trans-amount ${colorClass}">${sign}${formatMoney(t.Amount)}</div>
@@ -3768,7 +3788,7 @@ function renderTransRow(t) {
             </div>
             <div class="trans-actions" onclick="event.stopPropagation()">
                 <button class="btn-icon" onclick="editTransaction(${t.TransactionID})" title="Edit"><i data-lucide="edit-2" width="16" height="16"></i></button>
-                <button class="btn-icon" onclick="deleteTransaction(${t.TransactionID})" title="Delete" style="color:var(--accent-red)"><i data-lucide="trash-2" width="16" height="16"></i></button>
+                <button class="btn-icon admin-only-control" onclick="deleteTransaction(${t.TransactionID})" title="Delete" style="color:var(--accent-red)"><i data-lucide="trash-2" width="16" height="16"></i></button>
             </div>
         </div>`;
 }
@@ -5222,7 +5242,7 @@ async function loadAccounts() {
         renderAccountsList();
         updateSidebarBalance();
     } catch (err) {
-        container.innerHTML = `<div class="empty-state"><p style="color:var(--accent-red)">Error: ${err.message}</p></div>`;
+        container.innerHTML = `<div class="empty-state"><p style="color:var(--accent-red)">Error: ${escapeHtml(err.message)}</p></div>`;
     }
 }
 
@@ -5458,15 +5478,15 @@ function toggleAccountActionMenu(e, accountId) {
                     <span class="cad-secondary">Is khate se kharcha darj karein (-Dr)</span>
                 </div>
             </button>
-            <button type="button" class="cad-item" id="accOptEdit">
+            <button type="button" class="cad-item admin-only-control" id="accOptEdit">
                 <span class="cad-icon cyan"><i data-lucide="edit-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary">Khata Details Edit</span>
                     <span class="cad-secondary">Naam, bank, A/C number badlein</span>
                 </div>
             </button>
-            <div class="cad-divider"></div>
-            <button type="button" class="cad-item danger" id="accOptDelete">
+            <div class="cad-divider admin-only-control"></div>
+            <button type="button" class="cad-item danger admin-only-control" id="accOptDelete">
                 <span class="cad-icon red"><i data-lucide="trash-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary text-danger">Khata Delete Karein</span>
@@ -7541,11 +7561,12 @@ async function loadBCTransactions(page = 1) {
                             ${item.CustomerPhone ? `<span style="white-space: nowrap; font-weight: 600;">${renderPhoneWithCopy(item.CustomerPhone, { fontSize: '12px', showIcon: true, showWhatsApp: false })}</span>` : ''}
                             ${item.LinkedCustomerAadhaar ? `<span style="white-space: nowrap;">${renderAadhaarWithEye(item.LinkedCustomerAadhaar, { fontSize: '11.5px', color: 'var(--chip-green)' })}</span>` : (item.CustomerAadhaarLast4 ? `<span class="aadhaar-reveal-wrap font-mono" style="font-size: 11.5px; color: var(--text-muted); white-space: nowrap;">🪪 ****${escapeHtml(item.CustomerAadhaarLast4.slice(-4))}</span>` : '')}
                         </div>
-                        <!-- Line 3: DOB Full Clear Tag -->
-                        <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px;">
+                        <!-- Line 3: DOB Full Clear Tag & Staff Chip -->
+                        <div style="margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             ${item.DateOfBirth ? `
                                 <span style="font-size: 11px; color: var(--chip-amber); background: rgba(245, 158, 11, 0.08); padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(245, 158, 11, 0.25); white-space: nowrap; font-family: monospace; font-weight: 700;" title="Janm Tithi (DOB)">🎂 Janm Tithi: ${formatIndianDate(item.DateOfBirth)}</span>
                             ` : '<span style="font-size: 11px; color: var(--text-muted); opacity: 0.5;">Walk-in Grahak</span>'}
+                            ${renderStaffActorBadge(item)}
                         </div>
                     </td>
 
@@ -7626,7 +7647,7 @@ async function loadBCTransactions(page = 1) {
         });
 
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger" style="padding: 24px;">Error: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger" style="padding: 24px;">Error: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -7727,8 +7748,8 @@ function toggleBCActionMenu(e, bcId) {
                     </div>
                 </button>
             ` : ''}
-            <div class="cad-divider"></div>
-            <button type="button" class="cad-item danger" id="bcOptDelete">
+            <div class="cad-divider admin-only-control"></div>
+            <button type="button" class="cad-item danger admin-only-control" id="bcOptDelete">
                 <span class="cad-icon red"><i data-lucide="trash-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary text-danger">BC Entry Delete Karein</span>
@@ -10378,7 +10399,7 @@ async function loadSettlements() {
         tbody.innerHTML = html;
         lucide.createIcons();
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger" style="padding: 24px;">Error: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger" style="padding: 24px;">Error: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 
@@ -11409,8 +11430,8 @@ function toggleCustActionMenu(e, customerId) {
                     <span class="cad-secondary">Naam, phone, pata update karein</span>
                 </div>
             </button>
-            <div class="cad-divider"></div>
-            <button type="button" class="cad-item danger" id="cadOptDelete">
+            <div class="cad-divider admin-only-control"></div>
+            <button type="button" class="cad-item danger admin-only-control" id="cadOptDelete">
                 <span class="cad-icon red"><i data-lucide="trash-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary text-danger">Grahak Delete Karein</span>
@@ -13887,8 +13908,8 @@ function toggleInvoiceActionMenu(e, invoiceId) {
                     </div>
                 </button>
             ` : ''}
-            <div class="cad-divider"></div>
-            <button type="button" class="cad-item danger" id="invOptDelete">
+            <div class="cad-divider admin-only-control"></div>
+            <button type="button" class="cad-item danger admin-only-control" id="invOptDelete">
                 <span class="cad-icon red"><i data-lucide="trash-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary text-danger">Bill Delete Karein</span>
@@ -16915,77 +16936,7 @@ async function reloadC360AuditHistory() {
     }
 }
 
-async function loadC360Documents(customerId) {
-    const listEl = document.getElementById('c360DocsList');
-    const tabCount = document.getElementById('c360TabCountDocs');
-    if (!listEl) return;
-
-    listEl.innerHTML = '<div style="text-align: center; padding: 24px; color: #94a3b8;">⏳ Documents load ho rahe hain...</div>';
-
-    try {
-        const res = await fetch(`/api/documents/customer/${customerId}`);
-        const json = await res.json();
-        if (!json.success) throw new Error(json.error || 'Failed to load docs');
-
-        const docs = json.data || [];
-        if (tabCount) tabCount.textContent = docs.length;
-
-        if (docs.length === 0) {
-            listEl.innerHTML = `
-                <div style="text-align: center; padding: 36px 16px; color: #94a3b8;">
-                    <div style="font-size: 36px; margin-bottom: 8px;">📁</div>
-                    <div style="font-weight: 700; font-size: 14px; color: var(--text-primary); margin-bottom: 4px;">Koi Dastavej Upload Nahi Hai</div>
-                    <p style="font-size: 12.5px; margin: 0 0 12px 0;">Is customer ke liye Aadhaar, Photo, PAN ya Bill receipt attach karein.</p>
-                    <button class="btn-primary btn-sm" onclick="openCustomerDocsModal(${customerId})">➕ Naya Document Upload Karein</button>
-                </div>
-            `;
-            return;
-        }
-
-        listEl.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 6px;">
-                ${docs.map(doc => {
-            const isImg = ['image', '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.svg'].includes(doc.Category) || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.svg'].includes(doc.FileType?.toLowerCase());
-            const previewSrc = isImg ? `/api/documents/${doc.DocumentID}/view` : null;
-            return `
-                        <div class="udoc-card" onclick="openCustomerDocsModal(${customerId})">
-                            <div class="udoc-card-thumb">
-                                ${isImg ? `<img src="${previewSrc}" style="width: 100%; height: 100%; object-fit: cover;">` : `<span style="font-size: 11px; font-weight: 800; color: #3b82f6;">${(doc.FileType || 'DOC').replace('.', '').toUpperCase()}</span>`}
-                            </div>
-                            <div style="flex: 1; min-width: 0;">
-                                <div class="udoc-card-title" title="${escapeHtml(doc.OriginalName)}">${escapeHtml(doc.OriginalName)}</div>
-                                <div style="display: flex; gap: 6px; font-size: 11px; color: #64748b; margin-top: 3px;">
-                                    <span class="udoc-source-tag">${doc.SourceLabel || 'Profile'}</span>
-                                    <span>${doc.CreatedAt ? String(doc.CreatedAt).split('T')[0] : ''}</span>
-                                </div>
-                            </div>
-                            <button type="button" class="btn-ghost btn-sm" onclick="event.stopPropagation(); openCustomerDocsModal(${customerId})" style="padding: 4px 8px; font-size: 11px; color: #0284c7;">
-                                👁️ Dekhein
-                            </button>
-                        </div>
-                    `;
-        }).join('')}
-            </div>
-            <div style="margin-top: 14px; text-align: center;">
-                <button class="btn-ghost btn-sm" onclick="openCustomerDocsModal(${customerId})" style="border: 1.5px solid #0284c7; color: #0284c7; font-weight: 700; padding: 6px 14px; border-radius: 6px;">
-                    📁 Sabhi Dastavej Badi Screen / Modal Me Dekhein (${docs.length})
-                </button>
-            </div>
-        `;
-    } catch (e) {
-        listEl.innerHTML = `<div style="color: #ef4444; padding: 16px;">Error: ${e.message}</div>`;
-    }
-}
-
-function c360UploadDoc() {
-    const custId = document.getElementById('c360CustIdBadge')?.textContent?.replace(/\D/g, '');
-    if (custId) {
-        openCustomerDocsModal(parseInt(custId));
-        setTimeout(() => {
-            if (typeof toggleUdocUploadPanel === 'function') toggleUdocUploadPanel();
-        }, 200);
-    }
-}
+// (loadC360Documents & c360UploadDoc are defined cleanly in Docs Vault P4 below)
 
 function renderC360KhataTable(entries, cust) {
     const _kp = document.getElementById('c360KhataCountPill');
@@ -18442,6 +18393,8 @@ function switchSettingsTab(tabKey) {
         if (typeof loadTenantShops === 'function') loadTenantShops();
     } else if (tabKey === 'errors') {
         if (typeof loadClientErrorLogs === 'function') loadClientErrorLogs();
+    } else if (tabKey === 'fleet') {
+        if (typeof loadFleetMonitorUI === 'function') loadFleetMonitorUI();
     } else if (tabKey === 'safety') {
         try {
             const lastBk = localStorage.getItem('last_manual_backup_time');
@@ -18473,6 +18426,232 @@ function navigateToSettingsTab(tabKey) {
 // Global window exposure for inline onclicks & modules
 window.switchSettingsTab = switchSettingsTab;
 window.navigateToSettingsTab = navigateToSettingsTab;
+
+// ============================================================================
+// SUPERADMIN MASTER FLEET & ERROR MONITOR (Cloudflare Worker + D1)
+// ============================================================================
+let _fleetLastData = { devices: [], recentErrors: [] };
+
+function toggleFleetConfigBox() {
+    const box = document.getElementById('fleetConfigBox');
+    if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadFleetMonitorUI() {
+    try {
+        const cfg = await apiFetch('/admin/fleet/config');
+        const hwidEl = document.getElementById('fleetLocalHwid');
+        if (hwidEl) hwidEl.textContent = cfg.hwid || '-';
+        const urlEl = document.getElementById('fleetWorkerUrl');
+        if (urlEl && cfg.endpoint) urlEl.value = cfg.endpoint;
+        const box = document.getElementById('fleetConfigBox');
+        const statusEl = document.getElementById('fleetConfigStatus');
+        if (cfg.configured && cfg.hasAdminKey) {
+            if (box) box.style.display = 'none';
+            if (statusEl) statusEl.textContent = 'Connected: ' + cfg.endpoint;
+        } else {
+            if (box) box.style.display = 'block';
+            if (statusEl) statusEl.textContent = cfg.endpoint ? 'Admin Key save karein aur Refresh karein.' : 'Pehle telemetry-worker/SETUP_CLOUDFLARE.bat chala kar URL paste karein.';
+        }
+    } catch (_) { }
+    await refreshFleetOverview();
+}
+
+async function saveFleetWorkerConfig() {
+    const endpoint = (document.getElementById('fleetWorkerUrl')?.value || '').trim();
+    const ingestKey = (document.getElementById('fleetIngestKey')?.value || '').trim();
+    const adminKey = (document.getElementById('fleetAdminKey')?.value || '').trim();
+    const statusEl = document.getElementById('fleetConfigStatus');
+    if (statusEl) statusEl.textContent = 'Saving & testing connection...';
+    try {
+        const res = await apiFetch('/admin/fleet/config', {
+            method: 'POST',
+            body: {
+                endpoint,
+                ...(ingestKey ? { ingestKey } : {}),
+                ...(adminKey ? { adminKey } : {}),
+                testConnection: true
+            }
+        });
+        if (statusEl) {
+            if (res.pingResult && res.pingResult.healthOk) {
+                statusEl.textContent = '✅ Connected! Heartbeat sent cleanly.';
+                statusEl.style.color = '#10b981';
+            } else {
+                statusEl.textContent = '⚠️ Saved, worker health: ' + (res.pingResult?.error || 'not reachable');
+                statusEl.style.color = '#f59e0b';
+            }
+        }
+        await refreshFleetOverview();
+    } catch (err) {
+        if (statusEl) {
+            statusEl.textContent = '❌ Error: ' + err.message;
+            statusEl.style.color = '#ef4444';
+        }
+    }
+}
+
+async function testFleetPing() {
+    try {
+        const res = await apiFetch('/admin/fleet/ping', { method: 'POST' });
+        if (res.success) {
+            showToast('Heartbeat bhej diya gaya (' + (res.snapshot?.hwid || '') + ')!', 'success');
+            refreshFleetOverview();
+        } else {
+            showToast('Heartbeat note: ' + (res.result?.error || res.result?.reason || 'Not configured'), 'warning');
+        }
+    } catch (err) {
+        showToast('Ping error: ' + err.message, 'error');
+    }
+}
+
+async function refreshFleetOverview() {
+    const tbody = document.getElementById('fleetDevicesTableBody');
+    const cards = document.getElementById('fleetSummaryCards');
+    if (!tbody) return;
+    try {
+        const q = encodeURIComponent((document.getElementById('fleetSearchInput')?.value || '').trim());
+        const ver = encodeURIComponent((document.getElementById('fleetVersionFilter')?.value || '').trim());
+        const data = await apiFetch(`/admin/fleet/overview?q=${q}&version=${ver}`);
+
+        if (data.unconfigured) {
+            const snap = data.localSnapshot || {};
+            if (cards) {
+                cards.innerHTML = `
+                    <div class="stat-card" style="padding:12px;"><small>This PC HWID</small><div class="font-mono" style="font-weight:700;font-size:12px;margin-top:4px;">${escapeHtml(snap.hwid || '-')}</div></div>
+                    <div class="stat-card" style="padding:12px;"><small>Local Version</small><div style="font-weight:800;font-size:18px;color:#10b981;">v${escapeHtml(snap.appVersion || '-')}</div></div>
+                    <div class="stat-card" style="padding:12px;"><small>Local Port</small><div style="font-weight:800;font-size:18px;">${escapeHtml(String(snap.port || 4000))}</div></div>
+                `;
+            }
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">Cloudflare Worker abhi link nahi hua hai. Upar <b>⚙️ Worker Setup</b> me URL aur keys dalein (ya <code>telemetry-worker/SETUP_CLOUDFLARE.bat</code> chalayein).</td></tr>`;
+            return;
+        }
+
+        _fleetLastData = data;
+        const s = data.summary || {};
+        const verSel = document.getElementById('fleetVersionFilter');
+        if (verSel && s.versionBreakdown) {
+            const curV = verSel.value;
+            verSel.innerHTML = '<option value="">Sabhi Versions</option>' +
+                Object.keys(s.versionBreakdown).sort().reverse().map(v => `<option value="${escapeHtml(v)}">v${escapeHtml(v)} (${s.versionBreakdown[v]})</option>`).join('');
+            verSel.value = curV;
+        }
+
+        if (cards) {
+            const verList = Object.entries(s.versionBreakdown || {}).map(([v, c]) => `v${escapeHtml(v)}: <b>${c}</b>`).join(' · ') || '-';
+            const portList = Object.entries(s.portBreakdown || {}).map(([p, c]) => `:${escapeHtml(p)} (<b>${c}</b>)`).join(' · ') || '-';
+            cards.innerHTML = `
+                <div class="stat-card" style="padding:12px;"><small>Total PCs</small><div style="font-size:22px;font-weight:800;">${s.totalDevices || 0}</div></div>
+                <div class="stat-card" style="padding:12px;"><small>Online Now (35m)</small><div style="font-size:22px;font-weight:800;color:#10b981;">${s.onlineNow || 0}</div></div>
+                <div class="stat-card" style="padding:12px;"><small>Active Today</small><div style="font-size:22px;font-weight:800;color:#38bdf8;">${s.activeToday || 0}</div></div>
+                <div class="stat-card" style="padding:12px;"><small>Unresolved Errors</small><div style="font-size:22px;font-weight:800;color:#f87171;">${s.unresolvedErrors || 0}</div></div>
+                <div class="stat-card" style="padding:12px;"><small>Versions</small><div style="font-size:12px;margin-top:4px;">${verList}</div></div>
+                <div class="stat-card" style="padding:12px;"><small>Ports</small><div style="font-size:12px;margin-top:4px;">${portList}</div></div>
+            `;
+        }
+
+        renderFleetDeviceRows(data.devices || []);
+        if (data.recentErrors && data.recentErrors.length > 0) {
+            renderFleetErrorsList('Sabhi PCs ke Recent Errors', data.recentErrors.slice(0, 40));
+        }
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:#ef4444;">Fleet load notice: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function renderFleetDeviceRows(devices) {
+    const tbody = document.getElementById('fleetDevicesTableBody');
+    if (!tbody) return;
+    if (!devices.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:22px;color:var(--text-muted);">Koi PC nahi mila.</td></tr>`;
+        return;
+    }
+    const now = Date.now();
+    tbody.innerHTML = devices.map(d => {
+        const agoMin = Math.max(0, Math.round((now - Date.parse(d.last_seen_at || '')) / 60000));
+        const isOn = Number.isFinite(agoMin) && agoMin <= 35;
+        const agoTxt = !Number.isFinite(agoMin) ? '-' : (agoMin < 60 ? `${agoMin}m ago` : (agoMin < 1440 ? `${Math.round(agoMin / 60)}h ago` : `${Math.round(agoMin / 1440)}d ago`));
+        return `
+            <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:10px 14px;"><span class="badge" style="background:${isOn ? 'rgba(16,185,129,0.16);color:#10b981' : 'rgba(148,163,184,0.16);color:#94a3b8'};font-weight:700;">${isOn ? '● ONLINE' : '○ OFFLINE'}</span></td>
+                <td style="padding:10px 14px;"><b>${escapeHtml(d.shop_name || 'Shop')}</b><br><small style="color:var(--text-muted);">${escapeHtml(d.owner_name || '')}</small></td>
+                <td style="padding:10px 14px;"><code class="font-mono" style="font-size:11px;">${escapeHtml(d.hwid)}</code><br><small style="color:var(--text-muted);">${escapeHtml(d.hostname || '')} (${escapeHtml(d.windows_user || '')})</small></td>
+                <td style="padding:10px 14px;"><span class="badge" style="background:rgba(56,189,248,0.15);color:#38bdf8;font-weight:700;">v${escapeHtml(d.app_version || '?')}</span></td>
+                <td style="padding:10px 14px;" class="font-mono">${escapeHtml(String(d.port || 4000))}</td>
+                <td style="padding:10px 14px;">${escapeHtml(agoTxt)}</td>
+                <td style="padding:10px 14px;">${Number(d.error_count) > 0 ? `<span class="badge" style="background:rgba(239,68,68,0.16);color:#f87171;">${d.error_count}</span>` : '0'}</td>
+                <td style="padding:10px 14px;text-align:right;"><button type="button" class="btn btn-ghost btn-sm" onclick="viewFleetDeviceErrors('${escapeInlineArg(d.hwid)}')">Logs Dekhein</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function filterFleetDevicesLocal() {
+    const q = (document.getElementById('fleetSearchInput')?.value || '').trim().toLowerCase();
+    const list = (_fleetLastData.devices || []).filter(d => {
+        if (!q) return true;
+        return `${d.hwid} ${d.shop_name} ${d.owner_name} ${d.hostname} ${d.windows_user}`.toLowerCase().includes(q);
+    });
+    renderFleetDeviceRows(list);
+}
+
+function renderFleetErrorsList(title, errors) {
+    const box = document.getElementById('fleetErrorInspector');
+    const titleEl = document.getElementById('fleetErrorInspectorTitle');
+    const bodyEl = document.getElementById('fleetErrorInspectorBody');
+    if (!box || !bodyEl) return;
+    box.style.display = 'block';
+    if (titleEl) titleEl.textContent = title;
+    if (!errors || errors.length === 0) {
+        bodyEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);">Is PC par koi error record nahi hai 🎉</div>';
+        return;
+    }
+    bodyEl.innerHTML = errors.map(e => `
+        <div style="padding:10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:700;">
+                    <span class="badge" style="background:rgba(239,68,68,0.15);color:#f87171;">${escapeHtml(e.source || 'app')}:${escapeHtml(e.error_type || 'err')}</span>
+                    ${escapeHtml(e.shop_name || e.hwid)} (v${escapeHtml(e.app_version || '?')}) · x${e.count || 1}
+                    ${e.resolved ? '<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;">Resolved</span>' : ''}
+                </div>
+                <div style="font-size:12.5px;margin-top:4px;color:var(--text-primary);word-break:break-word;">${escapeHtml(e.message)}</div>
+                ${e.stack ? `<pre style="margin-top:6px;padding:6px;border-radius:6px;background:rgba(0,0,0,0.25);font-size:10.5px;overflow-x:auto;max-height:110px;">${escapeHtml(e.stack)}</pre>` : ''}
+                <small style="color:var(--text-muted);">${escapeHtml(e.last_seen_at || e.created_at || '')}</small>
+            </div>
+            ${!e.resolved ? `<button type="button" class="btn btn-ghost btn-sm" onclick="resolveFleetError(${Number(e.id)}, '${escapeInlineArg(e.hwid)}')">✓ Resolve</button>` : ''}
+        </div>
+    `).join('');
+}
+
+async function viewFleetDeviceErrors(hwid) {
+    try {
+        const res = await apiFetch(`/admin/fleet/device/${encodeURIComponent(hwid)}`);
+        if (res.success) {
+            renderFleetErrorsList(`Error Logs: ${res.device?.shop_name || hwid} (${hwid})`, res.errors || []);
+        }
+    } catch (err) {
+        showToast('Device logs load error: ' + err.message, 'error');
+    }
+}
+
+async function resolveFleetError(id, hwid) {
+    try {
+        await apiFetch(`/admin/fleet/errors/${id}/resolve`, { method: 'POST', body: { resolved: true } });
+        if (hwid) await viewFleetDeviceErrors(hwid);
+        refreshFleetOverview();
+    } catch (err) {
+        showToast('Resolve error: ' + err.message, 'error');
+    }
+}
+
+window.toggleFleetConfigBox = toggleFleetConfigBox;
+window.loadFleetMonitorUI = loadFleetMonitorUI;
+window.saveFleetWorkerConfig = saveFleetWorkerConfig;
+window.testFleetPing = testFleetPing;
+window.refreshFleetOverview = refreshFleetOverview;
+window.filterFleetDevicesLocal = filterFleetDevicesLocal;
+window.viewFleetDeviceErrors = viewFleetDeviceErrors;
+window.resolveFleetError = resolveFleetError;
 
 
 function selectThemeFromSettings(targetTheme) {
@@ -18516,7 +18695,7 @@ async function loadSettingsPage() {
     const telemConn = document.getElementById('telemConnState');
     const tabBadgeDb = document.getElementById('tabBadgeDb');
     const telemHost = document.getElementById('telemServerHost');
-    if (telemHost) telemHost.textContent = location.host || 'localhost:3000';
+    if (telemHost) telemHost.textContent = location.host || 'localhost:4000';
 
     try {
         const h = await fetch(`${API}/health`).then(r => r.json());
@@ -19766,6 +19945,7 @@ function renderCSCTable(list) {
                         ` : ''}
                         ${aadhaarText}
                         ${app.DateOfBirth ? `<span style="font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 2px;">🎂 ${formatIndianDate(app.DateOfBirth)}</span>` : ''}
+                        ${renderStaffActorBadge(app)}
                     </div>
                 </td>
 
@@ -19982,8 +20162,8 @@ function toggleCSCActionMenu(e, appId) {
                     <span class="cad-secondary">Fees, date, token no badlein</span>
                 </div>
             </button>
-            <div class="cad-divider"></div>
-            <button type="button" class="cad-item danger" id="cscOptDelete">
+            <div class="cad-divider admin-only-control"></div>
+            <button type="button" class="cad-item danger admin-only-control" id="cscOptDelete">
                 <span class="cad-icon red"><i data-lucide="trash-2"></i></span>
                 <div class="cad-label">
                     <span class="cad-primary text-danger">Aavedan Delete Karein</span>
@@ -20400,6 +20580,43 @@ window.openCSCCustomerDocs = function () {
     if (typeof openCustomerDocsModal === 'function') {
         openCustomerDocsModal(custId, custName);
     }
+};
+
+// Safe global handlers for BC charge input & modal doc badges (prevents ReferenceError before badge refresh)
+window.onBCCustomerChargeInput = function () {
+    if (typeof calculateBCProfit === 'function') calculateBCProfit(false);
+    else if (typeof updateBCHisaabSummary === 'function') updateBCHisaabSummary();
+};
+
+function _openDocForCustomerSelector(idCandidates, nameCandidates) {
+    let custId = null;
+    for (const idEl of idCandidates) {
+        const v = document.getElementById(idEl)?.value;
+        if (v && parseInt(v, 10) > 0) { custId = parseInt(v, 10); break; }
+    }
+    if (!custId) {
+        if (typeof showToast === 'function') showToast('Pehle grahak chunein', 'info');
+        return;
+    }
+    let custName = '';
+    for (const nEl of nameCandidates) {
+        const v = document.getElementById(nEl)?.value?.trim();
+        if (v) { custName = v; break; }
+    }
+    if (typeof openCustomerDocsModal === 'function') openCustomerDocsModal(custId, custName);
+}
+
+window.openCustomerDocsFromModal = function () {
+    _openDocForCustomerSelector(['customerEditId', 'custId'], ['custName']);
+};
+window.openInvoiceCustomerDocs = function () {
+    _openDocForCustomerSelector(['invCustomerSelect'], ['invCustomerName']);
+};
+window.openKhataCustomerDocs = function () {
+    _openDocForCustomerSelector(['khataCustomerId', 'khataModalCustomerId'], ['khataCustomerName']);
+};
+window.openBCCustomerDocs = function () {
+    _openDocForCustomerSelector(['bcCustomerSelect'], ['bcCustomerName']);
 };
 
 // 4. New / Edit CSC Modal Logic
@@ -22408,11 +22625,11 @@ async function loadBillPaymentsPage(page = 1) {
             // Render table
             renderBillPaymentsTable(allBillPayments, pagination);
         } else {
-            if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 24px; color: #ef4444;">❌ Data load karne me samasya: ${json.error || 'Server error'}</td></tr>`;
+            if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 24px; color: #ef4444;">❌ Data load karne me samasya: ${escapeHtml(json.error || 'Server error')}</td></tr>`;
         }
     } catch (err) {
         console.error('Error loading bill payments:', err);
-        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 24px; color: #ef4444;">❌ Connection Error: ${err.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 24px; color: #ef4444;">❌ Connection Error: ${escapeHtml(err.message)}</td></tr>`;
     } finally {
         if (typeof stopTopLoading === 'function') stopTopLoading();
         if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
@@ -22477,18 +22694,18 @@ function renderBillPaymentsTable(records, pagination) {
                 </td>
                 <td>
                     ${catBadge(r.BillCategory)}
-                    <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 3px;">${r.ProviderName || '-'}</div>
+                    <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 3px;">${escapeHtml(r.ProviderName || '-')}</div>
                 </td>
                 <td>
-                    <div style="font-weight: 700; font-family: monospace; font-size: 13.5px; color: var(--text-primary);">${r.ConsumerNumber || '-'}</div>
-                    ${r.BillNumber ? `<div style="font-size: 11px; color: var(--text-muted);">Bill No: ${r.BillNumber}</div>` : ''}
+                    <div style="font-weight: 700; font-family: monospace; font-size: 13.5px; color: var(--text-primary);">${escapeHtml(r.ConsumerNumber || '-')}</div>
+                    ${r.BillNumber ? `<div style="font-size: 11px; color: var(--text-muted);">Bill No: ${escapeHtml(r.BillNumber)}</div>` : ''}
                 </td>
                 <td>
-                    <div style="font-weight: 700; color: var(--text-primary);">${cleanCustomerName(r.CustomerName || 'Walk-in Customer')}</div>
-                    ${r.CustomerPhone ? `<div style="font-size: 11.5px; color: var(--text-muted);"><i data-lucide="phone" style="width: 11px; height: 11px; display: inline;"></i> ${r.CustomerPhone}</div>` : ''}
+                    <div style="font-weight: 700; color: var(--text-primary);">${escapeHtml(cleanCustomerName(r.CustomerName || 'Walk-in Customer'))}</div>
+                    ${r.CustomerPhone ? `<div style="font-size: 11.5px; color: var(--text-muted);"><i data-lucide="phone" style="width: 11px; height: 11px; display: inline;"></i> ${escapeHtml(r.CustomerPhone)}</div>` : ''}
                 </td>
                 <td style="font-size: 12.5px; font-weight: 600; text-align: right;">
-                    <div style="font-weight: 700; color: #0f172a;">₹${billAmt}</div>
+                    <div style="font-weight: 700; color: var(--text-primary);">₹${billAmt}</div>
                     ${vibhagArrear > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Vibhag Baaki: ₹${vibhagArrear.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>` : ''}
                 </td>
                 <td style="font-size: 12px; color: #059669; font-weight: 700; text-align: right;">
@@ -22608,13 +22825,6 @@ function calculateBillCustomerCharge(category, amount) {
     return 10;
 }
 window.calculateBillCustomerCharge = calculateBillCustomerCharge;
-
-function onBPCustomerChargeInput() {
-    const chargeInp = document.getElementById('bpModalCustomerCharge');
-    if (chargeInp) chargeInp.dataset.userEdited = 'true';
-    calculateBPProfitInModal();
-}
-window.onBPCustomerChargeInput = onBPCustomerChargeInput;
 
 function onBPCashReceivedInput() {
     const cashRecInp = document.getElementById('bpModalCashReceived');
@@ -23600,7 +23810,7 @@ window.openEditBillPaymentModal = openEditBillPaymentModal;
 async function handleBillPaymentFormSubmit(event) {
     if (event) event.preventDefault();
 
-    const saveBtn = document.getElementById('btn-bp-save');
+    const saveBtn = document.getElementById('bpSaveBtn') || document.getElementById('btn-bp-save');
     if (saveBtn) {
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span>⏳ Saving...</span>';
@@ -23723,7 +23933,7 @@ async function openBillReceiptModal(paymentId) {
         const json = await res.json();
 
         if (!json.success || !json.data) {
-            area.innerHTML = `<div style="color: #ef4444; padding: 20px;">Receipt load nahi ho saki: ${json.error || 'Not found'}</div>`;
+            area.innerHTML = `<div style="color: #ef4444; padding: 20px;">Receipt load nahi ho saki: ${escapeHtml(json.error || 'Not found')}</div>`;
             return;
         }
 
@@ -23769,8 +23979,8 @@ async function openBillReceiptModal(paymentId) {
                     ${shopContact ? `<div style="font-size: 10px; font-weight: 600; color: #000; margin-top: 1px;">${escapeHtml(shopContact)}</div>` : ''}
                     <div style="font-size: 10.5px; font-weight: 800; color: #000; margin-top: 2px; letter-spacing: 0.5px;">⚡ BILL & EMI PAYMENT COUNTER</div>
                     <div style="display: flex; justify-content: space-between; font-size: 10px; font-weight: 700; color: #000; margin-top: 3px;">
-                        <span><b>SN:</b> ${r.SNCode || ('BP-' + r.PaymentID)}</span>
-                        <span><b>Tarikh:</b> ${pDate} ${pTime}</span>
+                        <span><b>SN:</b> ${escapeHtml(r.SNCode || ('BP-' + r.PaymentID))}</span>
+                        <span><b>Tarikh:</b> ${escapeHtml(pDate)} ${escapeHtml(pTime)}</span>
                     </div>
                 </div>
 
@@ -23778,19 +23988,19 @@ async function openBillReceiptModal(paymentId) {
                 <div style="padding: 5px 0; border-bottom: 1.5px dashed #000; font-size: 11px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                         <span style="color: #000; font-weight: 700; white-space: nowrap;">Grahak:</span>
-                        <b style="text-align: right; color: #000; font-weight: 800; word-break: break-word;">${cleanCustomerName(r.CustomerName || 'Walk-in Customer')}${r.CustomerPhone ? ' (' + r.CustomerPhone + ')' : ''}</b>
+                        <b style="text-align: right; color: #000; font-weight: 800; word-break: break-word;">${escapeHtml(cleanCustomerName(r.CustomerName || 'Walk-in Customer'))}${r.CustomerPhone ? ' (' + escapeHtml(r.CustomerPhone) + ')' : ''}</b>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-top: 2px;">
                         <span style="color: #000; font-weight: 700; white-space: nowrap;">Sewa / Vibhag:</span>
-                        <b style="text-align: right; color: #000; font-weight: 800;">${r.ProviderName || r.BillCategory}</b>
+                        <b style="text-align: right; color: #000; font-weight: 800;">${escapeHtml(r.ProviderName || r.BillCategory)}</b>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
                         <span style="color: #000; font-weight: 700;">Consumer / Khata No:</span>
-                        <b style="font-family: monospace; font-size: 12px; letter-spacing: 0.5px; color: #000; font-weight: 900;">${r.ConsumerNumber}</b>
+                        <b style="font-family: monospace; font-size: 12px; letter-spacing: 0.5px; color: #000; font-weight: 900;">${escapeHtml(r.ConsumerNumber || '')}</b>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2px;">
                         <span style="color: #000; font-weight: 700;">Txn Ref / Bill No:</span>
-                        <span style="font-family: monospace; font-size: 10.5px; color: #000; font-weight: 800;">${r.TxnReference || r.BillNumber || 'SUCCESS'}</span>
+                        <span style="font-family: monospace; font-size: 10.5px; color: #000; font-weight: 800;">${escapeHtml(r.TxnReference || r.BillNumber || 'SUCCESS')}</span>
                     </div>
                 </div>
 
@@ -23850,7 +24060,7 @@ async function openBillReceiptModal(paymentId) {
             try { lucide.createIcons({ root: document.getElementById('billReceiptModal') }); } catch (e) { }
         }
     } catch (e) {
-        area.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error: ${e.message}</div>`;
+        area.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error: ${escapeHtml(e.message)}</div>`;
     }
 }
 
@@ -26986,8 +27196,8 @@ function renderCustomerImportResults(data, prefix = 'cust') {
             skipList.innerHTML = data.skipped.map(s => `
                 <div class="excel-log-item">
                     <div>
-                        <b>Row ${s.row}:</b> ${escapeHtml(s.name || '')} 
-                        <span style="color: #94a3b8; font-size: 11px;">(${s.phone ? '📞 ' + s.phone : ''}${s.aadhaar ? ' | 🪪 ' + s.aadhaar : ''})</span>
+                        <b>Row ${escapeHtml(String(s.row))}:</b> ${escapeHtml(s.name || '')} 
+                        <span style="color: #94a3b8; font-size: 11px;">(${s.phone ? '📞 ' + escapeHtml(s.phone) : ''}${s.aadhaar ? ' | 🪪 ' + escapeHtml(s.aadhaar) : ''})</span>
                     </div>
                     <span style="color: #fbbf24; font-size: 11px; text-align: right;">${escapeHtml(s.reason)}</span>
                 </div>
@@ -27005,10 +27215,10 @@ function renderCustomerImportResults(data, prefix = 'cust') {
         impList.innerHTML = data.imported.map(m => `
             <div class="excel-log-item">
                 <div>
-                    <b>#${m.id}</b> — ${escapeHtml(m.name)} 
-                    <span style="font-size: 11px; color: #34d399; margin-left: 6px;">(${m.relationship || 'Self'})</span>
+                    <b>#${escapeHtml(String(m.id))}</b> — ${escapeHtml(m.name)} 
+                    <span style="font-size: 11px; color: #34d399; margin-left: 6px;">(${escapeHtml(m.relationship || 'Self')})</span>
                 </div>
-                <span style="color: #94a3b8; font-size: 11px;">${m.phone ? '📞 ' + m.phone : ''}</span>
+                <span style="color: #94a3b8; font-size: 11px;">${m.phone ? '📞 ' + escapeHtml(m.phone) : ''}</span>
             </div>
         `).join('');
     } else if (impBox) {
@@ -27576,8 +27786,9 @@ async function loadHistoryPage(page) {
                         <div style="font-weight: 600; font-size: 13px; color: var(--text-primary); line-height: 1.4;">
                             ${escapeHtml(log.Description || log.Details || '--')}
                         </div>
-                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
-                            Table: <code>${escapeHtml(log.TableName || 'N/A')}</code> ${log.RecordID ? `| Record ID: #${log.RecordID}` : ''}
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span>Table: <code>${escapeHtml(log.TableName || 'N/A')}</code> ${log.RecordID ? `| Record ID: #${log.RecordID}` : ''}</span>
+                            ${renderStaffActorBadge(log)}
                         </div>
                     </td>
                     <td>
@@ -29340,12 +29551,12 @@ function renderAnnouncementBanner(ann) {
 
     let primaryBtnHtml = '';
     if (ann.showButton !== false && ann.actionText) {
-        primaryBtnHtml = `<button type="button" class="btn" onclick="executeAnnouncementAction(currentLicenseStatus?.announcement)" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: ${t.text}; color: #0f172a; border: none; border-radius: 6px; white-space: nowrap; cursor: pointer;">${ann.actionText}</button>`;
+        primaryBtnHtml = `<button type="button" class="btn" onclick="executeAnnouncementAction(currentLicenseStatus?.announcement)" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: ${t.text}; color: #0f172a; border: none; border-radius: 6px; white-space: nowrap; cursor: pointer;">${escapeHtml(ann.actionText)}</button>`;
     }
 
     let secondaryBtnHtml = '';
     if (ann.showSecondaryButton && ann.secondaryButtonText) {
-        secondaryBtnHtml = `<button type="button" class="btn btn-secondary" onclick="dismissCurrentAnnouncement('dashboard')" style="padding: 6px 12px; font-size: 11.5px; font-weight: 600; color: ${t.text}; border-color: ${t.border}; background: transparent; white-space: nowrap;">${ann.secondaryButtonText}</button>`;
+        secondaryBtnHtml = `<button type="button" class="btn btn-secondary" onclick="dismissCurrentAnnouncement('dashboard')" style="padding: 6px 12px; font-size: 11.5px; font-weight: 600; color: ${t.text}; border-color: ${t.border}; background: transparent; white-space: nowrap;">${escapeHtml(ann.secondaryButtonText)}</button>`;
     }
 
     let closeBtnHtml = '';
@@ -29358,8 +29569,8 @@ function renderAnnouncementBanner(ann) {
             <div style="display: flex; align-items: center; gap: 12px;">
                 <i data-lucide="${t.icon}" style="width: 22px; height: 22px; flex-shrink: 0;"></i>
                 <div>
-                    <div style="font-size: 13.5px; font-weight: 800; line-height: 1.3;">${ann.title || 'विशेष सूचना'}</div>
-                    <div style="font-size: 12.5px; font-weight: 500; opacity: 0.95; margin-top: 2px;">${ann.message || ''}</div>
+                    <div style="font-size: 13.5px; font-weight: 800; line-height: 1.3;">${escapeHtml(ann.title || 'विशेष सूचना')}</div>
+                    <div style="font-size: 12.5px; font-weight: 500; opacity: 0.95; margin-top: 2px;">${escapeHtml(ann.message || '')}</div>
                 </div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -29939,8 +30150,8 @@ function renderAccBlacklist() {
 
     container.innerHTML = adminBlacklistHwIds.map(hw => `
         <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; padding: 4px 10px; border-radius: 6px; font-family: monospace; font-size: 12px;">
-            <span>${hw}</span>
-            <button type="button" onclick="removeBlacklistHardwareId('${hw}')" style="background: none; border: none; color: #f87171; cursor: pointer; padding: 0 2px; font-weight: bold;">✕</button>
+            <span>${escapeHtml(hw)}</span>
+            <button type="button" data-hw="${escapeHtml(hw)}" onclick="removeBlacklistHardwareId(this.getAttribute('data-hw'))" style="background: none; border: none; color: #f87171; cursor: pointer; padding: 0 2px; font-weight: bold;">✕</button>
         </span>
     `).join('');
 }

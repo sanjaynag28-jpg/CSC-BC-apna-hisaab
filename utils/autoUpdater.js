@@ -97,7 +97,8 @@ const PROTECTED_RELATIVE_PATHS = new Set([
     'version.json.bak',
     // Admin-managed license cache (universal keys + hardware blacklist).
     // Release ZIP me iski purani copy hoti hai, isliye local file ko overwrite mat karo.
-    'config/licenses.json'
+    'config/licenses.json',
+    'config/telemetry-admin.local.json'
 ]);
 
 // These tracked files are expected to differ locally and must survive an update.
@@ -278,10 +279,23 @@ function isHtmlPayload(buf) {
     return /^\s*(?:<!DOCTYPE|<html)/i.test(head);
 }
 
+function parseVersionJsonPayload(raw) {
+    if (isHtmlPayload(raw)) throw new Error('Captive portal HTML returned');
+    const parsed = JSON.parse(String(raw || '').replace(/^\uFEFF/, ''));
+    if (parsed && parsed.encoding === 'base64' && typeof parsed.content === 'string') {
+        const decoded = Buffer.from(parsed.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+        return JSON.parse(decoded.replace(/^\uFEFF/, ''));
+    }
+    return parsed;
+}
+
 function curlFetchFallback(url, destPath = null, timeoutMs = 15000) {
     if (process.platform !== 'win32') throw new Error('curl fallback only on win32');
     const sec = Math.max(5, Math.ceil(timeoutMs / 1000));
     const commonArgs = ['-fSL', '--retry', '2', '--connect-timeout', String(sec), '--max-time', String(sec * 2)];
+    if (!destPath && url.includes('api.github.com/repos/')) {
+        commonArgs.push('-H', 'Accept: application/vnd.github.raw+json');
+    }
     const attempts = [
         [...commonArgs, '--doh-url', 'https://cloudflare-dns.com/dns-query', url],
         [...commonArgs, url]
@@ -324,16 +338,10 @@ function fetchJson(url, timeoutMs = 5000, redirects = 0) {
             res.on('error', reject);
             res.on('data', chunk => { raw += chunk; });
             res.on('end', () => {
-                if (isHtmlPayload(raw)) return reject(new Error('Captive portal HTML returned'));
                 try {
-                    const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
-                    if (parsed && parsed.encoding === 'base64' && typeof parsed.content === 'string') {
-                        const decoded = Buffer.from(parsed.content.replace(/\s+/g, ''), 'base64').toString('utf8');
-                        return resolve(JSON.parse(decoded.replace(/^\uFEFF/, '')));
-                    }
-                    resolve(parsed);
+                    return resolve(parseVersionJsonPayload(raw));
                 } catch (err) {
-                    reject(new Error('Invalid JSON in remote version.json'));
+                    reject(err && err.message && err.message.includes('Captive') ? err : new Error('Invalid JSON in remote version.json'));
                 }
             });
         });
@@ -344,8 +352,7 @@ function fetchJson(url, timeoutMs = 5000, redirects = 0) {
             if (redirects === 0 && process.platform === 'win32') {
                 try {
                     const out = curlFetchFallback(url, null, timeoutMs);
-                    if (isHtmlPayload(out)) return reject(err);
-                    return resolve(JSON.parse(out.replace(/^\uFEFF/, '')));
+                    return resolve(parseVersionJsonPayload(out));
                 } catch (_) { }
             }
             reject(err);
@@ -1297,11 +1304,6 @@ async function runSilentAutoUpdate(options = {}) {
             return { success: true, updated: false, skipped: true, reason: 'App busy — update deferred safely' };
         }
 
-        const isCritical = check.critical || forceCritical;
-        if (isCritical && !force && !forceCritical && options.requireIdle && typeof options.isIdle === 'function' && !options.isIdle()) {
-            logUpdate('🚨 Critical update detected — waiting for safe window...');
-        }
-
         state.lastResult = 'updating';
         state.currentVersion = check.currentVersion;
         state.latestVersion = check.latestVersion;
@@ -1384,6 +1386,10 @@ async function runSilentAutoUpdate(options = {}) {
                 zipTx.commit();
                 zipTx = null;
             }
+            try {
+                const telemetry = require('./telemetryAgent');
+                telemetry.sendHeartbeat({ appVersion: state.currentVersion, lastUpdateStatus: `updated to v${state.currentVersion}` }).catch(() => { });
+            } catch (_) { }
 
             state.failedVersion = null;
             state.failedAt = 0;
@@ -1419,6 +1425,14 @@ async function runSilentAutoUpdate(options = {}) {
             state.failedAt = Date.now();
             setProgress('error', 0, `Update failed safely (rolled back): ${err.message}`);
             logUpdate(`Update failed safely (app unaffected): ${err.message}`);
+            try {
+                require('./telemetryAgent').queueErrorSync({
+                    source: 'autoUpdater',
+                    errorType: 'update_failed',
+                    message: `v${check.latestVersion}: ${err.message}`,
+                    stack: err.stack || ''
+                });
+            } catch (_) { }
             return { success: false, updated: false, error: err.message };
         }
     } finally {

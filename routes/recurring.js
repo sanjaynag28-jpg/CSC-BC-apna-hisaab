@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database/db');
 const { processRecurringTransactions, toISO } = require('../database/recurringEngine');
-const { VALID_TRANS_TYPES, parseId, parseOptionalId, isValidDateOnly, todayLocal } = require('../utils/helpers');
+const { VALID_TRANS_TYPES, parseId, parseOptionalId, isValidDateOnly, todayLocal, assertOwnedEntity, assertOwnedAccount } = require('../utils/helpers');
 
 function toDateStr(val) {
     if (!val) return null;
@@ -78,6 +78,13 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Source aur destination account same nahi ho sakta' });
         }
 
+        const categoryId = parseOptionalId(CategoryID);
+        const partyId = parseOptionalId(PartyID);
+        await assertOwnedAccount(query, accountId, userId, 'Account');
+        if (toAccountId) await assertOwnedAccount(query, toAccountId, userId, 'Destination Account');
+        if (categoryId) await assertOwnedEntity(query, 'Categories', 'CategoryID', categoryId, userId, 'Category');
+        if (partyId) await assertOwnedEntity(query, 'Parties', 'PartyID', partyId, userId, 'Party');
+
         const start = StartDate || toISO(new Date());
         if (!isValidDateOnly(start)) {
             return res.status(400).json({ success: false, error: 'Start date galat hai' });
@@ -91,15 +98,15 @@ router.post('/', async (req, res) => {
         `, {
             userId,
             type: TransType, amount: amount,
-            acc: accountId, toAcc: toAccountId, cat: parseOptionalId(CategoryID),
-            party: parseOptionalId(PartyID),
+            acc: accountId, toAcc: toAccountId, cat: categoryId,
+            party: partyId,
             desc: Description || null, freq: Frequency,
             start, end: EndDate || null, next: start
         });
         res.status(201).json({ success: true, data: result.recordset[0], message: 'Recurring transaction ban gaya' });
     } catch (err) {
         console.error('Recurring create error:', err);
-        res.status(500).json({ success: false, error: 'Recurring transaction save nahi ho paya' });
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Recurring transaction save nahi ho paya' });
     }
 });
 
@@ -141,6 +148,13 @@ router.put('/:id', async (req, res) => {
                 return res.status(400).json({ success: false, error: 'Source aur destination account same nahi ho sakta' });
             }
         }
+
+        const targetCategoryId = CategoryID !== undefined ? parseOptionalId(CategoryID) : oldRec.CategoryID;
+        const targetPartyId = PartyID !== undefined ? parseOptionalId(PartyID) : oldRec.PartyID;
+        await assertOwnedAccount(query, targetAccountId, userId, 'Account');
+        if (targetToAccountId) await assertOwnedAccount(query, targetToAccountId, userId, 'Destination Account');
+        if (targetCategoryId) await assertOwnedEntity(query, 'Categories', 'CategoryID', targetCategoryId, userId, 'Category');
+        if (targetPartyId) await assertOwnedEntity(query, 'Parties', 'PartyID', targetPartyId, userId, 'Party');
 
         let numAmount = oldRec.Amount;
         if (Amount !== undefined && Amount !== null) {
@@ -200,8 +214,8 @@ router.put('/:id', async (req, res) => {
             amount: numAmount,
             acc: targetAccountId,
             toAcc: targetToAccountId,
-            cat: CategoryID !== undefined ? parseOptionalId(CategoryID) : oldRec.CategoryID,
-            party: PartyID !== undefined ? parseOptionalId(PartyID) : oldRec.PartyID,
+            cat: targetCategoryId,
+            party: targetPartyId,
             desc: Description !== undefined ? (Description || null) : oldRec.Description,
             freq: Frequency || null,
             start: StartDate || null,
@@ -212,7 +226,7 @@ router.put('/:id', async (req, res) => {
         res.json({ success: true, message: 'Recurring transaction update ho gaya' });
     } catch (err) {
         console.error('Recurring update error:', err);
-        res.status(500).json({ success: false, error: 'Recurring transaction update nahi ho paya' });
+        res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Recurring transaction update nahi ho paya' });
     }
 });
 

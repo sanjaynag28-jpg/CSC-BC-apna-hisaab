@@ -3,7 +3,7 @@ const router = express.Router();
 const { query, withTransaction } = require('../database/db');
 const { processKhataAfterChange } = require('../database/khataEngine');
 const { logAudit } = require('../utils/auditLogger');
-const { todayLocal } = require('../utils/helpers');
+const { todayLocal, assertOwnedAccount } = require('../utils/helpers');
 const { resolveOrCreateCustomer } = require('../database/customerAutoRegister');
 const { registerGlobalTransaction, deactivateGlobalTransaction } = require('../database/globalTxnRegistry');
 
@@ -412,15 +412,20 @@ router.post('/', async (req, res) => {
 
             // Entry 2: If customer made any advance / immediate payment, record 'Got' in Khata!
             if (paid > 0) {
-                // Resolve AccountID - default to Cash Account (AccountID = 1) if not provided
-                let effAccId = AccountID ? parseInt(AccountID) : null;
-                if (!effAccId) {
+                // Resolve AccountID and verify tenant ownership (never fall back to AccountID 1 for non-owner shops)
+                let effAccId = AccountID ? parseInt(AccountID, 10) : null;
+                if (effAccId) {
+                    await assertOwnedAccount(tQuery, effAccId, userId, 'Payment Account');
+                } else {
                     const defAcc = await tQuery(`
                         SELECT TOP 1 AccountID FROM Accounts 
-                        WHERE UserID = @userId AND IsActive = 1 AND (AccountType = 'Cash' OR AccountID = 1)
-                        ORDER BY CASE WHEN AccountID = 1 THEN 0 ELSE 1 END
+                        WHERE UserID = @userId AND IsActive = 1
+                        ORDER BY CASE WHEN AccountType = 'Cash' THEN 0 ELSE 1 END, CASE WHEN AccountID = 1 THEN 0 ELSE 1 END, AccountID ASC
                     `, { userId });
-                    effAccId = defAcc.recordset.length > 0 ? defAcc.recordset[0].AccountID : 1;
+                    effAccId = defAcc.recordset.length > 0 ? defAcc.recordset[0].AccountID : (userId === 1 ? 1 : null);
+                    if (!effAccId) {
+                        throw Object.assign(new Error('Kripya pehle apna Cash/Bank account banayein.'), { status: 400 });
+                    }
                 }
 
                 // Update invoice AccountID if it was empty
@@ -618,17 +623,23 @@ router.put('/:id/pay', async (req, res) => {
                   AND LineType = 'PAYMENT_IN' AND IsDeleted = 0
             `, { userId, invId });
 
-            let effAccId = AccountID ? parseInt(AccountID) : null;
+            let effAccId = AccountID ? parseInt(AccountID, 10) : null;
+            if (effAccId) {
+                await assertOwnedAccount(tQuery, effAccId, userId, 'Payment Account');
+            }
             if (!effAccId && existingMirror.recordset.length > 0 && existingMirror.recordset[0].AccountID) {
                 // User ne account select nahi kiya, to pehle mirror ka account hi use karo
                 effAccId = existingMirror.recordset[0].AccountID;
             } else if (!effAccId) {
                 const defAcc = await tQuery(`
                     SELECT TOP 1 AccountID FROM Accounts 
-                    WHERE UserID = @userId AND IsActive = 1 AND (AccountType = 'Cash' OR AccountID = 1)
-                    ORDER BY CASE WHEN AccountID = 1 THEN 0 ELSE 1 END
+                    WHERE UserID = @userId AND IsActive = 1
+                    ORDER BY CASE WHEN AccountType = 'Cash' THEN 0 ELSE 1 END, CASE WHEN AccountID = 1 THEN 0 ELSE 1 END, AccountID ASC
                 `, { userId });
-                effAccId = defAcc.recordset.length > 0 ? defAcc.recordset[0].AccountID : 1;
+                effAccId = defAcc.recordset.length > 0 ? defAcc.recordset[0].AccountID : (userId === 1 ? 1 : null);
+                if (!effAccId) {
+                    throw Object.assign(new Error('Kripya pehle apna Cash/Bank account banayein.'), { status: 400 });
+                }
             }
 
             // Partially paid invoice ka account explicit change mat hone do (warna purane account

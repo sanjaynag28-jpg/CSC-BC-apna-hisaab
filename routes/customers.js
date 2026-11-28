@@ -363,21 +363,26 @@ router.post('/family/change-head', async (req, res) => {
 // --------------------------------------------------------------------------
 router.post('/family/update-relationship', async (req, res) => {
     try {
+        const userId = req.user.UserID;
         const { customerId, relationship } = req.body;
         if (!customerId || !relationship) {
             return res.status(400).json({ success: false, error: 'customerId aur relationship zaroori hain' });
         }
 
-        const oldCustRes = await query(`SELECT CustomerID, CustomerName, Relationship, Phone FROM Customers WHERE CustomerID = @id`, { id: parseInt(customerId) });
-        const oldCust = oldCustRes.recordset[0] || {};
+        const oldCustRes = await query(`SELECT CustomerID, CustomerName, Relationship, Phone FROM Customers WHERE CustomerID = @id AND UserID = @userId`, { id: parseInt(customerId), userId });
+        if (!oldCustRes.recordset.length) {
+            return res.status(404).json({ success: false, error: 'Customer nahi mila' });
+        }
+        const oldCust = oldCustRes.recordset[0];
 
         await query(`
             UPDATE Customers SET
                 Relationship = @rel,
                 UpdatedAt = GETDATE()
-            WHERE CustomerID = @id AND IsActive = 1
+            WHERE CustomerID = @id AND UserID = @userId AND IsActive = 1
         `, {
             id: parseInt(customerId),
+            userId,
             rel: relationship.trim()
         });
 
@@ -481,7 +486,8 @@ router.post('/family/separate-member', async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/next-id', async (req, res) => {
     try {
-        const result = await query(`SELECT ISNULL(MAX(CustomerID), 0) + 1 AS nextId FROM Customers`);
+        const userId = req.user.UserID;
+        const result = await query(`SELECT ISNULL(MAX(CustomerID), 0) + 1 AS nextId FROM Customers WHERE UserID = @userId`, { userId });
         res.json({ success: true, nextId: result.recordset[0].nextId });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -1157,6 +1163,7 @@ router.put('/:id', async (req, res) => {
 // --------------------------------------------------------------------------
 router.get('/:id/audit-history', async (req, res) => {
     try {
+        const userId = req.user.UserID;
         const custId = parseInt(req.params.id);
         if (isNaN(custId)) {
             return res.status(400).json({ success: false, error: 'Invalid Customer ID' });
@@ -1165,9 +1172,9 @@ router.get('/:id/audit-history', async (req, res) => {
             SELECT TOP 100
                 LogID, Action, Module, TableName, RecordID, Description, EntityName, Amount, OldData, NewData, Details, CreatedAt, UserID
             FROM AuditLogs
-            WHERE TableName = 'Customers' AND RecordID = @id
+            WHERE TableName = 'Customers' AND RecordID = @id AND UserID = @userId
             ORDER BY CreatedAt DESC, LogID DESC
-        `, { id: custId });
+        `, { id: custId, userId });
 
         res.json({
             success: true,

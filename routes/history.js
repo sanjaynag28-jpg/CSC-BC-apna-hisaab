@@ -11,6 +11,7 @@ router.get('/', async (req, res) => {
             search = '',
             module: moduleFilter = 'All',
             action: actionFilter = 'All',
+            createdBy = '',
             startDate = '',
             endDate = ''
         } = req.query;
@@ -24,7 +25,7 @@ router.get('/', async (req, res) => {
         const params = {};
 
         if (req.user?.Role !== 'SuperAdmin') {
-            whereClauses.push('(a.UserID = @userId OR a.UserID IS NULL)');
+            whereClauses.push('a.UserID = @userId');
             params.userId = userId;
         }
 
@@ -49,6 +50,11 @@ router.get('/', async (req, res) => {
         if (actionFilter && actionFilter !== 'All') {
             whereClauses.push('a.Action = @action');
             params.action = actionFilter;
+        }
+
+        if (createdBy && String(createdBy).trim() !== '' && createdBy !== 'All') {
+            whereClauses.push('a.CreatedByName = @createdBy');
+            params.createdBy = String(createdBy).trim();
         }
 
         if (startDate && startDate.trim() !== '') {
@@ -84,6 +90,8 @@ router.get('/', async (req, res) => {
                 a.Amount,
                 a.Details,
                 a.CreatedAt,
+                a.CreatedByUserID,
+                a.CreatedByName,
                 CASE WHEN a.OldData IS NOT NULL AND LEN(a.OldData) > 0 THEN 1 ELSE 0 END AS HasOldData,
                 CASE WHEN a.NewData IS NOT NULL AND LEN(a.NewData) > 0 THEN 1 ELSE 0 END AS HasNewData
             FROM AuditLogs a
@@ -92,9 +100,8 @@ router.get('/', async (req, res) => {
             OFFSET ${offset} ROWS FETCH NEXT ${l} ROWS ONLY
         `, params);
 
-        // Stats/modules/detail bhi same user-scope par — warna dusre user ke
-        // audit numbers aur log entries leak hoti hain.
-        const userScopeSql = (req.user?.Role !== 'SuperAdmin') ? 'WHERE (UserID = @userId OR UserID IS NULL)' : '';
+        // Stats/modules/detail bhi strictly same user-scope par
+        const userScopeSql = (req.user?.Role !== 'SuperAdmin') ? 'WHERE UserID = @userId' : '';
 
         // 3. Overall KPI Metrics
         const statsRes = await query(`
@@ -114,7 +121,7 @@ router.get('/', async (req, res) => {
             SELECT DISTINCT Module 
             FROM AuditLogs 
             WHERE Module IS NOT NULL AND Module != ''
-              ${userScopeSql ? 'AND (UserID = @userId OR UserID IS NULL)' : ''}
+              ${userScopeSql ? 'AND UserID = @userId' : ''}
             ORDER BY Module ASC
         `, userScopeSql ? { userId } : {});
 
@@ -152,7 +159,7 @@ router.get('/:id', async (req, res) => {
         const result = await query(`
             SELECT * FROM AuditLogs
             WHERE LogID = @id
-              ${isSuperAdmin ? '' : 'AND (UserID = @userId OR UserID IS NULL)'}
+              ${isSuperAdmin ? '' : 'AND UserID = @userId'}
         `, isSuperAdmin ? { id: logId } : { id: logId, userId });
 
         if (result.recordset.length === 0) {

@@ -194,8 +194,8 @@
                     <div class="step-text">
                         Top-Left corner me <b>Load unpacked</b> button par click karein aur ye folder select karein:
                         <div class="code-box" style="margin-top: 8px;">
-                            <span class="code-text" id="extFolder">D:\Cash Managment BC\extension</span>
-                            <button class="btn btn-primary" onclick="copyToClipboard('D:\\Cash Managment BC\\extension')">📋 Copy Folder Path</button>
+                            <span class="code-text" id="extFolder">extension/ (Project folder ke andar)</span>
+                            <button class="btn btn-primary" onclick="copyToClipboard(document.getElementById('extFolder').textContent)">📋 Copy Folder Path</button>
                         </div>
                     </div>
                 </li>
@@ -229,13 +229,19 @@
             </div>
 
             <div style="margin-top: 20px; display: flex; gap: 12px; justify-content: center;">
-                <a href="/test_grabber.html" class="btn btn-primary" target="_blank">🧪 Open Test Bench (Mock Receipts)</a>
+                <a href="/api/extension/test" class="btn btn-primary" target="_blank">🧪 Run Extension Self-Test</a>
                 <a href="/" class="btn btn-success">🏠 Go to Dashboard</a>
             </div>
         </div>
     </div>
 
     <script>
+        fetch('/api/extension/diagnostics').then(r => r.json()).then(d => {
+            if (d && d.extPath) {
+                const el = document.getElementById('extFolder');
+                if (el) el.textContent = d.extPath;
+            }
+        }).catch(() => {});
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text).then(() => {
                 alert('Copied to clipboard: ' + text);

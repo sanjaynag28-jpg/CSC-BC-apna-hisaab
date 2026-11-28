@@ -20,6 +20,24 @@
     // ------------------------------------------------------------------------
     const originalFetch = window.fetch;
 
+    function isLocalServerHost() {
+        return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    }
+
+    function escHtml(v) {
+        if (v === null || v === undefined) return '';
+        return String(v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    window.isStaffUser = function () {
+        return Boolean(window.currentUser && window.currentUser.Role === 'Staff');
+    };
+
     function clearClientAuth(preserveUserForOffline = true) {
         localStorage.removeItem('token');
         if (!preserveUserForOffline) {
@@ -46,6 +64,15 @@
         // Retain the last identity for presentation only; mutations still require
         // a valid server session.
         clearClientAuth(true);
+
+        // Main PC (localhost) NEVER requires login — silently fall back to local SuperAdmin
+        if (isLocalServerHost()) {
+            hideLoginModal();
+            if (!window.currentUser || window.currentUser.Role !== 'SuperAdmin') {
+                checkAuthSession();
+            }
+            return;
+        }
 
         if (typeof finishUniversalLoading === 'function') {
             try { finishUniversalLoading(); } catch (e) { }
@@ -93,7 +120,7 @@
 
         const response = await originalFetch(url, options);
 
-        // Handle 401 Unauthorized for shop calls
+        // Handle 401 Unauthorized for remote shop/staff calls (never lock Main PC localhost)
         if (response.status === 401 && typeof url === 'string' && !url.includes('/api/auth/login')) {
             console.warn('⚠️ Session expired or unauthorized (401):', url);
             try {
@@ -246,9 +273,24 @@
         const shopEl = document.getElementById('activeShopName');
         const userEl = document.getElementById('activeUserName');
         const pill = document.getElementById('userShopPill');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const isStaff = user.Role === 'Staff';
+
+        document.body.classList.toggle('role-staff', isStaff);
 
         if (shopEl) shopEl.innerText = user.ShopName || 'Meri Dukaan';
-        if (userEl) userEl.innerText = `${user.OwnerName || user.Username} (${user.Role})`;
+        if (userEl) {
+            const actorDisplay = user.ActorName || user.OwnerName || user.Username || 'Admin';
+            userEl.innerText = isStaff
+                ? `${actorDisplay} (Staff • Shared Shop)`
+                : `${actorDisplay} (${user.Role || 'Admin'})`;
+        }
+        if (logoutBtn) {
+            // Main PC (localhost) auto-login user doesn't need to log in or out accidentally
+            logoutBtn.style.display = (isLocalServerHost() && user.Role === 'SuperAdmin' && !localStorage.getItem('token'))
+                ? 'none'
+                : 'flex';
+        }
         if (pill) {
             pill.style.display = 'block';
             if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -256,14 +298,18 @@
             }
         }
 
-        // SuperAdmin specific UI buttons (Shops management tab in Settings)
+        // SuperAdmin specific UI buttons (Shops/Staff management tab in Settings)
         const tenantTabBtn = document.getElementById('btn-tab-tenants');
         const errorsTabBtn = document.getElementById('btn-tab-errors');
+        const fleetTabBtn = document.getElementById('btn-tab-fleet');
         if (tenantTabBtn) {
             tenantTabBtn.style.display = (user.Role === 'SuperAdmin') ? 'flex' : 'none';
         }
         if (errorsTabBtn) {
             errorsTabBtn.style.display = (user.Role === 'SuperAdmin') ? 'flex' : 'none';
+        }
+        if (fleetTabBtn) {
+            fleetTabBtn.style.display = (user.Role === 'SuperAdmin') ? 'flex' : 'none';
         }
     }
 
@@ -339,25 +385,48 @@
     };
 
     // ------------------------------------------------------------------------
-    // 4. CHECK AUTH STATE ON STARTUP (LOCAL & SAME WI-FI / LAN)
+    // 4. CHECK AUTH STATE ON STARTUP (LOCAL NO-LOGIN & SAME WI-FI / LAN)
     // ------------------------------------------------------------------------
     async function checkAuthSession() {
         try {
             injectLoginOverlay();
-            const host = window.location.hostname;
-            const isLocal = ['localhost', '127.0.0.1'].includes(host);
+            const isLocal = isLocalServerHost();
             const token = localStorage.getItem('token');
 
-            // If on localhost and no specific token, load as SuperAdmin directly!
-            if (isLocal && !token) {
+            // Main PC (localhost / 127.0.0.1) NEVER requires login — load real SuperAdmin profile directly!
+            if (isLocal) {
                 hideLoginModal();
-                updateUserHeaderUI({ ShopName: 'CSC & BC Kendra', OwnerName: 'Admin', Role: 'SuperAdmin' });
+                try {
+                    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                    let res = await originalFetch('/api/auth/me', { method: 'GET', headers });
+                    if (res.status === 401 && token) {
+                        clearClientAuth(true);
+                        res = await originalFetch('/api/auth/me', { method: 'GET' });
+                    }
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.user) {
+                            window.currentUser = data.user;
+                            localStorage.setItem('user', JSON.stringify(data.user));
+                            updateUserHeaderUI(data.user);
+                            if (typeof loadMasterData === 'function') await loadMasterData();
+                            if (typeof loadDashboard === 'function') await loadDashboard();
+                            return;
+                        }
+                    }
+                } catch (localErr) {
+                    console.warn('⚠️ Local /auth/me check notice:', localErr.message);
+                }
+
+                const fallbackUser = { UserID: 1, ActualUserID: 1, ShopName: 'My CSC & BC Center', OwnerName: 'Admin', ActorName: 'Admin', Role: 'SuperAdmin', IsStaff: false };
+                window.currentUser = window.currentUser || fallbackUser;
+                updateUserHeaderUI(window.currentUser);
                 if (typeof loadMasterData === 'function') loadMasterData();
                 if (typeof loadDashboard === 'function') loadDashboard();
                 return;
             }
 
-            // Other connected PCs on same Wi-Fi without token must log in to select their shop
+            // Other connected PCs on same Wi-Fi without token must log in to their Staff or Shop account
             if (!token) {
                 showLoginModal();
                 return;
@@ -388,35 +457,31 @@
                 }
             } catch (netErr) {
                 console.warn('⚠️ Server unreachable:', netErr.message);
-                if (isLocal) {
-                    hideLoginModal();
-                    updateUserHeaderUI({ ShopName: 'CSC & BC Kendra', OwnerName: 'Admin', Role: 'SuperAdmin' });
-                } else {
-                    showLoginModal();
-                }
-            }
-
-            if (isLocal) {
-                updateUserHeaderUI({ ShopName: 'CSC & BC Kendra', OwnerName: 'Admin', Role: 'SuperAdmin' });
+                showLoginModal();
             }
         } catch (e) {
             console.warn('Auth check error:', e.message);
         }
     }
 
-    // 100% Direct LAN / Localhost: Purge legacy Service Workers and Caches
+    // Purge ONLY legacy PWA Service Workers/Caches — preserve Offline Splash Guard (/sw.js)
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function (registrations) {
             for (let registration of registrations) {
-                registration.unregister();
-                console.log('🧹 [ServiceWorker] Unregistered legacy PWA Service Worker');
+                const scriptUrl = (registration.active && registration.active.scriptURL) || '';
+                if (!scriptUrl.endsWith('/sw.js')) {
+                    registration.unregister();
+                    console.log('🧹 [ServiceWorker] Unregistered legacy PWA Service Worker');
+                }
             }
         });
     }
     if ('caches' in window) {
         caches.keys().then(function (names) {
             for (let name of names) {
-                caches.delete(name);
+                if (!String(name).startsWith('cmbc-offline-splash')) {
+                    caches.delete(name);
+                }
             }
         });
     }
@@ -438,7 +503,7 @@
 
             const users = data.data || data.users;
             if (!data.success || !users) {
-                listEl.innerHTML = `<tr><td colspan="7" style="color: #ef4444; text-align: center;">Error: ${data.error || 'Shops load nahi ho payi'}</td></tr>`;
+                listEl.innerHTML = `<tr><td colspan="7" style="color: #ef4444; text-align: center;">Error: ${escHtml(data.error || 'Shops load nahi ho payi')}</td></tr>`;
                 return;
             }
             if (users.length === 0) {
@@ -451,24 +516,31 @@
             listEl.innerHTML = users.map(u => `
                 <tr style="border-bottom: 1.5px solid var(--border, #cbd5e1); transition: background 0.15s ease;" onmouseover="this.style.background='var(--bg-card-hover, #f8fafc)'" onmouseout="this.style.background='transparent'">
                     <td style="padding: 14px 16px; vertical-align: middle;">
-                        <span style="background: rgba(2, 132, 199, 0.12); color: #0284c7; padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 800; display: inline-block;">#${u.UserID}</span>
+                        <span style="background: rgba(2, 132, 199, 0.12); color: #0284c7; padding: 5px 10px; border-radius: 6px; font-size: 13px; font-weight: 800; display: inline-block;">#${Number(u.UserID)}</span>
                     </td>
                     <td style="padding: 14px 16px; vertical-align: middle;">
-                        <div style="font-weight: 800; font-size: 14.5px; color: var(--text-primary, #0f172a); line-height: 1.3;">${(u.ShopName || 'N/A').replace(/</g, '&lt;')}</div>
-                        <div style="font-size: 12px; color: var(--text-muted, #475569); font-weight: 600; margin-top: 3px;">👤 Owner: ${(u.OwnerName || '-').replace(/</g, '&lt;')}</div>
+                        <div style="font-weight: 800; font-size: 14.5px; color: var(--text-primary, #0f172a); line-height: 1.3; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span>${escHtml(u.ShopName || 'N/A')}</span>
+                            ${u.Role === 'Staff'
+                                ? `<span style="background: rgba(16,185,129,0.14); color: #059669; border: 1px solid rgba(16,185,129,0.35); padding: 2px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 800;">Staff • Shared #${Number(u.ParentUserID || 1)} (${Number(u.StaffEntryCount || 0)} entries)</span>`
+                                : (u.UserID === 1
+                                    ? `<span style="background: rgba(37,99,235,0.12); color: #2563eb; border: 1px solid rgba(37,99,235,0.3); padding: 2px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 800;">Main PC (Owner)</span>`
+                                    : `<span style="background: rgba(139,92,246,0.12); color: #7c3aed; border: 1px solid rgba(139,92,246,0.3); padding: 2px 7px; border-radius: 5px; font-size: 10.5px; font-weight: 800;">${escHtml(u.Role || 'Shop')}</span>`)}
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-muted, #475569); font-weight: 600; margin-top: 3px;">👤 ${u.Role === 'Staff' ? 'Staff' : 'Owner'}: ${escHtml(u.OwnerName || '-')}</div>
                     </td>
                     <td style="padding: 14px 16px; vertical-align: middle; font-size: 13.5px; font-weight: 700; color: var(--text-secondary, #1e293b); font-family: monospace;">
-                        ${(u.MobileNumber || '-').replace(/</g, '&lt;')}
+                        ${escHtml(u.MobileNumber || '-')}
                     </td>
                     <td style="padding: 14px 16px; vertical-align: middle;">
                         <span style="background: #ecfdf5; border: 1.5px solid #a7f3d0; color: #047857; padding: 4px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 800; font-family: monospace; display: inline-block;">
-                            ${(u.Username || '').replace(/</g, '&lt;')}
+                            ${escHtml(u.Username || '')}
                         </span>
                     </td>
                     <td style="padding: 14px 16px; vertical-align: middle;">
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <input type="text" readonly value="${u.ApiToken || ''}" style="width: 135px; background: var(--bg-input, #f1f5f9); border: 1.5px solid var(--border, #cbd5e1); border-radius: 6px; padding: 6px 8px; font-size: 11px; font-weight: 600; color: var(--text-primary, #0f172a); font-family: monospace; outline: none;" id="tok-${u.UserID}">
-                            <button type="button" onclick="copyToClipboard('${u.ApiToken}')" style="background: #0284c7; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.25);">
+                            <input type="text" readonly value="${escHtml(u.ApiToken || '')}" style="width: 135px; background: var(--bg-input, #f1f5f9); border: 1.5px solid var(--border, #cbd5e1); border-radius: 6px; padding: 6px 8px; font-size: 11px; font-weight: 600; color: var(--text-primary, #0f172a); font-family: monospace; outline: none;" id="tok-${Number(u.UserID)}">
+                            <button type="button" data-token="${escHtml(u.ApiToken || '')}" onclick="copyToClipboard(this.getAttribute('data-token'))" style="background: #0284c7; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.25);">
                                 Copy
                             </button>
                         </div>
@@ -480,14 +552,14 @@
                     </td>
                     <td style="padding: 14px 16px; vertical-align: middle; text-align: right;">
                         <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
-                            <button type="button" onclick="openEditShopModal(${u.UserID})" style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);" title="Dukaan ki details edit karein">
+                            <button type="button" onclick="openEditShopModal(${Number(u.UserID)})" style="background: #2563eb; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);" title="Dukaan ki details edit karein">
                                 ✏️ Edit
                             </button>
-                            <button type="button" onclick="promptResetPassword(${u.UserID}, '${(u.Username || '').replace(/'/g, "\\'")}')" style="background: #d97706; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.25);" title="Naya password set karein">
+                            <button type="button" data-uname="${escHtml(u.Username || '')}" onclick="promptResetPassword(${Number(u.UserID)}, this.getAttribute('data-uname'))" style="background: #d97706; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.25);" title="Naya password set karein">
                                 Reset PWD
                             </button>
                             ${u.UserID !== 1 ? `
-                                <button type="button" onclick="toggleShopStatus(${u.UserID}, ${u.IsActive ? 0 : 1})" style="background: ${u.IsActive ? '#dc2626' : '#059669'}; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.15);" title="${u.IsActive ? 'Dukaan ko block karein' : 'Dukaan ko activate karein'}">
+                                <button type="button" onclick="toggleShopStatus(${Number(u.UserID)}, ${u.IsActive ? 0 : 1})" style="background: ${u.IsActive ? '#dc2626' : '#059669'}; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.15);" title="${u.IsActive ? 'Dukaan ko block karein' : 'Dukaan ko activate karein'}">
                                     ${u.IsActive ? 'Block' : 'Activate'}
                                 </button>
                             ` : ''}
@@ -497,7 +569,7 @@
             `).join('');
 
         } catch (err) {
-            listEl.innerHTML = `<tr><td colspan="7" style="color: #ef4444; text-align: center;">Error: ${err.message}</td></tr>`;
+            listEl.innerHTML = `<tr><td colspan="7" style="color: #ef4444; text-align: center;">Error: ${escHtml(err.message)}</td></tr>`;
         }
     };
 
@@ -669,8 +741,9 @@
                         <div>
                             <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Role</label>
                             <select id="editShopRole" style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
-                                <option value="ShopOwner">Shop Owner</option>
-                                <option value="Operator">Operator / Staff</option>
+                                <option value="Staff">Staff / Agent (Apni Dukaan — Shared Data)</option>
+                                <option value="ShopOwner">Shop Owner (Alag Dukaan)</option>
+                                <option value="Operator">Operator (Alag Dukaan)</option>
                             </select>
                         </div>
                     </div>
@@ -685,14 +758,49 @@
     }
 
     // ------------------------------------------------------------------------
-    // CREATE SHOP MODAL
+    // CREATE SHOP / STAFF MODAL
     // ------------------------------------------------------------------------
+    window.handleNewAccountRoleChange = function () {
+        const roleEl = document.getElementById('newShopRole');
+        const shopGroup = document.getElementById('newShopNameGroup');
+        const shopInp = document.getElementById('newShopName');
+        const ownerLbl = document.getElementById('newOwnerNameLabel');
+        const ownerInp = document.getElementById('newOwnerName');
+        const staffHint = document.getElementById('newStaffRoleHint');
+        const submitBtn = document.getElementById('submitNewShopBtn');
+        const isStaff = roleEl && roleEl.value === 'Staff';
+
+        if (isStaff) {
+            const parentShop = (window.currentUser && window.currentUser.ShopName) || 'My CSC & BC Center';
+            if (shopInp) {
+                shopInp.value = parentShop;
+                shopInp.required = false;
+            }
+            if (shopGroup) shopGroup.style.display = 'none';
+            if (ownerLbl) ownerLbl.innerText = 'Staff / Agent Ka Naam *';
+            if (ownerInp) ownerInp.placeholder = 'e.g. Rahul Kumar';
+            if (staffHint) staffHint.style.display = 'block';
+            if (submitBtn) submitBtn.innerText = '+ Staff Agent Banayein';
+        } else {
+            if (shopGroup) shopGroup.style.display = 'block';
+            if (shopInp) {
+                shopInp.required = true;
+                if (window.currentUser && shopInp.value === window.currentUser.ShopName) shopInp.value = '';
+            }
+            if (ownerLbl) ownerLbl.innerText = 'Dukandar (Owner) Ka Naam *';
+            if (ownerInp) ownerInp.placeholder = 'e.g. Ramesh Kumar';
+            if (staffHint) staffHint.style.display = 'none';
+            if (submitBtn) submitBtn.innerText = '+ Dukaan Banayein';
+        }
+    };
+
     window.openCreateShopModal = function () {
         let m = document.getElementById('modal-create-shop');
         if (!m) {
             injectCreateShopModal();
             m = document.getElementById('modal-create-shop');
         }
+        window.handleNewAccountRoleChange();
         if (m) m.style.display = 'flex';
     };
 
@@ -710,15 +818,16 @@
         const password = document.getElementById('newShopPassword').value;
         const role = document.getElementById('newShopRole').value;
         const btn = document.getElementById('submitNewShopBtn');
+        const isStaff = role === 'Staff';
 
-        if (!shopName || !username || !password) {
-            alert('Shop Name, Username, aur Password zaroori hain!');
+        if (!ownerName || !username || !password || (!isStaff && !shopName)) {
+            alert(isStaff ? 'Staff Name, Username, aur Password zaroori hain!' : 'Shop Name, Owner Name, Username, aur Password zaroori hain!');
             return;
         }
 
         if (btn) {
             btn.disabled = true;
-            btn.innerText = 'Creating Shop...';
+            btn.innerText = isStaff ? 'Staff Ban Raha Hai...' : 'Creating Shop...';
         }
 
         try {
@@ -726,26 +835,30 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    shopName, ownerName, mobileNumber: mobile, username, password, role
+                    shopName: isStaff ? ((window.currentUser && window.currentUser.ShopName) || shopName) : shopName,
+                    ownerName,
+                    mobileNumber: mobile,
+                    username,
+                    password,
+                    role,
+                    parentUserId: isStaff ? ((window.currentUser && window.currentUser.UserID) || 1) : null
                 })
             });
             const data = await res.json();
 
             if (data.success) {
-                if (typeof showToast === 'function') showToast(`🎉 '${shopName}' dukan kamyabi se jud gayi!`, 'success');
-                else alert(`Dukaan '${shopName}' ban gayi!`);
+                if (typeof showToast === 'function') showToast(data.message || `🎉 '${ownerName}' safalta se jud gaya!`, 'success');
+                else alert(data.message || 'Account ban gaya!');
                 closeCreateShopModal();
                 loadTenantShops();
             } else {
-                alert(data.error || 'Dukaan create nahi ho payi');
+                alert(data.error || 'Account create nahi ho paya');
             }
         } catch (err) {
             alert(err.message);
         } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = '+ Dukaan Banayein';
-            }
+            window.handleNewAccountRoleChange();
+            if (btn) btn.disabled = false;
         }
     };
 
@@ -763,42 +876,45 @@
         m.innerHTML = `
             <div style="background: var(--bg-card, #ffffff); color: var(--text-primary, #0f172a); border: 1.5px solid var(--border, #cbd5e1); border-radius: 14px; width: 100%; max-width: 480px; box-shadow: 0 20px 50px rgba(0,0,0,0.3); overflow: hidden;">
                 <div style="padding: 18px 24px; border-bottom: 1.5px solid var(--border, #e2e8f0); display: flex; justify-content: space-between; align-items: center; background: var(--bg-secondary, #f8fafc);">
-                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text-primary, #0f172a);">🏪 Nayi Dukaan / Dost Jodein</h3>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--text-primary, #0f172a);">🏪 Naya Staff / Dukaan Jodein</h3>
                     <button type="button" onclick="closeCreateShopModal()" style="background: none; border: none; color: var(--text-muted, #64748b); font-size: 24px; cursor: pointer; line-height: 1;">&times;</button>
                 </div>
                 <form onsubmit="submitCreateShopForm(event)" style="padding: 20px 24px;">
                     <div style="margin-bottom: 14px;">
+                        <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Account Type / Role</label>
+                        <select id="newShopRole" onchange="handleNewAccountRoleChange()" style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
+                            <option value="Staff">Staff / Agent (Apni Dukaan — Shared Data)</option>
+                            <option value="ShopOwner">Separate Shop Owner (Alag Dukaan — Isolated Data)</option>
+                        </select>
+                        <div id="newStaffRoleHint" style="margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #059669; font-size: 11.5px; font-weight: 600;">
+                            ✅ Staff aapki dukaan ke ek hi Cash Galla, Customers, CSC aur BC data me save karega (Delete & Settings lock rahenge).
+                        </div>
+                    </div>
+                    <div id="newShopNameGroup" style="margin-bottom: 14px;">
                         <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Dukaan / Center Ka Naam *</label>
                         <input type="text" id="newShopName" placeholder="e.g. Radhey Online Center" required style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
                     </div>
                     <div style="margin-bottom: 14px;">
-                        <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Dukandar (Owner) Ka Naam</label>
-                        <input type="text" id="newOwnerName" placeholder="e.g. Ramesh Kumar" style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
+                        <label id="newOwnerNameLabel" style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Staff / Agent Ka Naam *</label>
+                        <input type="text" id="newOwnerName" placeholder="e.g. Rahul Kumar" required style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
                     </div>
                     <div style="margin-bottom: 14px;">
                         <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Mobile Number</label>
                         <input type="text" id="newShopMobile" placeholder="e.g. 9876543210" style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
                         <div>
                             <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Username *</label>
-                            <input type="text" id="newShopUsername" placeholder="e.g. radhey" required style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
+                            <input type="text" id="newShopUsername" placeholder="e.g. rahul" required style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
                         </div>
                         <div>
                             <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Password *</label>
                             <input type="password" id="newShopPassword" placeholder="••••••••" required style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
                         </div>
                     </div>
-                    <div style="margin-bottom: 20px;">
-                        <label style="display: block; font-size: 12.5px; font-weight: 700; color: var(--text-secondary, #334155); margin-bottom: 5px;">Role</label>
-                        <select id="newShopRole" style="width: 100%; box-sizing: border-box; background: var(--bg-input, #ffffff); border: 1.5px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 600; color: var(--text-primary, #0f172a); outline: none;">
-                            <option value="ShopOwner">Shop Owner (Apni dukan ka poora control)</option>
-                            <option value="Operator">Operator / Staff (Daily transactions)</option>
-                        </select>
-                    </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end; border-top: 1.5px solid var(--border, #e2e8f0); padding-top: 16px;">
                         <button type="button" onclick="closeCreateShopModal()" style="background: var(--bg-secondary, #e2e8f0); color: var(--text-primary, #334155); border: 1px solid var(--border, #cbd5e1); border-radius: 8px; padding: 10px 16px; font-weight: 700; cursor: pointer;">Cancel</button>
-                        <button type="submit" id="submitNewShopBtn" style="background: #10b981; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 800; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">+ Dukaan Banayein</button>
+                        <button type="submit" id="submitNewShopBtn" style="background: #10b981; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-weight: 800; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">+ Staff Agent Banayein</button>
                     </div>
                 </form>
             </div>
@@ -900,7 +1016,7 @@
             const res = await fetch('/api/admin/client-errors');
             const data = await res.json();
             if (!data.success || !Array.isArray(data.errors)) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${data.error || 'Logs load nahi ho paye'}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${escHtml(data.error || 'Logs load nahi ho paye')}</td></tr>`;
                 return;
             }
 
@@ -914,23 +1030,23 @@
 
             tbody.innerHTML = data.errors.map(e => `
                 <tr style="border-bottom: 1px solid var(--border, #cbd5e1);">
-                    <td style="padding: 12px 16px; font-weight: 800; color: #64748b; font-size: 12px; vertical-align: top;">#${e.ErrorID}</td>
+                    <td style="padding: 12px 16px; font-weight: 800; color: #64748b; font-size: 12px; vertical-align: top;">#${Number(e.ErrorID)}</td>
                     <td style="padding: 12px 16px; vertical-align: top;">
-                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary);">${(e.ShopName || 'N/A').replace(/</g, '&lt;')}</div>
-                        <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">👤 ${(e.OwnerName || e.Username || '-').replace(/</g, '&lt;')}</div>
+                        <div style="font-weight: 700; font-size: 13.5px; color: var(--text-primary);">${escHtml(e.ShopName || 'N/A')}</div>
+                        <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">👤 ${escHtml(e.OwnerName || e.Username || '-')}</div>
                     </td>
                     <td style="padding: 12px 16px; vertical-align: top;">
                         <span style="background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; font-family: monospace; display: inline-block;">
-                            ${(e.ErrorType || 'error').replace(/</g, '&lt;')}
+                            ${escHtml(e.ErrorType || 'error')}
                         </span>
                     </td>
                     <td style="padding: 12px 16px; vertical-align: top;">
-                        <div style="font-size: 13px; font-weight: 700; color: #ef4444; word-break: break-word;">${(e.ErrorMessage || '').replace(/</g, '&lt;')}</div>
-                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: monospace;">${(e.Url || '').replace(/</g, '&lt;')}</div>
+                        <div style="font-size: 13px; font-weight: 700; color: #ef4444; word-break: break-word;">${escHtml(e.ErrorMessage || '')}</div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; font-family: monospace;">${escHtml(e.Url || '')}</div>
                         ${e.ErrorStack ? `
                             <details style="margin-top: 6px;">
                                 <summary style="font-size: 11px; color: #0284c7; cursor: pointer; font-weight: 600;">🔍 View Stack Trace</summary>
-                                <pre style="background: var(--bg-secondary, #0f172a); color: var(--text-secondary, #94a3b8); padding: 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin-top: 6px; white-space: pre-wrap; font-family: monospace; border: 1px solid var(--border);">${(e.ErrorStack).replace(/</g, '&lt;')}</pre>
+                                <pre style="background: var(--bg-secondary, #0f172a); color: var(--text-secondary, #94a3b8); padding: 10px; border-radius: 6px; font-size: 11px; overflow-x: auto; margin-top: 6px; white-space: pre-wrap; font-family: monospace; border: 1px solid var(--border);">${escHtml(e.ErrorStack)}</pre>
                             </details>
                         ` : ''}
                     </td>
@@ -941,7 +1057,7 @@
             `).join('');
             if (window.lucide) lucide.createIcons();
         } catch (err) {
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${err.message}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 20px;">Error: ${escHtml(err.message)}</td></tr>`;
         }
     };
 

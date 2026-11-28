@@ -352,8 +352,13 @@ router.put('/:id', async (req, res) => {
             if (!VALID_TRANS_TYPES.includes(type)) {
                 throw Object.assign(new Error('Type galat hai'), { status: 400 });
             }
-            let amount = parseMoney(Amount, NaN);
-            if (!Number.isFinite(amount) || amount <= 0) {
+            let amount;
+            if (Amount !== undefined && Amount !== null && Amount !== '') {
+                amount = parseMoney(Amount, NaN);
+                if (!Number.isFinite(amount) || amount <= 0) {
+                    throw Object.assign(new Error('Amount galat hai'), { status: 400 });
+                }
+            } else {
                 amount = parseFloat(oldRecord.Amount);
                 if (!Number.isFinite(amount) || amount <= 0) {
                     throw Object.assign(new Error('Amount galat hai'), { status: 400 });
@@ -522,6 +527,13 @@ router.delete('/:id', async (req, res) => {
             }
             if (refStr.startsWith('KHATA-') || refStr.startsWith('KH-') || modCode.startsWith('KH-')) {
                 throw Object.assign(new Error('Khatabook se auto-linked transaction direct delete nahi ho sakta - isko Khatabook se manage karein.'), { status: 400 });
+            }
+            const srcMod = String(oldRecord.SourceModule || '');
+            if (srcMod === 'UCL' || refStr.startsWith('UCL-') || modCode.startsWith('UCL-')) {
+                throw Object.assign(new Error('Aadhaar UCL se linked transaction direct delete nahi ho sakta - isko Aadhaar UCL module se manage karein.'), { status: 400 });
+            }
+            if (srcMod === 'ServiceRecords' || refStr.startsWith('SR-')) {
+                throw Object.assign(new Error('Service Records se linked transaction direct delete nahi ho sakta - isko Service module se manage karein.'), { status: 400 });
             }
 
             await tQuery('DELETE FROM Transactions WHERE TransactionID = @id AND UserID = @userId', { id, userId });

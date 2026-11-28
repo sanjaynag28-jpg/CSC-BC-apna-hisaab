@@ -10,6 +10,18 @@
 // ============================================================================
 
 const API_SERVERS = ['http://localhost:4000', 'http://127.0.0.1:4000', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+
+async function getConfiguredHosts() {
+    const hosts = [];
+    try {
+        const cfg = await chrome.storage.local.get(['cm_server_url']);
+        if (cfg && cfg.cm_server_url) hosts.push(cfg.cm_server_url);
+    } catch (_) { }
+    for (const h of API_SERVERS) {
+        if (!hosts.includes(h)) hosts.push(h);
+    }
+    return hosts;
+}
 const UPDATE_ALARM = 'cm-extension-update-check';
 const BUILD_KEY = 'cm_ext_build_id';
 const PENDING_REINJECT_KEY = 'cm_pending_reinject';
@@ -43,9 +55,16 @@ self.addEventListener('error', (event) => {
             stack: event.error ? event.error.stack : ''
         });
         const headers = { 'Content-Type': 'application/json' };
-        fetch('http://localhost:4000/api/logs/client-error', { method: 'POST', headers, body: payload })
-            .catch(() => fetch('http://localhost:3000/api/logs/client-error', { method: 'POST', headers, body: payload }))
-            .catch(() => { });
+        fireAndForget(
+            getConfiguredHosts().then(async (hosts) => {
+                for (const host of hosts) {
+                    try {
+                        const r = await fetch(`${host}/api/logs/client-error`, { method: 'POST', headers, body: payload });
+                        if (r.ok) break;
+                    } catch (_) { }
+                }
+            })
+        );
     } catch (e) { }
 });
 
@@ -55,7 +74,8 @@ async function checkForExtensionUpdates() {
     isCheckingUpdate = true;
 
     try {
-        for (const host of API_SERVERS) {
+        const hosts = await getConfiguredHosts();
+        for (const host of hosts) {
             try {
                 const res = await fetch(`${host}/api/extension/version`, {
                     cache: 'no-store',
@@ -173,6 +193,7 @@ async function reinjectIntoOpenTabs() {
         try {
             const all = await chrome.tabs.query({});
             tabs = all.filter(t => t.url && REINJECT_URL_PATTERNS.some(p => {
+                if (p === '<all_urls>') return /^(?:https?|file):\/\//i.test(t.url);
                 const rx = new RegExp('^' + p.split('*').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
                 return rx.test(t.url);
             }));
@@ -276,15 +297,16 @@ async function getRecentFullAadhaar(last4) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!request) return false;
 
-    if (request.action === 'RECORD_TYPED_AADHAAR' && request.fullAadhaar) {
-        const digits = String(request.fullAadhaar).replace(/\D/g, '');
+    const typedAadhaar = request.fullAadhaar || request.aadhaar;
+    if (request.action === 'RECORD_TYPED_AADHAAR' && typedAadhaar) {
+        const digits = String(typedAadhaar).replace(/\D/g, '');
         if (digits.length === 12 && !/^0{12}$/.test(digits) && !/^(\d)\1{11}$/.test(digits)) {
             const last4 = digits.slice(-4);
             const record = {
                 fullAadhaar: digits,
                 last4: last4,
                 time: Date.now(),
-                origin: request.origin || ''
+                origin: request.origin || request.url || ''
             };
             recentAadhaarMemory.set(last4, record);
             recentAadhaarMemory.set('__last__', record);
@@ -337,8 +359,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         fireAndForget(
             (async () => {
                 const stored = await chrome.storage.local.get([BUILD_KEY]);
+                const hosts = await getConfiguredHosts();
                 let serverBuild = null, serverVersion = null, serverPath = null, serverCodeHash = null;
-                for (const host of API_SERVERS) {
+                for (const host of hosts) {
                     try {
                         const r = await fetch(`${host}/api/extension/version`, { cache: 'no-store' });
                         if (r.ok) {
@@ -449,6 +472,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'GET_GRABBER_MODE') {
         chrome.storage.local.get(['cm_grabber_mode']).then(res => {
             sendResponse({ success: true, mode: res.cm_grabber_mode || 'project_tab' });
+        }).catch(() => {
+            sendResponse({ success: false, mode: 'project_tab' });
         });
         return true;
     }
@@ -456,6 +481,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'SET_GRABBER_MODE' && request.mode) {
         chrome.storage.local.set({ cm_grabber_mode: request.mode }).then(() => {
             sendResponse({ success: true, mode: request.mode });
+        }).catch(() => {
+            sendResponse({ success: false, mode: request.mode });
         });
         return true;
     }

@@ -1,7 +1,7 @@
 ﻿# Auto local backup (zip) for Cash Management BC
 # Excludes node_modules, logs, backups to keep size small.
-$src = "D:\Cash Managment BC"
-$dest = "D:\Cash Managment BC\backups\auto"
+$src = Split-Path -Parent $PSScriptRoot
+$dest = Join-Path $src "backups\auto"
 if (!(Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force | Out-Null }
 $stamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 $zip = Join-Path $dest "project_$stamp.zip"

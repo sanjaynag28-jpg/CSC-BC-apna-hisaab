@@ -95,6 +95,30 @@ function normalizePhone(value) {
     return digits || null;
 }
 
+/**
+ * Verify that an optional/required tenant-owned record (e.g. AccountID, CategoryID, PartyID)
+ * exists and belongs to the caller's shop (UserID). Throws HTTP 403 otherwise.
+ */
+async function assertOwnedEntity(queryFn, table, idColumn, idValue, userId, label = 'Record') {
+    if (idValue === undefined || idValue === null || idValue === '') return null;
+    const parsed = parseId(idValue);
+    if (!parsed) {
+        throw Object.assign(new Error(`${label} ID galat hai.`), { status: 400 });
+    }
+    const res = await queryFn(
+        `SELECT ${idColumn} FROM ${table} WHERE ${idColumn} = @id AND UserID = @userId`,
+        { id: parsed, userId }
+    );
+    if (!res.recordset || res.recordset.length === 0) {
+        throw Object.assign(new Error(`${label} nahi mila ya is shop ka nahi hai.`), { status: 403 });
+    }
+    return parsed;
+}
+
+async function assertOwnedAccount(queryFn, accountId, userId, label = 'Account') {
+    return assertOwnedEntity(queryFn, 'Accounts', 'AccountID', accountId, userId, label);
+}
+
 // Universal API JSON Response Helpers
 function sendSuccess(res, data = null, extra = {}) {
     return res.json({ success: true, ...(data !== null ? { data } : {}), ...extra });
@@ -118,6 +142,8 @@ module.exports = {
     parseMoney,
     cleanString,
     normalizePhone,
+    assertOwnedEntity,
+    assertOwnedAccount,
     sendSuccess,
     sendError
 };

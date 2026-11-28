@@ -1031,26 +1031,26 @@ async function exportCSCToExcel(reqQuery, res, userId) {
             row.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' }; // AppID
             row.getCell(3).alignment = { vertical: 'middle', horizontal: 'center' }; // Phone
             row.getCell(4).alignment = { vertical: 'middle', horizontal: 'center' }; // Aadhaar
-            row.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }; // Ack
-            row.getCell(10).alignment = { vertical: 'middle', horizontal: 'center' }; // Apply
-            row.getCell(11).alignment = { vertical: 'middle', horizontal: 'center' }; // Expected
-            row.getCell(17).alignment = { vertical: 'middle', horizontal: 'center' }; // Pay status
-            row.getCell(18).alignment = { vertical: 'middle', horizontal: 'center' }; // App status
+            row.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' }; // Ack
+            row.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' }; // Apply
+            row.getCell(10).alignment = { vertical: 'middle', horizontal: 'center' }; // Expected
+            row.getCell(16).alignment = { vertical: 'middle', horizontal: 'center' }; // Pay status
+            row.getCell(17).alignment = { vertical: 'middle', horizontal: 'center' }; // App status
 
             // Currency formatting
+            row.getCell(11).numFmt = '₹#,##0.00;"₹0.00"';
             row.getCell(12).numFmt = '₹#,##0.00;"₹0.00"';
             row.getCell(13).numFmt = '₹#,##0.00;"₹0.00"';
             row.getCell(14).numFmt = '₹#,##0.00;"₹0.00"';
-            row.getCell(15).numFmt = '₹#,##0.00;"₹0.00"';
-            row.getCell(16).numFmt = '₹#,##0.00;[Red]-₹#,##0.00;"₹0.00"';
+            row.getCell(15).numFmt = '₹#,##0.00;[Red]-₹#,##0.00;"₹0.00"';
 
             // Due highlight
             if (a.DueAmount > 0) {
-                row.getCell(16).font = { bold: true, color: { argb: 'FFDC2626' } };
+                row.getCell(15).font = { bold: true, color: { argb: 'FFDC2626' } };
             }
 
             // Status color highlight
-            const stCell = row.getCell(18);
+            const stCell = row.getCell(17);
             if (a.Status === 'Approved' || a.Status === 'Delivered') {
                 stCell.font = { bold: true, color: { argb: 'FF059669' } };
             } else if (a.Status === 'Rejected') {
@@ -1124,6 +1124,7 @@ async function getCSCTemplateExcel(res) {
             'CustomerPhone',
             'CustomerAadhaar',
             'ServiceType',
+            'ServiceSubtype',
             'AckNumber',
             'PortalName',
             'ApplyDate',
@@ -1393,8 +1394,9 @@ async function importCSCFromExcel(fileBuffer, originalName, userId) {
         if (!colIdx) return null;
         const cell = row.getCell(colIdx);
         if (!cell || cell.value === null || cell.value === undefined) return null;
-        if (typeof cell.value === 'object' && cell.value.text) {
-            return String(cell.value.text).trim();
+        if (typeof cell.value === 'object') {
+            if (cell.value.text !== undefined) return String(cell.value.text).trim();
+            if (cell.value.result !== undefined && cell.value.result !== null) return String(cell.value.result).trim();
         }
         return String(cell.value).trim();
     }

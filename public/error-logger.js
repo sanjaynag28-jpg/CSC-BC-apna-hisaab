@@ -93,7 +93,13 @@
             var pill = document.createElement('div');
             pill.id = 'cm-error-fallback-toast';
             pill.style.cssText = 'position:fixed;bottom:24px;right:24px;background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:700;z-index:999999;box-shadow:0 10px 30px rgba(0,0,0,0.6);display:flex;align-items:center;gap:10px;font-family:system-ui,-apple-system,sans-serif;border:1px solid rgba(255,255,255,0.3);';
-            pill.innerHTML = `<span style="font-size:16px;">🚨</span><span>${msg}</span>`;
+            var iconSpan = document.createElement('span');
+            iconSpan.style.fontSize = '16px';
+            iconSpan.textContent = '🚨';
+            var msgSpan = document.createElement('span');
+            msgSpan.textContent = msg;
+            pill.appendChild(iconSpan);
+            pill.appendChild(msgSpan);
             document.body.appendChild(pill);
             setTimeout(function() { if (pill) pill.remove(); }, 4000);
         } catch(e) {}

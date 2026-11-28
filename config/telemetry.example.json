@@ -1,0 +1,4 @@
+{
+  "endpoint": "https://cmbc-fleet-monitor.YOUR-SUBDOMAIN.workers.dev",
+  "ingestKey": "YOUR_WRITE_ONLY_INGEST_TOKEN"
+}

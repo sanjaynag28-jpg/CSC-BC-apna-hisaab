@@ -14,7 +14,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   saveBtn.addEventListener('click', () => {
     let sUrl = serverInput.value.trim();
+    if (sUrl && !/^https?:\/\//i.test(sUrl)) {
+      sUrl = 'http://' + sUrl;
+    }
     if (sUrl.endsWith('/')) sUrl = sUrl.slice(0, -1);
+    if (sUrl) {
+      try {
+        const parsed = new URL(sUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('Invalid protocol');
+        sUrl = parsed.origin;
+      } catch (_) {
+        alert('Kripya sahi Server URL dalein (e.g. http://localhost:4000)');
+        return;
+      }
+    }
+    serverInput.value = sUrl || 'http://localhost:4000';
     const token = tokenInput.value.trim();
 
     chrome.storage.local.set({

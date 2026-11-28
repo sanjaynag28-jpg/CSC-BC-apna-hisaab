@@ -1108,9 +1108,13 @@ $BtnGenerateKey.Add_Click({
         $expiryYmd = "LIFETIME"
     }
 
-    $nodeCmd = "const lm = require('./utils/licenseManager'); console.log(lm.generatePersonalKey('$planCode', '$hw', '$expiryYmd'));"
+    $env:CM_PLAN_CODE = $planCode
+    $env:CM_HW_ID = $hw
+    $env:CM_EXP_YMD = $expiryYmd
+    $nodeCmd = "const lm = require('./utils/licenseManager'); console.log(lm.generatePersonalKey(process.env.CM_PLAN_CODE, process.env.CM_HW_ID, process.env.CM_EXP_YMD));"
     try {
         $key = & node -e $nodeCmd
+        Remove-Item Env:CM_PLAN_CODE, Env:CM_HW_ID, Env:CM_EXP_YMD -ErrorAction SilentlyContinue
         $TxtGeneratedKey.Text = $key.Trim()
         $TxtStatusLog.Text = "✓ पर्सनल की सफलतापूर्वक जनरेट हो गई!"
         $TxtStatusLog.Foreground = [Windows.Media.Brushes]::Green
@@ -1195,12 +1199,17 @@ $BtnSavePush.Add_Click({
     $TxtStatusLog.Text = "1/3 config/licenses.json स्थानीय रूप से सुरक्षित हो रहा है..."
     $TxtStatusLog.Foreground = [Windows.Media.Brushes]::DarkGoldenrod
 
-    # Update active key in dictionary
+    # Update active key in dictionary (remove old key if code was renamed)
     $selKey = $ComboKeys.SelectedItem
     if ($selKey) {
+        $newKeyCode = $TxtKeyCode.Text.Trim().ToUpper()
+        if ($newKeyCode -and $newKeyCode -ne $selKey -and $script:keysDict.ContainsKey($selKey)) {
+            $script:keysDict.Remove($selKey)
+        }
+        $targetDictKey = if ($newKeyCode) { $newKeyCode } else { $selKey }
         $expDateStr = if ($DpExpiryDate.SelectedDate) { $DpExpiryDate.SelectedDate.ToString("yyyy-MM-dd") } else { (Get-Date).AddDays(90).ToString("yyyy-MM-dd") }
-        $script:keysDict[$selKey] = [PSCustomObject]@{
-            key = $TxtKeyCode.Text.Trim().ToUpper()
+        $script:keysDict[$targetDictKey] = [PSCustomObject]@{
+            key = $targetDictKey
             plan = $TxtPlanName.Text.Trim()
             planHindi = $TxtPlanName.Text.Trim()
             expiryDate = $expDateStr
@@ -1306,10 +1315,12 @@ $BtnSavePush.Add_Click({
         Set-Location $dir
         $out = @()
         $out += (& git add config/licenses.json 2>&1)
+        if ($LASTEXITCODE -ne 0) { return [PSCustomObject]@{ ok = $false; log = ($out -join "`n") } }
         $out += (& git commit -m "chore(license): update cloud licenses config via Master License Wizard" 2>&1)
         $out += (& git push origin sqlite 2>&1)
+        if ($LASTEXITCODE -ne 0) { return [PSCustomObject]@{ ok = $false; log = ($out -join "`n") } }
         $out += (& git push origin sqlite:main 2>&1)
-        return ($out -join "`n")
+        return [PSCustomObject]@{ ok = ($LASTEXITCODE -eq 0); log = ($out -join "`n") }
     }
 
     $script:pushJob = Start-Job -ScriptBlock $jobScript -ArgumentList $ProjectDir
@@ -1338,18 +1349,24 @@ $BtnSavePush.Add_Click({
             $PbPush.Visibility = [Windows.Visibility]::Collapsed
             $BtnSavePush.IsEnabled = $true
 
-            $output = ""
+            $resObj = $null
             if ($curJob) {
                 try {
-                    $output = (Receive-Job -Job $curJob -ErrorAction SilentlyContinue) -join "`n"
+                    $resObj = Receive-Job -Job $curJob -ErrorAction SilentlyContinue | Select-Object -Last 1
                     Remove-Job -Job $curJob -Force -ErrorAction SilentlyContinue
                 } catch { }
             }
 
-            $TxtStatusLog.Text = "🎉 बधाई! GitHub पर सफलतापूर्वक अपडेट हो गया! सभी ग्राहकों का सॉफ़्टवेयर नई तारीख पर सक्रिय है।"
-            $TxtStatusLog.Foreground = [Windows.Media.Brushes]::Green
-
-            [System.Windows.MessageBox]::Show("🎉 बधाई संजय जी!`n`nक्लाउड लाइसेंस कॉन्फ़िग सफलतापूर्वक GitHub पर पुश हो गया है!`nसभी 500+ ग्राहकों के कंप्यूटर पर नई तारीख व नोटिस स्वतः लागू हो गए हैं।", "GitHub Push Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            if ($resObj -and $resObj.ok) {
+                $TxtStatusLog.Text = "🎉 बधाई! GitHub पर सफलतापूर्वक अपडेट हो गया! सभी ग्राहकों का सॉफ़्टवेयर नई तारीख पर सक्रिय है।"
+                $TxtStatusLog.Foreground = [Windows.Media.Brushes]::Green
+                [System.Windows.MessageBox]::Show("🎉 बधाई संजय जी!`n`nक्लाउड लाइसेंस कॉन्फ़िग सफलतापूर्वक GitHub पर पुश हो गया है!`nसभी 500+ ग्राहकों के कंप्यूटर पर नई तारीख व नोटिस स्वतः लागू हो गए हैं।", "GitHub Push Successful", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            } else {
+                $errDetail = if ($resObj -and $resObj.log) { $resObj.log } else { "Git push failed." }
+                $TxtStatusLog.Text = "❌ GitHub Push विफल रहा! स्थानीय फ़ाइल सेव है।"
+                $TxtStatusLog.Foreground = [Windows.Media.Brushes]::Red
+                [System.Windows.MessageBox]::Show("❌ GitHub Push विफल रहा:`n`n$errDetail", "GitHub Push Failed", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            }
         }
     })
     $script:pushTimer.Start()

@@ -1070,15 +1070,47 @@ router.patch('/:id/status', async (req, res) => {
                 await processKhataAfterChange(tQuery, cur.CustomerID);
             }
 
-            // === GAP-1 FIX: Mirror Income row ko naye PaidAmount se sync karo ===
+            // === GAP-1 FIX: Mirror Income row ko naye PaidAmount se sync karo (create if previously 0 paid) ===
             const txnAcc = await tQuery(`
                 SELECT TOP 1 TransactionID, AccountID FROM Transactions
-                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType = 'FEE_IN' AND IsDeleted = 0
+                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType IN ('FEE_IN', 'UPPCL_IN') AND IsDeleted = 0
             `, { userId, id });
             if (txnAcc.recordset.length && newPaid > 0) {
                 await tQuery(`UPDATE Transactions SET Amount = @amt, UpdatedAt = GETDATE() WHERE TransactionID = @txnId`,
                     { amt: newPaid, txnId: txnAcc.recordset[0].TransactionID });
                 await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: txnAcc.recordset[0].AccountID });
+            } else if (!txnAcc.recordset.length && newPaid > 0) {
+                let targetAccId = cur.AccountID || null;
+                if (!targetAccId) {
+                    const defCash = await tQuery(
+                        `SELECT TOP 1 AccountID FROM Accounts WHERE UserID = @userId AND IsActive = 1 ORDER BY CASE WHEN AccountType = 'Cash' THEN 0 ELSE 1 END, AccountID ASC`,
+                        { userId }
+                    );
+                    targetAccId = defCash.recordset?.[0]?.AccountID || null;
+                }
+                if (targetAccId) {
+                    await tQuery(`
+                        INSERT INTO Transactions (
+                            TransDate, TransTime, TransType, Amount, AccountID,
+                            Description, Reference, UserID, Tags,
+                            SourceModule, SourceID, LineType
+                        )
+                        VALUES (
+                            @date, CAST(GETDATE() AS TIME), 'Income', @amt, @accId,
+                            @desc, @ref, @userId, 'CSC_FEE_IN',
+                            'CSC', @id, 'FEE_IN'
+                        )
+                    `, {
+                        date: toDateOnly(cur.ApplyDate) || todayLocal(),
+                        amt: newPaid,
+                        accId: targetAccId,
+                        desc: `CSC Fee - ${cur.ServiceType} (${cur.CustomerName})`,
+                        ref: `APP-${id}`,
+                        userId,
+                        id
+                    });
+                    await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: targetAccId });
+                }
             }
 
             // Propagate Universal SN to any new Transactions in status update
@@ -1303,10 +1335,10 @@ router.put('/:id', async (req, res) => {
             const targetAccId = isOnline ? userBankAccId : userCashAccId;
             const walletAccId = userBankAccId; // Govt fee always cuts online from user's bank account
 
-            // 1. Sync Income Transaction (CSC_FEE_IN)
+            // 1. Sync Income Transaction (CSC_FEE_IN / UPPCL_IN)
             const feeInCheck = await tQuery(`
-                SELECT TransactionID, AccountID FROM Transactions 
-                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType = 'FEE_IN' AND IsDeleted = 0
+                SELECT TransactionID, AccountID, LineType FROM Transactions 
+                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType IN ('FEE_IN', 'UPPCL_IN') AND IsDeleted = 0
             `, { userId, id });
 
             if (feeInCheck.recordset.length > 0) {
@@ -1361,10 +1393,10 @@ router.put('/:id', async (req, res) => {
                 await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: targetAccId });
             }
 
-            // 2. Sync Govt Fee Outflow Transaction (CSC_GOVT_FEE_OUT)
+            // 2. Sync Govt Fee Outflow Transaction (CSC_GOVT_FEE_OUT / UPPCL_OUT)
             const govtOutCheck = await tQuery(`
-                SELECT TransactionID, AccountID FROM Transactions 
-                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType = 'GOVT_OUT' AND IsDeleted = 0
+                SELECT TransactionID, AccountID, LineType FROM Transactions 
+                WHERE UserID = @userId AND SourceModule = 'CSC' AND SourceID = @id AND LineType IN ('GOVT_OUT', 'UPPCL_OUT') AND IsDeleted = 0
             `, { userId, id });
 
             if (govtOutCheck.recordset.length > 0) {

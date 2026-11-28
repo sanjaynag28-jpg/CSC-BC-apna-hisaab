@@ -5,17 +5,76 @@
  */
 const path = require('path');
 const fs = require('fs');
+const { AsyncLocalStorage } = require('async_hooks');
 const Database = require('better-sqlite3');
+const { getCurrentActor, runWithActor } = require('../utils/requestContext');
 
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'cash_management.db');
+const dbPath = process.env.CMBC_DB_PATH ? path.resolve(process.env.CMBC_DB_PATH) : path.join(dataDir, 'cash_management.db');
 let db = null;
 let dbSetupDone = false;
 let activeTransactions = 0;
+const txAls = new AsyncLocalStorage();
+let txMutex = Promise.resolve();
+let savepointSeq = 0;
+
+const CREATED_BY_TABLES = new Map([
+    ['accounts', 'Accounts'],
+    ['auditlogs', 'AuditLogs'],
+    ['bccountersessions', 'BCCounterSessions'],
+    ['bctransactions', 'BCTransactions'],
+    ['billpayments', 'BillPayments'],
+    ['bills', 'Bills'],
+    ['budgets', 'Budgets'],
+    ['categories', 'Categories'],
+    ['cscapplications', 'CSCApplications'],
+    ['customers', 'Customers'],
+    ['documents', 'Documents'],
+    ['invoices', 'Invoices'],
+    ['khataentries', 'KhataEntries'],
+    ['pacentries', 'PACEntries'],
+    ['parties', 'Parties'],
+    ['recurringtransactions', 'RecurringTransactions'],
+    ['servicerecords', 'ServiceRecords'],
+    ['transactions', 'Transactions'],
+    ['uclupdates', 'UCLUpdates'],
+    ['universaltxnregistry', 'UniversalTxnRegistry']
+]);
+
+function stampCreatedByAfterInsert(d, sqlText, rowid) {
+    const actor = getCurrentActor();
+    if (!actor || !actor.actorUserId) return;
+    const match = String(sqlText || '').match(/^\s*INSERT\s+(?:OR\s+\w+\s+)?INTO\s+["`\[]?([A-Za-z0-9_]+)["`\]]?/i);
+    if (!match) return;
+    const canonical = CREATED_BY_TABLES.get(match[1].toLowerCase());
+    if (!canonical) return;
+
+    let targetRowid = rowid;
+    if (!targetRowid) {
+        try {
+            targetRowid = d.prepare('SELECT last_insert_rowid() AS id').get()?.id;
+        } catch (_) {
+            targetRowid = null;
+        }
+    }
+    if (!targetRowid) return;
+
+    try {
+        d.prepare(
+            `UPDATE "${canonical}" SET CreatedByUserID = COALESCE(CreatedByUserID, @uid), CreatedByName = COALESCE(CreatedByName, @uname) WHERE rowid = @rid`
+        ).run({
+            uid: actor.actorUserId,
+            uname: actor.actorName || null,
+            rid: targetRowid
+        });
+    } catch (_) {
+        // Legacy/partial test schemas may omit CreatedBy columns — never break the business write
+    }
+}
 
 function getActiveTransactions() {
     return activeTransactions;
@@ -148,19 +207,27 @@ if (process.env.CMBC_DEFER_DB_INIT !== '1') {
     getDb();
 }
 
-// Mock mssql types
+// Mock mssql types (supports both property refs like sql.Int and calls like sql.Char(64) / sql.NVarChar(sql.MAX))
+function makeSqlType(name) {
+    const typeFn = length => ({ name, length });
+    typeFn.typeName = name;
+    return typeFn;
+}
+
 const sql = {
-    Int: 'Int',
-    BigInt: 'BigInt',
-    NVarChar: 'NVarChar',
-    VarChar: 'VarChar',
-    Text: 'Text',
-    Decimal: 'Decimal',
-    Numeric: 'Numeric',
-    Bit: 'Bit',
-    Date: 'Date',
-    DateTime: 'DateTime',
-    UniqueIdentifier: 'UniqueIdentifier'
+    MAX: -1,
+    Int: makeSqlType('Int'),
+    BigInt: makeSqlType('BigInt'),
+    NVarChar: makeSqlType('NVarChar'),
+    VarChar: makeSqlType('VarChar'),
+    Char: makeSqlType('Char'),
+    Text: makeSqlType('Text'),
+    Decimal: makeSqlType('Decimal'),
+    Numeric: makeSqlType('Numeric'),
+    Bit: makeSqlType('Bit'),
+    Date: makeSqlType('Date'),
+    DateTime: makeSqlType('DateTime'),
+    UniqueIdentifier: makeSqlType('UniqueIdentifier')
 };
 
 function normalizeValue(v) {
@@ -196,6 +263,34 @@ function normalizeParams(params) {
 
 function translateSql(queryStr) {
     let s = String(queryStr || '').trim();
+
+    // 0. Strip SQL Server N'...' Unicode string literal prefix outside quoted strings
+    let strippedN = '';
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch === "'") {
+            strippedN += ch;
+            i++;
+            while (i < s.length) {
+                strippedN += s[i];
+                if (s[i] === "'") {
+                    if (s[i + 1] === "'") {
+                        strippedN += s[i + 1];
+                        i++;
+                    } else {
+                        break;
+                    }
+                }
+                i++;
+            }
+            continue;
+        }
+        if ((ch === 'N' || ch === 'n') && s[i + 1] === "'" && (i === 0 || !/[A-Za-z0-9_$]/.test(s[i - 1]))) {
+            continue;
+        }
+        strippedN += ch;
+    }
+    s = strippedN;
 
     // 1. Remove dbo prefix
     s = s.replace(/\[dbo\]\.|\bdbo\./gi, '');
@@ -256,8 +351,49 @@ function translateSql(queryStr) {
     s = s.replace(/CONVERT\s*\(\s*DATE\s*,\s*GETDATE\s*\(\s*\)\s*\)/gi, "date('now', 'localtime')");
     s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*DATE\s*\)/gi, "date('now', 'localtime')");
     s = s.replace(/CAST\s*\(\s*GETDATE\s*\(\s*\)\s*AS\s*TIME\s*\)/gi, "time('now', 'localtime')");
-    s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+TIME\s*\)/gi, "time($1)");
-    s = s.replace(/CAST\s*\(\s*([^()]+)\s+AS\s+DATE\s*\)/gi, "date($1)");
+    // Balanced CAST(... AS DATETIME|TIME|DATE) translation for nested expressions (e.g. CAST(ISNULL(a, CAST(b AS DATETIME)) AS TIME))
+    {
+        const fnByType = { DATETIME: 'datetime', TIME: 'time', DATE: 'date' };
+        let changed = true;
+        let guard = 0;
+        while (changed && guard++ < 25) {
+            changed = false;
+            const castRx = /\bCAST\s*\(/gi;
+            let m;
+            while ((m = castRx.exec(s)) !== null) {
+                let depth = 1;
+                let i = m.index + m[0].length;
+                let inStr = false;
+                while (i < s.length && depth > 0) {
+                    const ch = s[i];
+                    if (inStr) {
+                        if (ch === "'") {
+                            if (s[i + 1] === "'") i++;
+                            else inStr = false;
+                        }
+                    } else if (ch === "'") {
+                        inStr = true;
+                    } else if (ch === '(') {
+                        depth++;
+                    } else if (ch === ')') {
+                        depth--;
+                        if (depth === 0) break;
+                    }
+                    i++;
+                }
+                if (depth === 0) {
+                    const inner = s.slice(m.index + m[0].length, i);
+                    const asMatch = inner.match(/^([\s\S]+?)\s+AS\s+(DATETIME|TIME|DATE)\s*$/i);
+                    if (asMatch) {
+                        const fn = fnByType[asMatch[2].toUpperCase()];
+                        s = s.slice(0, m.index) + `${fn}(${asMatch[1].trim()})` + s.slice(i + 1);
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
     s = s.replace(/GETDATE\s*\(\s*\)/gi, "datetime('now', 'localtime')");
     s = s.replace(/SYSUTCDATETIME\s*\(\s*\)/gi, "datetime('now')");
 
@@ -451,10 +587,36 @@ async function handleStoredProcedure(execSql, rawParams) {
     return { recordset: [], rowsAffected: [0] };
 }
 
+function runWithWriteMutex(taskFn) {
+    let releaseMutex;
+    const myLock = new Promise((resolve) => { releaseMutex = resolve; });
+    const prevMutex = txMutex;
+    txMutex = txMutex.then(() => myLock, () => myLock);
+    return prevMutex.then(async () => {
+        try {
+            return await taskFn();
+        } finally {
+            releaseMutex();
+        }
+    });
+}
+
 async function query(queryStr, rawParams = {}) {
     const s = String(queryStr || '').trim();
-    if (/^\s*EXEC\s+sp_/i.test(s)) {
-        return await handleStoredProcedure(s, rawParams);
+    const strippedLead = s.replace(/^(?:\s*(?:--[^\n]*\n|\/\*[\s\S]*?\*\/))+/, '').trim();
+    const isWriteQuery = /^(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|REPLACE|EXEC\s+sp_)/i.test(strippedLead)
+        || /^WITH\b[\s\S]*?\b(?:INSERT|UPDATE|DELETE)\b/i.test(strippedLead);
+
+    if (/^EXEC\s+sp_/i.test(strippedLead)) {
+        if (!txAls.getStore()) {
+            return await runWithWriteMutex(() => handleStoredProcedure(strippedLead, rawParams));
+        }
+        return await handleStoredProcedure(strippedLead, rawParams);
+    }
+
+    // Prevent standalone writes (including commented / CTE writes) from interleaving with an open transaction
+    if (!txAls.getStore() && isWriteQuery) {
+        await txMutex;
     }
 
     const d = getDb();
@@ -476,7 +638,9 @@ async function query(queryStr, rawParams = {}) {
         const stmts = stripped.split(';').map(x => x.trim()).filter(x => x.length > 0);
 
         if (stmts.length > 1) {
-            let lastResult = { recordset: [], recordsets: [[]], rowsAffected: [0] };
+            const allRecordsets = [];
+            const allRowsAffected = [];
+            let lastInsertId = undefined;
             for (let i = 0; i < stmts.length; i++) {
                 const singleSql = stmts[i];
                 const pMatches = singleSql.match(/@([a-zA-Z0-9_]+)/g);
@@ -488,32 +652,50 @@ async function query(queryStr, rawParams = {}) {
                     }
                 }
                 const isSel = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(singleSql) || /\bRETURNING\b/i.test(singleSql);
+                const isIns = /^\s*INSERT\b/i.test(singleSql);
                 const stmt = d.prepare(singleSql);
                 if (isSel) {
                     const rows = stmt.all(stmtParams);
-                    lastResult = {
-                        recordset: rows,
-                        recordsets: [rows],
-                        rowsAffected: [rows.length]
-                    };
+                    if (isIns && rows.length > 0) {
+                        stampCreatedByAfterInsert(d, singleSql, null);
+                    }
+                    allRecordsets.push(rows);
+                    allRowsAffected.push(rows.length);
                 } else {
                     const info = stmt.run(stmtParams);
-                    lastResult = {
-                        recordset: [],
-                        recordsets: [[]],
-                        rowsAffected: [info.changes],
-                        insertId: info.lastInsertRowid
-                    };
+                    if (isIns && info.changes > 0 && info.lastInsertRowid) {
+                        stampCreatedByAfterInsert(d, singleSql, info.lastInsertRowid);
+                    }
+                    allRowsAffected.push(info.changes);
+                    if (info.lastInsertRowid) lastInsertId = info.lastInsertRowid;
                 }
             }
-            return lastResult;
+            return {
+                recordset: allRecordsets[0] || [],
+                recordsets: allRecordsets.length ? allRecordsets : [[]],
+                rowsAffected: allRowsAffected.length ? allRowsAffected : [0],
+                ...(lastInsertId !== undefined ? { insertId: lastInsertId } : {})
+            };
         }
 
         const isSelect = /^\s*(SELECT|PRAGMA|WITH)\b/i.test(cleanSql) || /\bRETURNING\b/i.test(cleanSql);
+        const isInsert = /^\s*INSERT\b/i.test(cleanSql);
         const stmt = d.prepare(cleanSql);
 
         if (isSelect) {
             const rows = stmt.all(params);
+            if (isInsert && rows.length > 0) {
+                stampCreatedByAfterInsert(d, cleanSql, null);
+                const actor = getCurrentActor();
+                if (actor && actor.actorUserId) {
+                    for (const r of rows) {
+                        if (r && typeof r === 'object') {
+                            if (r.CreatedByUserID === undefined || r.CreatedByUserID === null) r.CreatedByUserID = actor.actorUserId;
+                            if (r.CreatedByName === undefined || r.CreatedByName === null) r.CreatedByName = actor.actorName || null;
+                        }
+                    }
+                }
+            }
             return {
                 recordset: rows,
                 recordsets: [rows],
@@ -521,6 +703,9 @@ async function query(queryStr, rawParams = {}) {
             };
         } else {
             const info = stmt.run(params);
+            if (isInsert && info.changes > 0 && info.lastInsertRowid) {
+                stampCreatedByAfterInsert(d, cleanSql, info.lastInsertRowid);
+            }
             return {
                 recordset: [],
                 recordsets: [[]],
@@ -537,21 +722,56 @@ async function query(queryStr, rawParams = {}) {
 
 async function withTransaction(callback) {
     const d = getDb();
-    activeTransactions++;
-    d.exec('BEGIN TRANSACTION');
-    try {
-        const transQuery = async (queryStr, rawParams = {}) => {
-            return await query(queryStr, rawParams);
-        };
-        const result = await callback(transQuery);
-        d.exec('COMMIT');
-        return result;
-    } catch (err) {
-        try { d.exec('ROLLBACK'); } catch (_) { }
-        throw err;
-    } finally {
-        activeTransactions = Math.max(0, activeTransactions - 1);
+
+    // Support nested withTransaction calls inside the same async execution chain via SAVEPOINT
+    if (txAls.getStore()) {
+        const spName = `sp_${++savepointSeq}`;
+        d.exec(`SAVEPOINT ${spName}`);
+        try {
+            const transQuery = async (queryStr, rawParams = {}) => {
+                return await query(queryStr, rawParams);
+            };
+            const result = await callback(transQuery);
+            d.exec(`RELEASE SAVEPOINT ${spName}`);
+            return result;
+        } catch (err) {
+            try { d.exec(`ROLLBACK TO SAVEPOINT ${spName}`); } catch (_) { }
+            try { d.exec(`RELEASE SAVEPOINT ${spName}`); } catch (_) { }
+            throw err;
+        }
     }
+
+    // Serialize top-level SQLite write transactions across concurrent LAN/local requests
+    const callerActor = getCurrentActor();
+    let releaseMutex;
+    const myLock = new Promise((resolve) => { releaseMutex = resolve; });
+    const prevMutex = txMutex;
+    txMutex = txMutex.then(() => myLock, () => myLock);
+
+    await prevMutex;
+
+    return runWithActor(callerActor, () => txAls.run(true, async () => {
+        let txStarted = false;
+        activeTransactions++;
+        try {
+            d.exec('BEGIN IMMEDIATE');
+            txStarted = true;
+            const transQuery = async (queryStr, rawParams = {}) => {
+                return await query(queryStr, rawParams);
+            };
+            const result = await callback(transQuery);
+            d.exec('COMMIT');
+            return result;
+        } catch (err) {
+            if (txStarted) {
+                try { d.exec('ROLLBACK'); } catch (_) { }
+            }
+            throw err;
+        } finally {
+            activeTransactions = Math.max(0, activeTransactions - 1);
+            releaseMutex();
+        }
+    }));
 }
 
 async function isDbAlive() {
@@ -601,6 +821,7 @@ module.exports = {
     getMasterPool,
     isDbAlive,
     query,
+    translateSql,
     withTransaction,
     closePool,
     sql

@@ -5,6 +5,16 @@
 // ============================================================================
 
 (function () {
+    function escUduHtml(val) {
+        if (val === null || val === undefined) return '';
+        return String(val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     // ------------------------------------------------------------------------
     // 1. INJECT STYLES (Supports Light and Dark Theme seamlessly)
     // ------------------------------------------------------------------------
@@ -294,7 +304,7 @@
                     <div class="udu-header">
                         <div class="udu-title-wrap">
                             <span class="udu-title-icon">📎</span>
-                            <span class="udu-title">${cleanTitle}</span>
+                            <span class="udu-title">${escUduHtml(cleanTitle)}</span>
                             <span class="udu-badge" id="${containerId}_countBadge">0 Documents</span>
                         </div>
                         <div class="udu-header-actions">
@@ -451,12 +461,12 @@
                 <div class="udu-file-item">
                     ${f.isImage ? `<img src="${f.previewUrl}" class="udu-file-thumb" alt="Preview">` : `<div class="udu-file-thumb">${getFileCategoryIcon(f.name)}</div>`}
                     <div class="udu-file-info">
-                        <input type="text" class="udu-file-name-input" value="${(f.customName || f.name).replace(/"/g, '&quot;')}" onchange="UniversalDocUploader.updateCustomName('${containerId}', '${f.id}', this.value)" placeholder="File Name (Rename karein)">
+                        <input type="text" class="udu-file-name-input" value="${escUduHtml(f.customName || f.name)}" onchange="UniversalDocUploader.updateCustomName('${escUduHtml(containerId)}', '${escUduHtml(f.id)}', this.value)" placeholder="File Name (Rename karein)">
                         <div class="udu-file-meta">
-                            <span>Original: ${f.name}</span> • <span>${f.formattedSize}</span>
+                            <span>Original: ${escUduHtml(f.name)}</span> • <span>${escUduHtml(f.formattedSize)}</span>
                         </div>
                     </div>
-                    <button type="button" class="udu-file-remove-btn" onclick="UniversalDocUploader.removeStagedFile('${containerId}', '${f.id}')" title="Hataayein">✖</button>
+                    <button type="button" class="udu-file-remove-btn" onclick="UniversalDocUploader.removeStagedFile('${escUduHtml(containerId)}', '${escUduHtml(f.id)}')" title="Hataayein">✖</button>
                 </div>
             `).join('');
         },
@@ -503,7 +513,7 @@
                         <div class="udu-file-item" style="background: rgba(15, 23, 42, 0.04); border-color: rgba(148, 163, 184, 0.3);">
                             ${isImg ? `<img src="${viewUrl}" class="udu-file-thumb" alt="" onerror="this.style.opacity='0.4';" onclick="openCustomerDocsModal(${d.CustomerID || 0}, '', ${d.DocumentID})" style="cursor: pointer;">` : `<div class="udu-file-thumb" onclick="openCustomerDocsModal(${d.CustomerID || 0}, '', ${d.DocumentID})" style="cursor: pointer;">${getFileCategoryIcon(d.FileName)}</div>`}
                             <div class="udu-file-info" style="cursor: pointer;" onclick="openCustomerDocsModal(${d.CustomerID || 0}, '', ${d.DocumentID})">
-                                <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${(d.OriginalName || d.FileName).replace(/</g, '&lt;')}</div>
+                                <div style="font-size: 12px; font-weight: 700; color: var(--text-primary);">${escUduHtml(d.OriginalName || d.FileName)}</div>
                                 <div class="udu-file-meta">
                                     <span>${formatBytes(d.FileSize)}</span> • <span>${new Date(d.CreatedAt).toLocaleDateString('hi-IN')}</span>
                                 </div>
@@ -686,7 +696,7 @@
             const res = await fetch(`/api/documents/customer/${currentCustDocsId}`);
             const json = await res.json();
             if (!json.success) {
-                if (listContainer) listContainer.innerHTML = `<div style="color: #ef4444; padding: 14px;">Error: ${json.error || 'Load failed'}</div>`;
+                if (listContainer) listContainer.innerHTML = `<div style="color: #ef4444; padding: 14px;">Error: ${escUduHtml(json.error || 'Load failed')}</div>`;
                 return;
             }
 
@@ -723,7 +733,7 @@
             }
         } catch (err) {
             console.error('reloadCurrentCustomerDocs error:', err);
-            if (listContainer) listContainer.innerHTML = `<div style="color: #ef4444; padding: 14px;">Error: ${err.message}</div>`;
+            if (listContainer) listContainer.innerHTML = `<div style="color: #ef4444; padding: 14px;">Error: ${escUduHtml(err.message)}</div>`;
         }
     };
 
@@ -747,12 +757,12 @@
             const viewUrl = `/api/documents/${d.DocumentID}/view`;
             const isActive = currentSelectedDoc && currentSelectedDoc.DocumentID === d.DocumentID;
             return `
-                <div class="udoc-doc-card ${isActive ? 'active' : ''}" id="udocCard_${d.DocumentID}" onclick="udocSelectDoc(${d.DocumentID})">
+                <div class="udoc-doc-card ${isActive ? 'active' : ''}" id="udocCard_${Number(d.DocumentID)}" onclick="udocSelectDoc(${Number(d.DocumentID)})">
                     ${isImg ? `<img src="${viewUrl}" class="udoc-doc-thumb" alt="" onerror="this.style.opacity='0.4';">` : `<div class="udoc-doc-thumb">${getFileCategoryIcon(d.FileName)}</div>`}
                     <div class="udoc-doc-info">
-                        <div class="udoc-doc-title" title="${(d.OriginalName || d.FileName).replace(/"/g, '&quot;')}">${(d.OriginalName || d.FileName).replace(/</g, '&lt;')}</div>
+                        <div class="udoc-doc-title" title="${escUduHtml(d.OriginalName || d.FileName)}">${escUduHtml(d.OriginalName || d.FileName)}</div>
                         <div class="udoc-doc-sub">
-                            <span>${d.Category || d.FileType || 'Doc'}</span> • <span>${formatBytes(d.FileSize)}</span> • <span>${new Date(d.CreatedAt).toLocaleDateString('hi-IN')}</span>
+                            <span>${escUduHtml(d.Category || d.FileType || 'Doc')}</span> • <span>${formatBytes(d.FileSize)}</span> • <span>${new Date(d.CreatedAt).toLocaleDateString('hi-IN')}</span>
                         </div>
                     </div>
                 </div>
@@ -787,7 +797,7 @@
         if (isImg) {
             contentEl.innerHTML = `
                 <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 20px;">
-                    <img id="udocPreviewImg" src="${viewUrl}" alt="${(doc.OriginalName || '').replace(/"/g, '&quot;')}" style="max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.2s ease; transform: scale(1.0); box-shadow: 0 4px 20px rgba(0,0,0,0.5); border-radius: 6px;">
+                    <img id="udocPreviewImg" src="${viewUrl}" alt="${escUduHtml(doc.OriginalName || '')}" style="max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.2s ease; transform: scale(1.0); box-shadow: 0 4px 20px rgba(0,0,0,0.5); border-radius: 6px;">
                 </div>
             `;
         } else if (isPdf) {
@@ -798,7 +808,7 @@
             contentEl.innerHTML = `
                 <div style="text-align: center; color: #94a3b8; padding: 40px;">
                     <div style="font-size: 56px; margin-bottom: 12px;">${getFileCategoryIcon(doc.FileName)}</div>
-                    <h3 style="color: #f8fafc; font-size: 16px; margin: 0 0 8px 0;">${(doc.OriginalName || doc.FileName).replace(/</g, '&lt;')}</h3>
+                    <h3 style="color: #f8fafc; font-size: 16px; margin: 0 0 8px 0;">${escUduHtml(doc.OriginalName || doc.FileName)}</h3>
                     <p style="font-size: 13px; color: #94a3b8;">Is format ka live preview browser me uplabdh nahi hai.</p>
                     <a href="/api/documents/${doc.DocumentID}/download" class="btn-primary" style="margin-top: 14px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; padding: 8px 18px; border-radius: 6px;" download>
                         <span>⬇️ Document Download Karein</span>

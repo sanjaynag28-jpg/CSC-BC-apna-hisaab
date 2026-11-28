@@ -11,12 +11,11 @@
     window.__CM_CONTENT_SCRIPT_LOADED__ = true;
 
     // Detect if this tab is the Cash Management Project dashboard
-    const isProjectTab = (
-        location.hostname === 'localhost' ||
-        location.hostname === '127.0.0.1' ||
-        location.hostname.includes('laptop-sanjay') ||
-        document.body.hasAttribute('data-cm-app') ||
-        document.title.includes('Cash Management')
+    const isProjectTab = Boolean(
+        (document.body && document.body.hasAttribute('data-cm-app')) ||
+        document.title.includes('Cash Management') ||
+        ((location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname.includes('laptop-sanjay')) &&
+         (location.port === '4000' || location.port === '3000'))
     );
 
     // ========================================================================
@@ -150,6 +149,18 @@
             return checksum === 0;
         };
 
+        function notifyBackgroundTypedAadhaar(digits) {
+            try {
+                if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
+                    chrome.runtime.sendMessage({
+                        action: 'RECORD_TYPED_AADHAAR',
+                        fullAadhaar: digits,
+                        origin: location.origin || location.href
+                    }, () => { void chrome.runtime.lastError; });
+                }
+            } catch (_) {}
+        }
+
         const recordPotentialAadhaar = (val, sourceEl = null) => {
             if (!val) return false;
             const rawValue = String(val).trim();
@@ -188,6 +199,7 @@
                             sourceEl._cm_full_aadhaar = digits;
                         } catch (_) {}
                     }
+                    notifyBackgroundTypedAadhaar(digits);
                     return true;
                 } catch (_) {}
             }
@@ -198,7 +210,7 @@
         function isAadhaarLikeInput(el) {
             if (!el || el.tagName !== 'INPUT') return false;
             const type = (el.type || 'text').toLowerCase();
-            if (type === 'button' || type === 'submit' || type === 'checkbox' || type === 'radio' || type === 'file') return false;
+            if (type === 'password' || type === 'hidden' || type === 'button' || type === 'submit' || type === 'checkbox' || type === 'radio' || type === 'file') return false;
 
             const name = (el.name || '').toLowerCase();
             const id = (el.id || '').toLowerCase();
@@ -345,6 +357,8 @@
     function watchLiveCustomerFormInputs() {
         function inspectAndRememberInput(el) {
             if (!el || !el.value) return;
+            const inputType = (el.type || 'text').toLowerCase();
+            if (inputType === 'password' || inputType === 'hidden') return;
             const val = String(el.value).trim();
             if (!val || val.length < 2) return;
 
@@ -375,6 +389,7 @@
             // 1. Aadhaar (12 digits)
             if (digits.length === 12 && !/^0{12}$/.test(digits) && !/^(\d)\1{11}$/.test(digits)) {
                 pushFormMemory('aadhaar', digits);
+                notifyBackgroundTypedAadhaar(digits);
                 return;
             }
 
@@ -755,8 +770,13 @@
         inputs.forEach(inp => {
             let label = '';
             if (inp.id) {
-                const l = document.querySelector(`label[for="${inp.id}"]`);
-                if (l) label = l.innerText;
+                try {
+                    const escapedId = (typeof CSS !== 'undefined' && typeof CSS.escape === 'function')
+                        ? CSS.escape(inp.id)
+                        : inp.id.replace(/([!"#$%&'()*+,.\/:;<=>?@[\\\]^`{|}~])/g, '\\$1');
+                    const l = document.querySelector(`label[for="${escapedId}"]`);
+                    if (l) label = l.innerText;
+                } catch (_) { }
             }
             if (!label && inp.placeholder) label = inp.placeholder;
             if (!label && inp.name) label = inp.name;
@@ -1587,6 +1607,34 @@
         return isCSC ? 'CSC' : 'AEPS';
     }
 
+    function buildBillDataFromUppcl(uppcl) {
+        return {
+            BillCategory: 'Electricity',
+            ProviderName: uppcl.Discom ? `UPPCL (${uppcl.Discom})` : 'UPPCL (MVVNL)',
+            ConsumerNumber: uppcl.ConsumerNumber,
+            BillNumber: uppcl.BillNumber,
+            BillDate: uppcl.BillDate,
+            DueDate: uppcl.DueDate,
+            CustomerName: cleanCustomerName(uppcl.CustomerName),
+            CustomerPhone: (uppcl.CustomerPhone || '').replace(/\D/g, '').slice(-10),
+            CustomerAadhaar: '',
+            TotalBillAmount: uppcl.TotalBillAmount || uppcl.PaidAmount || 0,
+            BillAmount: uppcl.PaidAmount || uppcl.TotalBillAmount || 0,
+            CustomerCharge: uppcl.CustomerCharge || 10,
+            TotalCollected: (uppcl.PaidAmount || uppcl.TotalBillAmount || 0) + (uppcl.CustomerCharge || 10),
+            CommissionEarned: uppcl.CommissionEarned || 0,
+            NetProfit: uppcl.NetProfit || 10,
+            RemainingArrear: uppcl.RemainingBill || 0,
+            PaymentMode: 'Cash',
+            Status: 'Success',
+            TxnReference: uppcl.ReceiptNo,
+            ReceiptNo: uppcl.ReceiptNo,
+            Discom: uppcl.Discom,
+            Division: uppcl.Division,
+            Notes: `Discom: ${uppcl.Discom || 'MVVNL'} | Div: ${uppcl.Division || ''}`
+        };
+    }
+
     function detectAndGrabData() {
         const pageType = detectPageType();
         const domPairs = extractKeyValuePairsFromDOM();
@@ -1594,31 +1642,7 @@
 
         if (pageType === 'BILL_PAYMENT') {
             const uppcl = parseUPPCLElectricity(rawText, typeof document !== 'undefined' ? document : null);
-            const billData = {
-                BillCategory: 'Electricity',
-                ProviderName: uppcl.Discom ? `UPPCL (${uppcl.Discom})` : 'UPPCL (MVVNL)',
-                ConsumerNumber: uppcl.ConsumerNumber,
-                BillNumber: uppcl.BillNumber,
-                BillDate: uppcl.BillDate,
-                DueDate: uppcl.DueDate,
-                CustomerName: cleanCustomerName(uppcl.CustomerName),
-                CustomerPhone: (uppcl.CustomerPhone || '').replace(/\D/g, '').slice(-10),
-                CustomerAadhaar: '',
-                TotalBillAmount: uppcl.TotalBillAmount || uppcl.PaidAmount || 0,
-                BillAmount: uppcl.PaidAmount || uppcl.TotalBillAmount || 0,
-                CustomerCharge: uppcl.CustomerCharge || 10,
-                TotalCollected: (uppcl.PaidAmount || uppcl.TotalBillAmount || 0) + (uppcl.CustomerCharge || 10),
-                CommissionEarned: uppcl.CommissionEarned || 0,
-                NetProfit: uppcl.NetProfit || 10,
-                RemainingArrear: uppcl.RemainingBill || 0,
-                PaymentMode: 'Cash',
-                Status: 'Success',
-                TxnReference: uppcl.ReceiptNo,
-                ReceiptNo: uppcl.ReceiptNo,
-                Discom: uppcl.Discom,
-                Division: uppcl.Division,
-                Notes: `Discom: ${uppcl.Discom || 'MVVNL'} | Div: ${uppcl.Division || ''}`
-            };
+            const billData = buildBillDataFromUppcl(uppcl);
             return {
                 success: !!(uppcl.ReceiptNo || uppcl.ConsumerNumber || uppcl.PaidAmount),
                 type: 'BILL_PAYMENT',
@@ -1634,31 +1658,7 @@
                 return {
                     success: !!(uppcl.ReceiptNo || uppcl.ConsumerNumber || uppcl.PaidAmount),
                     type: 'BILL_PAYMENT',
-                    data: {
-                        BillCategory: 'Electricity',
-                        ProviderName: uppcl.Discom ? `UPPCL (${uppcl.Discom})` : 'UPPCL (MVVNL)',
-                        ConsumerNumber: uppcl.ConsumerNumber,
-                        BillNumber: uppcl.BillNumber,
-                        BillDate: uppcl.BillDate,
-                        DueDate: uppcl.DueDate,
-                        CustomerName: cleanCustomerName(uppcl.CustomerName),
-                        CustomerPhone: (uppcl.CustomerPhone || '').replace(/\D/g, '').slice(-10),
-                        CustomerAadhaar: '',
-                        TotalBillAmount: uppcl.TotalBillAmount || uppcl.PaidAmount || 0,
-                        BillAmount: uppcl.PaidAmount || uppcl.TotalBillAmount || 0,
-                        CustomerCharge: uppcl.CustomerCharge || 10,
-                        TotalCollected: (uppcl.PaidAmount || uppcl.TotalBillAmount || 0) + (uppcl.CustomerCharge || 10),
-                        CommissionEarned: uppcl.CommissionEarned || 0,
-                        NetProfit: uppcl.NetProfit || 10,
-                        RemainingArrear: uppcl.RemainingBill || 0,
-                        PaymentMode: 'Cash',
-                        Status: 'Success',
-                        TxnReference: uppcl.ReceiptNo,
-                        ReceiptNo: uppcl.ReceiptNo,
-                        Discom: uppcl.Discom,
-                        Division: uppcl.Division,
-                        Notes: `Discom: ${uppcl.Discom || 'MVVNL'} | Div: ${uppcl.Division || ''}`
-                    },
+                    data: buildBillDataFromUppcl(uppcl),
                     pageUrl: location.href
                 };
             }
@@ -1838,10 +1838,21 @@
         return overlayEl;
     }
 
+    function escapeOverlayHtml(val) {
+        if (val === null || val === undefined) return '';
+        return String(val)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function renderOverlayContent(grabResult) {
         const overlay = createOrGetOverlay();
         const type = grabResult.type || 'AEPS';
         const d = grabResult.data || {};
+        const e = escapeOverlayHtml;
 
         overlay.innerHTML = `
             <div style="background: linear-gradient(135deg, #065f46, #047857); color: #fff; padding: 14px 18px; border-radius: 18px 18px 0 0; display: flex; justify-content: space-between; align-items: center;">
@@ -1854,7 +1865,7 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="background: rgba(255,255,255,0.22); color: #fff; font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 20px;">
-                        ${type === 'BILL_PAYMENT' ? '⚡ BILL PAY' : type}
+                        ${type === 'BILL_PAYMENT' ? '⚡ BILL PAY' : e(type)}
                     </span>
                     <button id="cm-overlay-close-btn" style="background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1;">✕</button>
                 </div>
@@ -1869,9 +1880,20 @@
                 <!-- Form Fields -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
-                        <label>Service Type</label>
+                        <label>${type === 'BILL_PAYMENT' ? 'Bill Category' : 'Service Type'}</label>
                         <select id="cm_f_service">
-                            ${type === 'CSC' ? `
+                            ${type === 'BILL_PAYMENT' ? `
+                                <option value="Electricity" ${(d.BillCategory || 'Electricity') === 'Electricity' ? 'selected' : ''}>⚡ Electricity (Bijli Bill)</option>
+                                <option value="Mobile Recharge" ${d.BillCategory === 'Mobile Recharge' ? 'selected' : ''}>Mobile Recharge</option>
+                                <option value="DTH Recharge" ${d.BillCategory === 'DTH Recharge' ? 'selected' : ''}>DTH Recharge</option>
+                                <option value="Gas" ${d.BillCategory === 'Gas' ? 'selected' : ''}>Gas Bill / Cylinder</option>
+                                <option value="Water" ${d.BillCategory === 'Water' ? 'selected' : ''}>Water Bill</option>
+                                <option value="EMI / Loan" ${d.BillCategory === 'EMI / Loan' ? 'selected' : ''}>EMI / Loan</option>
+                                <option value="Fastag" ${d.BillCategory === 'Fastag' ? 'selected' : ''}>Fastag</option>
+                                <option value="Broadband" ${d.BillCategory === 'Broadband' ? 'selected' : ''}>Broadband / Fiber</option>
+                                <option value="Insurance" ${d.BillCategory === 'Insurance' ? 'selected' : ''}>Insurance</option>
+                                <option value="Other" ${d.BillCategory === 'Other' ? 'selected' : ''}>Other</option>
+                            ` : (type === 'CSC' ? `
                                 <option value="PAN Card (NSDL / UTI)" ${d.ServiceType?.includes('PAN') ? 'selected' : ''}>PAN Card</option>
                                 <option value="Income Certificate (आय प्रमाण पत्र)" ${d.ServiceType?.includes('Income') ? 'selected' : ''}>आय प्रमाण पत्र</option>
                                 <option value="Caste Certificate (जाति प्रमाण पत्र)" ${d.ServiceType?.includes('Caste') ? 'selected' : ''}>जाति प्रमाण पत्र</option>
@@ -1884,71 +1906,71 @@
                                 <option value="Balance Enquiry" ${d.ServiceType === 'Balance Enquiry' ? 'selected' : ''}>Balance Enquiry</option>
                                 <option value="Mini Statement" ${d.ServiceType === 'Mini Statement' ? 'selected' : ''}>Mini Statement</option>
                                 <option value="Money Transfer" ${d.ServiceType === 'Money Transfer' ? 'selected' : ''}>Money Transfer</option>
-                            `}
+                            `)}
                         </select>
                     </div>
                     <div>
-                        <label>${type === 'CSC' ? 'Total Fee (₹)' : 'Amount (₹)'}</label>
-                        <input type="number" id="cm_f_amount" value="${d.Amount || d.TotalFee || ''}" placeholder="₹ 0.00" />
+                        <label>${type === 'BILL_PAYMENT' ? 'Bill Amount (₹)' : (type === 'CSC' ? 'Total Fee (₹)' : 'Amount (₹)')}</label>
+                        <input type="number" id="cm_f_amount" value="${e(d.Amount || d.BillAmount || d.PaidAmount || d.TotalFee || d.TotalBillAmount || '')}" placeholder="₹ 0.00" />
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
                         <label>Customer / Applicant Name</label>
-                        <input type="text" id="cm_f_name" value="${d.CustomerName || d.ApplicantName || ''}" placeholder="Grahak ka naam" />
+                        <input type="text" id="cm_f_name" value="${e(d.CustomerName || d.ApplicantName || '')}" placeholder="Grahak ka naam" />
                     </div>
                     <div>
                         <label>Mobile Number (10 Digits)</label>
-                        <input type="text" id="cm_f_mobile" value="${d.Mobile || ''}" placeholder="9876543210" maxlength="10" />
+                        <input type="text" id="cm_f_mobile" value="${e(d.Mobile || d.CustomerPhone || '')}" placeholder="9876543210" maxlength="10" />
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
                         <label>Aadhaar Number</label>
-                        <input type="text" id="cm_f_aadhaar" value="${d.Aadhaar || ''}" placeholder="XXXX XXXX 1234" />
+                        <input type="text" id="cm_f_aadhaar" value="${e(d.Aadhaar || d.CustomerAadhaar || '')}" placeholder="XXXX XXXX 1234" />
                     </div>
                     <div>
-                        <label>${type === 'CSC' ? 'Ack / Token Number' : 'RRN / UTR Number'}</label>
-                        <input type="text" id="cm_f_rrn" value="${d.RRN_UTR || d.AckNumber || ''}" placeholder="12 Digit RRN" />
+                        <label>${type === 'BILL_PAYMENT' ? 'Txn Ref / Receipt No' : (type === 'CSC' ? 'Ack / Token Number' : 'RRN / UTR Number')}</label>
+                        <input type="text" id="cm_f_rrn" value="${e(d.RRN_UTR || d.AckNumber || d.TxnReference || d.ReceiptNo || '')}" placeholder="${type === 'BILL_PAYMENT' ? 'Receipt / Ref No' : '12 Digit RRN'}" />
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div>
-                        <label>${type === 'CSC' ? 'Portal Name' : 'Bank Name'}</label>
-                        <input type="text" id="cm_f_bank" value="${d.BankName || d.PortalName || ''}" placeholder="Bank ka naam" />
+                        <label>${type === 'BILL_PAYMENT' ? 'Provider / Vibhag' : (type === 'CSC' ? 'Portal Name' : 'Bank Name')}</label>
+                        <input type="text" id="cm_f_bank" value="${e(d.BankName || d.PortalName || d.ProviderName || '')}" placeholder="${type === 'BILL_PAYMENT' ? 'UPPCL (MVVNL)' : 'Bank ka naam'}" />
                     </div>
                     <div>
-                        <label>${type === 'CSC' ? 'Apply Date' : 'Account Balance (₹)'}</label>
-                        <input type="${type === 'CSC' ? 'date' : 'number'}" id="cm_f_extra" value="${type === 'CSC' ? (d.ApplyDate || '') : (d.AccountBalance || '')}" placeholder="${type === 'CSC' ? '' : '₹ Balance'}" />
+                        <label>${type === 'BILL_PAYMENT' ? 'Consumer / Khata No' : (type === 'CSC' ? 'Apply Date' : 'Account Balance (₹)')}</label>
+                        <input type="${type === 'CSC' ? 'date' : (type === 'BILL_PAYMENT' ? 'text' : 'number')}" id="cm_f_extra" value="${type === 'BILL_PAYMENT' ? e(d.ConsumerNumber || '') : (type === 'CSC' ? e(d.ApplyDate || '') : e(d.AccountBalance || ''))}" placeholder="${type === 'BILL_PAYMENT' ? 'Consumer / Account No' : (type === 'CSC' ? '' : '₹ Balance')}" />
                     </div>
                 </div>
 
                 ${(d.ConsumerNumber || d.BillNumber || d.ServiceType?.includes('Electricity') || d.ServiceType?.includes('Bijli')) ? `
                     <div style="background: rgba(16, 185, 129, 0.08); border: 1.5px solid #10b981; border-radius: 10px; padding: 10px 12px; font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: #047857;">
-                            <span>⚡ UPPCL Bijli Bill Details (${d.Discom || 'MVVNL'})</span>
+                            <span>⚡ UPPCL Bijli Bill Details (${e(d.Discom || 'MVVNL')})</span>
                             <span style="background: #10b981; color: #fff; font-size: 10px; padding: 2px 7px; border-radius: 12px;">Verified</span>
                         </div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11.5px; color: #334155;">
-                            <div><b>Khata No:</b> ${d.ConsumerNumber || '-'}</div>
-                            <div><b>Bill No:</b> ${d.BillNumber || '-'}</div>
-                            <div><b>Kul Bill:</b> ₹${d.TotalBillAmount || d.TotalFee || 0}</div>
-                            <div><b>Jama Kiya:</b> ₹${d.PaidAmount || d.Amount || 0}</div>
+                            <div><b>Khata No:</b> ${e(d.ConsumerNumber || '-')}</div>
+                            <div><b>Bill No:</b> ${e(d.BillNumber || '-')}</div>
+                            <div><b>Kul Bill:</b> ₹${e(d.TotalBillAmount || d.TotalFee || 0)}</div>
+                            <div><b>Jama Kiya:</b> ₹${e(d.PaidAmount || d.BillAmount || d.Amount || 0)}</div>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px dashed #f59e0b; border-radius: 6px; padding: 6px 8px; margin-top: 4px;">
                             <span style="color: #b45309; font-weight: 700;">बकाया शेष (Remaining Bill):</span>
-                            <span style="color: #b45309; font-weight: 800; font-size: 13px;">₹${d.RemainingBill !== undefined ? d.RemainingBill : Math.max(0, (d.TotalBillAmount || 0) - (d.PaidAmount || 0))}</span>
+                            <span style="color: #b45309; font-weight: 800; font-size: 13px;">₹${e(d.RemainingArrear !== undefined ? d.RemainingArrear : (d.RemainingBill !== undefined ? d.RemainingBill : Math.max(0, (d.TotalBillAmount || 0) - (d.PaidAmount || d.BillAmount || 0))))}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 6px 8px;">
-                            <span style="color: #065f46; font-size: 11px;">Shulk: <b>₹${d.CustomerCharge || 10}</b> | Comm: <b>₹${d.CommissionEarned || 0}</b></span>
-                            <span style="color: #047857; font-weight: 800; font-size: 12px;">Munafa: ₹${d.NetProfit || 0}</span>
+                            <span style="color: #065f46; font-size: 11px;">Shulk: <b>₹${e(d.CustomerCharge || 10)}</b> | Comm: <b>₹${e(d.CommissionEarned || 0)}</b></span>
+                            <span style="color: #047857; font-weight: 800; font-size: 12px;">Munafa: ₹${e(d.NetProfit || 0)}</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center; background: #059669; color: #fff; border-radius: 6px; padding: 6px 8px; font-weight: 700;">
                             <span>Grahak Se Prapt Cash:</span>
-                            <span style="font-size: 14px;">₹${(parseFloat(d.PaidAmount || d.Amount || 0) + (d.CustomerCharge || 10)).toLocaleString('en-IN')}</span>
+                            <span style="font-size: 14px;">₹${(parseFloat(d.TotalCollected) || (parseFloat(d.PaidAmount || d.BillAmount || d.Amount || 0) + (parseFloat(d.CustomerCharge) || 10))).toLocaleString('en-IN')}</span>
                         </div>
                     </div>
                 ` : ''}
@@ -1991,7 +2013,9 @@
                 e.preventDefault();
                 const raw = pasteBox.value;
                 if (!raw) return;
-                const newD = (type === 'CSC') ? parseCSC(raw, {}) : parseAEPS(raw, {});
+                const newD = (type === 'BILL_PAYMENT')
+                    ? buildBillDataFromUppcl(parseUPPCLElectricity(raw, null))
+                    : ((type === 'CSC') ? parseCSC(raw, {}) : parseAEPS(raw, {}));
                 renderOverlayContent({ success: true, type, data: newD });
             };
         }
@@ -2100,7 +2124,8 @@
                     }, (res) => {
                         saveBtn.disabled = false;
                         if (res && res.success) {
-                            sealedAfterSubmit = true;
+                            let sealedAfterSubmit = true;
+                            saveBtn.dataset.sealed = String(sealedAfterSubmit);
                             showOverlayToast('✅ Database me entry safalta-purvak save ho gayi!');
                             setTimeout(hideOverlay, 1400);
                         } else {
@@ -2135,19 +2160,21 @@
         } catch (e) { }
 
         if (type === 'BILL_PAYMENT') {
+            const billAmt = cleanAmount(amount) || originalData.BillAmount || 0;
+            const chargeAmt = parseFloat(originalData.CustomerCharge || 10) || 0;
             return {
                 ...originalData,
-                BillCategory: originalData.BillCategory || 'Electricity',
-                ProviderName: originalData.ProviderName || bank || 'UPPCL (MVVNL)',
-                ConsumerNumber: originalData.ConsumerNumber || rrn,
+                BillCategory: service || originalData.BillCategory || 'Electricity',
+                ProviderName: bank || originalData.ProviderName || 'UPPCL (MVVNL)',
+                ConsumerNumber: String(extraVal || originalData.ConsumerNumber || rrn || '').trim(),
                 BillNumber: originalData.BillNumber || '',
                 CustomerName: cleanCustomerName(name),
-                CustomerPhone: cleanPhone(mobile),
-                BillAmount: cleanAmount(amount) || originalData.BillAmount || 0,
-                CustomerCharge: originalData.CustomerCharge || 10,
-                TotalCollected: (cleanAmount(amount) || originalData.BillAmount || 0) + (originalData.CustomerCharge || 10),
+                CustomerPhone: cleanPhone(mobile) || cleanPhone(originalData.CustomerPhone),
+                BillAmount: billAmt,
+                CustomerCharge: chargeAmt,
+                TotalCollected: billAmt + chargeAmt,
                 CommissionEarned: originalData.CommissionEarned || 0,
-                NetProfit: originalData.NetProfit || (originalData.CustomerCharge || 10),
+                NetProfit: originalData.NetProfit || chargeAmt,
                 RemainingArrear: originalData.RemainingArrear || 0,
                 PaymentMode: 'Cash',
                 Status: 'Success',

@@ -345,7 +345,7 @@ router.get('/customer-360/:id', async (req, res) => {
             WHERE b.UserID = @userId
               AND (
                 b.CustomerID = @id
-                OR (@phone IS NOT NULL AND @phone <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(b.CustomerPhone,''),' ',''),'-',''),'+',''),'  ','') LIKE '%' + RIGHT(@phoneDigits, 10) + '%')
+                OR (@phone IS NOT NULL AND @phone <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(IFNULL(b.CustomerPhone,''),' ',''),'-',''),'+',''),'  ','') LIKE ('%' || substr(@phoneDigits, -10) || '%'))
                 OR (@phone IS NOT NULL AND @phone <> '' AND @custName <> '' AND b.CustomerName = @custName AND ISNULL(b.CustomerPhone,'') <> '' AND REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(b.CustomerPhone,''),' ',''),'-',''),'+',''),'  ','') = REPLACE(REPLACE(REPLACE(REPLACE(@phone,' ',''),'-',''),'+',''),'  ',''))
               )
             ORDER BY b.TransDate DESC, b.TransTime DESC, b.BCID DESC
@@ -422,12 +422,13 @@ router.get('/customer-360/:id', async (req, res) => {
         const totalUCLDue = uclUpdates.reduce((acc, u) => acc + (parseFloat(u.BalanceAmount) || 0), 0);
 
         // G. Customer Profile Audit History (Track all updates, changes and diffs)
+        const isSuper = req.user?.Role === 'SuperAdmin' || Number(req.user?.UserID) === 1;
         const auditRes = await query(`
             SELECT TOP 100
                 LogID, Action, Module, TableName, RecordID, Description, EntityName, Amount, OldData, NewData, Details, CreatedAt, UserID
             FROM AuditLogs
             WHERE TableName = 'Customers' AND RecordID = @id
-              AND (UserID = @userId OR UserID IS NULL)
+              ${isSuper ? '' : 'AND UserID = @userId'}
             ORDER BY CreatedAt DESC, LogID DESC
         `, { id: custId, userId });
         const auditHistory = auditRes.recordset || [];

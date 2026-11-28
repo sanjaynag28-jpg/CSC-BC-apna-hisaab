@@ -28,10 +28,31 @@ try {
 
 const { query, withTransaction, sql } = require('../database/db');
 const { logAudit } = require('../utils/auditLogger');
-const { escapeLike } = require('../utils/helpers');
+const { escapeLike, assertOwnedAccount } = require('../utils/helpers');
 const { resolveOrCreateCustomer } = require('../database/customerAutoRegister');
 const { registerGlobalTransaction, updateGlobalTransaction, deactivateGlobalTransaction } = require('../database/globalTxnRegistry');
 const { addKhataEntry, refreshCustomerBalance } = require('../database/khataEngine');
+
+function parseUclMoneyField(rawVal, defaultVal) {
+    if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') return defaultVal;
+    const n = parseFloat(rawVal);
+    return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+
+function parseUclAmounts(body) {
+    const totalFee = parseUclMoneyField(body.totalFee !== undefined ? body.totalFee : body.TotalFee, 50.00);
+    const operatorFee = parseUclMoneyField(body.operatorFee !== undefined ? body.operatorFee : body.OperatorFee, 0.00);
+    if (!Number.isFinite(totalFee) || !Number.isFinite(operatorFee)) {
+        return { error: 'Fee sahi aur non-negative number honi chahiye' };
+    }
+    const totalAmount = parseFloat((totalFee + operatorFee).toFixed(2));
+    const paidAmount = parseUclMoneyField(body.paidAmount !== undefined ? body.paidAmount : body.PaidAmount, totalAmount);
+    if (!Number.isFinite(paidAmount)) {
+        return { error: 'Paid amount sahi aur non-negative number honi chahiye' };
+    }
+    const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
+    return { totalFee, operatorFee, totalAmount, paidAmount, balanceAmount };
+}
 
 // Multer storage for uploaded UCL receipts
 const uploadDir = path.join(__dirname, '../public/uploads/documents');
@@ -546,11 +567,11 @@ router.post('/', async (req, res) => {
         const transDateStr = safeDate.toISOString().slice(0, 10);
         const transTimeStr = safeDate.toTimeString().slice(0, 8);
 
-        const totalFee = parseFloat(body.totalFee ?? body.TotalFee ?? 50.00);
-        const operatorFee = parseFloat(body.operatorFee ?? body.OperatorFee ?? 0.00);
-        const totalAmount = parseFloat((totalFee + operatorFee).toFixed(2));
-        const paidAmount = parseFloat(body.paidAmount ?? body.PaidAmount ?? totalAmount);
-        const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
+        const uclAmts = parseUclAmounts(body);
+        if (uclAmts.error) {
+            return res.status(400).json({ success: false, error: uclAmts.error });
+        }
+        const { totalFee, operatorFee, totalAmount, paidAmount, balanceAmount } = uclAmts;
 
         const paymentMode = body.paymentMode || body.PaymentMode || (balanceAmount > 0 ? 'Khata' : 'Cash');
         const accountId = body.accountId || body.AccountID ? parseInt(body.accountId || body.AccountID) : null;
@@ -589,6 +610,9 @@ router.post('/', async (req, res) => {
 
         // Atomic Transaction for UCL Record, Global Registry & Ledgers
         const savedRecord = await withTransaction(async (tQuery) => {
+            if (accountId) {
+                await assertOwnedAccount(tQuery, accountId, userId, 'Account');
+            }
             // 1. Insert UCL Record
             const insertRes = await tQuery(`
                 INSERT INTO UCLUpdates (
@@ -699,12 +723,12 @@ router.post('/', async (req, res) => {
                         sn: effSNCode
                     });
 
-                    // Update account balance
+                    // Update account balance (scoped to tenant owner)
                     await tQuery(`
                         UPDATE Accounts 
                         SET CurrentBalance = CurrentBalance + @amount, UpdatedAt = GETDATE()
-                        WHERE AccountID = @accId
-                    `, { accId: effAccountId, amount: paidAmount });
+                        WHERE AccountID = @accId AND UserID = @userId
+                    `, { accId: effAccountId, amount: paidAmount, userId });
                 }
             }
 
@@ -770,16 +794,17 @@ router.post('/', async (req, res) => {
                 });
             }
 
-            // 6. Link Document EntityID
+            // 6. Link Document EntityID (scoped to tenant)
             if (receiptDocumentId) {
                 await tQuery(`
                     UPDATE Documents
                     SET EntityID = @uclId, CustomerID = @custId
-                    WHERE DocumentID = @docId
+                    WHERE DocumentID = @docId AND UserID = @userId
                 `, {
                     uclId,
                     custId: resolvedCustomerId,
-                    docId: receiptDocumentId
+                    docId: receiptDocumentId,
+                    userId
                 });
             }
 
@@ -865,11 +890,11 @@ router.put('/:id', async (req, res) => {
         const status = body.status || body.Status || 'Generated';
         const notes = body.notes || body.Notes || null;
 
-        const totalFee = parseFloat(body.totalFee ?? body.TotalFee ?? 50.00);
-        const operatorFee = parseFloat(body.operatorFee ?? body.OperatorFee ?? 0.00);
-        const totalAmount = parseFloat((totalFee + operatorFee).toFixed(2));
-        const paidAmount = parseFloat(body.paidAmount ?? body.PaidAmount ?? totalAmount);
-        const balanceAmount = parseFloat(Math.max(0, totalAmount - paidAmount).toFixed(2));
+        const uclAmts = parseUclAmounts(body);
+        if (uclAmts.error) {
+            return res.status(400).json({ success: false, error: uclAmts.error });
+        }
+        const { totalFee, operatorFee, totalAmount, paidAmount, balanceAmount } = uclAmts;
         const paymentMode = body.paymentMode || body.PaymentMode || (balanceAmount > 0 ? 'Khata' : 'Cash');
 
         // Column-limit validation (DB truncation se pehle saaf error).
@@ -901,7 +926,7 @@ router.put('/:id', async (req, res) => {
                 SET CustomerName = @customerName,
                     CustomerPhone = @phone,
                     AadhaarLast4 = @aadhaarLast4,
-                    AadhaarMasked = CASE WHEN @aadhaarLast4 IS NOT NULL THEN 'XXXX-XXXX-' + @aadhaarLast4 ELSE AadhaarMasked END,
+                    AadhaarMasked = CASE WHEN @aadhaarLast4 IS NOT NULL THEN ('XXXX-XXXX-' || @aadhaarLast4) ELSE AadhaarMasked END,
                     SID = @sid,
                     UpdateType = @updateType,
                     BiometricsUpdate = @biometrics,
@@ -946,29 +971,66 @@ router.put('/:id', async (req, res) => {
                 console.warn('[UCL Global Registry Update Warning]:', err.message);
             }
 
-            // 3. Transactions Mirror Update
+            // 3. Transactions Mirror Update (handles initial 0 paid -> >0 and account change)
             const oldPaid = parseFloat(old.PaidAmount || 0);
-            const paidDiff = paidAmount - oldPaid;
-            if (paidDiff !== 0) {
-                const mRes = await tQuery(`SELECT TOP 1 TransactionID, AccountID FROM Transactions WHERE SourceModule = 'UCL' AND SourceID = @id`, { id });
-                if (mRes.recordset?.length) {
-                    const accId = mRes.recordset[0].AccountID;
-                    await tQuery(`UPDATE Transactions SET Amount = @amt, Description = @desc WHERE TransactionID = @txId`, {
+            const requestedAccId = body.accountId || body.AccountID ? parseInt(body.accountId || body.AccountID, 10) : null;
+            if (requestedAccId) {
+                await assertOwnedAccount(tQuery, requestedAccId, userId, 'Account');
+            }
+            const mRes = await tQuery(`SELECT TOP 1 TransactionID, AccountID FROM Transactions WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId AND IsDeleted = 0`, { id, userId });
+            if (mRes.recordset?.length) {
+                const oldAccId = mRes.recordset[0].AccountID;
+                const newAccId = requestedAccId || oldAccId;
+                if (paidAmount > 0) {
+                    await tQuery(`UPDATE Transactions SET Amount = @amt, AccountID = @accId, Description = @desc, UpdatedAt = GETDATE() WHERE TransactionID = @txId`, {
                         amt: paidAmount,
+                        accId: newAccId,
                         desc: `UCL Shulk Jama: ${finalCustName} (${updateType})`,
                         txId: mRes.recordset[0].TransactionID
                     });
-                    await tQuery(`UPDATE Accounts SET CurrentBalance = CurrentBalance + @diff, UpdatedAt = GETDATE() WHERE AccountID = @accId`, {
-                        accId,
-                        diff: paidDiff
+                } else {
+                    await tQuery(`UPDATE Transactions SET IsDeleted = 1, UpdatedAt = GETDATE() WHERE TransactionID = @txId`, {
+                        txId: mRes.recordset[0].TransactionID
                     });
+                }
+                if (oldAccId) await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: oldAccId });
+                if (newAccId && newAccId !== oldAccId) await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: newAccId });
+            } else if (paidAmount > 0) {
+                let effAccId = requestedAccId || old.AccountID || null;
+                if (!effAccId) {
+                    const cashAcc = await tQuery(`SELECT TOP 1 AccountID FROM Accounts WHERE UserID = @userId AND IsActive = 1 ORDER BY CASE WHEN AccountType = 'Cash' THEN 0 ELSE 1 END, AccountID ASC`, { userId });
+                    effAccId = cashAcc.recordset?.[0]?.AccountID || null;
+                }
+                if (effAccId) {
+                    await assertOwnedAccount(tQuery, effAccId, userId, 'Account');
+                    await tQuery(`
+                        INSERT INTO Transactions (
+                            UserID, TransDate, TransTime, TransType, Amount, AccountID,
+                            Description, Reference, SourceModule, SourceID, LineType, GlobalSerialNo, SNCode
+                        ) VALUES (
+                            @userId, @transDate, CONVERT(VARCHAR(5), GETDATE(), 108), 'Income', @amt, @accId,
+                            @desc, @ref, 'UCL', @uclId, 'UCL_FEE_IN', @globSN, @sn
+                        )
+                    `, {
+                        userId,
+                        transDate: old.UpdateDate || new Date().toISOString().split('T')[0],
+                        amt: paidAmount,
+                        accId: effAccId,
+                        desc: `UCL Shulk Jama: ${finalCustName} (${updateType})`,
+                        ref: old.SerialNo || `UCL-${id}`,
+                        uclId: id,
+                        globSN: old.GlobalSerialNo || null,
+                        sn: old.SerialNo || `UCL-${id}`
+                    });
+                    await tQuery('EXEC sp_UpdateAccountBalance @AccountID = @id', { id: effAccId });
                 }
             }
 
             // 4. Khatabook sync if customer linked
             if (effCustomerId) {
-                const kRes = await tQuery(`SELECT KhataID, EntryType FROM KhataEntries WHERE SourceModule = 'UCL' AND SourceID = @id`, { id });
+                const kRes = await tQuery(`SELECT KhataID, EntryType FROM KhataEntries WHERE SourceModule = 'UCL' AND SourceID = @id AND UserID = @userId`, { id, userId });
                 if (kRes.recordset?.length) {
+                    let hasGot = false;
                     for (const ke of kRes.recordset) {
                         if (ke.EntryType === 'Gave') {
                             await tQuery(`UPDATE KhataEntries SET Amount = @amt, Description = @desc WHERE KhataID = @kid`, {
@@ -977,12 +1039,29 @@ router.put('/:id', async (req, res) => {
                                 kid: ke.KhataID
                             });
                         } else if (ke.EntryType === 'Got') {
+                            hasGot = true;
                             await tQuery(`UPDATE KhataEntries SET Amount = @amt, Description = @desc WHERE KhataID = @kid`, {
                                 amt: paidAmount,
                                 desc: `UCL Jama (${paymentMode}) [${old.SerialNo || 'UCL-' + id}]`,
                                 kid: ke.KhataID
                             });
                         }
+                    }
+                    if (paidAmount > 0 && !hasGot) {
+                        await addKhataEntry(tQuery, {
+                            CustomerID: effCustomerId,
+                            EntryType: 'Got',
+                            Amount: paidAmount,
+                            PaymentMode: paymentMode,
+                            Description: `UCL Jama (${paymentMode}) [${old.SerialNo || 'UCL-' + id}]`,
+                            ReferenceNo: `${old.SerialNo || 'UCL-' + id}-PAY`,
+                            UserID: userId,
+                            GlobalSerialNo: old.GlobalSerialNo,
+                            SNCode: old.SerialNo,
+                            ModuleCode: 'UCL',
+                            SourceModule: 'UCL',
+                            SourceID: id
+                        });
                     }
                     await refreshCustomerBalance(tQuery, effCustomerId);
                 } else if (balanceAmount > 0 || paymentMode === 'Khata') {

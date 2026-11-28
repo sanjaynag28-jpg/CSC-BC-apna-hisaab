@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../database/db');
 const { getActiveSession } = require('../utils/sessionStore');
+const { resolveShopScope } = require('../utils/requestContext');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!process.env.JWT_SECRET) {
@@ -13,8 +14,9 @@ if (!process.env.JWT_SECRET) {
 const ALLOW_LOCAL_AUTO_LOGIN = String(process.env.ALLOW_LOCAL_AUTO_LOGIN || '').toLowerCase() !== 'false';
 let loopbackAutoLoginWarned = false;
 
-// Cache API Tokens for extension lookups (60s TTL)
+// Cache API Tokens for extension lookups (60s TTL) & JWT active status (15s TTL)
 const tokenCache = new Map();
+const jwtStatusCache = new Map();
 
 function isLoopback(req) {
     // If request came through Cloudflare Tunnel, reverse proxy, or remote IP, it is NEVER loopback!
@@ -46,13 +48,31 @@ const PUBLIC_PATHS = [
     '/api/extension/version',
     '/extension/download',
     '/api/extension/download',
-    '/extension/diagnostics',
-    '/api/extension/diagnostics',
-    '/extension/test',
-    '/api/extension/test',
     '/network-info',
     '/api/network-info'
 ];
+
+function normalizePath(p) {
+    if (!p) return '';
+    return p.length > 1 ? p.replace(/\/+$/, '') : p;
+}
+
+async function isActorActive(actorId) {
+    if (!actorId) return false;
+    const now = Date.now();
+    const cached = jwtStatusCache.get(actorId);
+    if (cached && cached.expiresAt > now) {
+        return cached.isActive;
+    }
+    const res = await query('SELECT IsActive FROM Users WHERE UserID = @id', { id: actorId });
+    if (!res.recordset || res.recordset.length === 0) {
+        jwtStatusCache.set(actorId, { isActive: false, expiresAt: now + 15000 });
+        return false;
+    }
+    const isActive = Number(res.recordset[0].IsActive) === 1;
+    jwtStatusCache.set(actorId, { isActive, expiresAt: now + 15000 });
+    return isActive;
+}
 
 async function authenticateUser(req, res, next) {
     // Extract token if present (Authorization header, Cookie, or Query)
@@ -67,10 +87,10 @@ async function authenticateUser(req, res, next) {
         if (match) token = decodeURIComponent(match[1]);
     }
 
-    // 1. Check if public path (checking both req.path and req.originalUrl)
-    const relPath = (req.path || '').split('?')[0];
-    const fullPath = (req.originalUrl || req.url || '').split('?')[0];
-    const isPublic = PUBLIC_PATHS.some(p => relPath === p || fullPath === p || fullPath.startsWith(p));
+    // 1. Check if public path (exact normalized path match; never prefix-match /api/logs/client-error -> /api/logs/client-errors)
+    const relPath = normalizePath((req.path || '').split('?')[0]);
+    const fullPath = normalizePath((req.originalUrl || req.url || '').split('?')[0]);
+    const isPublic = PUBLIC_PATHS.some(p => relPath === p || fullPath === p);
 
     if (isPublic) {
         // If token was passed to public endpoint (e.g. client error logger), decode it silently
@@ -94,18 +114,12 @@ async function authenticateUser(req, res, next) {
 
         try {
             const userRes = await query(
-                'SELECT UserID, Username, ShopName, OwnerName, Role, IsActive FROM Users WHERE ApiToken = @token AND IsActive = 1',
+                'SELECT UserID, Username, ShopName, OwnerName, MobileNumber, Role, ParentUserID, IsActive FROM Users WHERE ApiToken = @token AND IsActive = 1',
                 { token: apiToken }
             );
             if (userRes.recordset.length > 0) {
                 const u = userRes.recordset[0];
-                const userObj = {
-                    UserID: u.UserID,
-                    Username: u.Username,
-                    ShopName: u.ShopName,
-                    OwnerName: u.OwnerName,
-                    Role: u.Role
-                };
+                const userObj = resolveShopScope(u);
                 tokenCache.set(apiToken, { user: userObj, expiresAt: Date.now() + 60000 });
                 req.user = userObj;
                 return next();
@@ -119,12 +133,29 @@ async function authenticateUser(req, res, next) {
     if (token) {
         try {
             const decoded = jwt.verify(token, JWT_SECRET);
+            const actorId = Number(decoded.ActualUserID || decoded.UserID);
+
+            // Verify user account is still active (disabled accounts must lose JWT access immediately)
+            try {
+                const active = await isActorActive(actorId);
+                if (!active) {
+                    res.clearCookie('token', { path: '/' });
+                    return res.status(401).json({
+                        success: false,
+                        requireLogin: true,
+                        accountDisabled: true,
+                        error: 'Aapka account disable kar diya gaya hai. Kripya Admin se sampark karein.'
+                    });
+                }
+            } catch (dbErr) {
+                console.error('JWT active status check failed:', dbErr.message);
+            }
 
             // Exclusive Session Check for remote non-SuperAdmin users:
             // If another browser or device has logged into this user's account, invalidate the previous session.
             // Loopback requests (Sanjay on localhost or local server hub) are exempt to prevent kicking out remote tenants!
-            if (!isLoopback(req) && decoded.Role !== 'SuperAdmin' && decoded.UserID !== 1) {
-                const activeSession = await getActiveSession(decoded.UserID);
+            if (!isLoopback(req) && decoded.Role !== 'SuperAdmin' && actorId !== 1) {
+                const activeSession = await getActiveSession(actorId);
                 if (activeSession && decoded.sessionToken && decoded.sessionToken !== activeSession) {
                     res.clearCookie('token', { path: '/' });
                     return res.status(401).json({
@@ -136,17 +167,10 @@ async function authenticateUser(req, res, next) {
                 }
             }
 
-            req.user = {
-                UserID: decoded.UserID,
-                Username: decoded.Username,
-                ShopName: decoded.ShopName,
-                OwnerName: decoded.OwnerName,
-                Role: decoded.Role,
-                sessionToken: decoded.sessionToken
-            };
+            req.user = resolveShopScope(decoded);
             return next();
         } catch (err) {
-            // Token is invalid / expired
+            // Token is invalid / expired — on Main PC loopback, fall through cleanly to auto-login!
             if (!isLoopback(req)) {
                 return res.status(401).json({
                     success: false,
@@ -165,13 +189,14 @@ async function authenticateUser(req, res, next) {
             loopbackAutoLoginWarned = true;
             console.warn('⚠️ [Auth] Loopback auto-login active (UserID 1). Band karne ke liye ALLOW_LOCAL_AUTO_LOGIN=false set karein.');
         }
-        req.user = {
+        req.user = resolveShopScope({
             UserID: 1,
+            ActualUserID: 1,
             Username: 'admin',
             ShopName: 'CSC & BC Kendra',
             OwnerName: 'Admin',
             Role: 'SuperAdmin'
-        };
+        });
         return next();
     }
 
@@ -193,9 +218,15 @@ function requireSuperAdmin(req, res, next) {
     next();
 }
 
+function clearAuthTokenCache() {
+    tokenCache.clear();
+    jwtStatusCache.clear();
+}
+
 module.exports = {
     authenticateUser,
     requireSuperAdmin,
+    clearAuthTokenCache,
     isLoopback,
     JWT_SECRET
 };

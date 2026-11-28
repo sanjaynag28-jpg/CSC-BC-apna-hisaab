@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { query, closePool } = require('./db');
+const Database = require('better-sqlite3');
+const { getDb, closePool } = require('./db');
 
 async function runRestore() {
     console.log('');
@@ -15,71 +16,82 @@ async function runRestore() {
         process.exit(1);
     }
 
-    // Find requested or latest .bak file
-    let targetBak = process.argv[2];
-    if (!targetBak) {
-        const baks = fs.readdirSync(backupDir)
-            .filter(f => f.endsWith('.bak'))
+    // Find requested or latest SQLite .db backup file
+    let targetBackup = process.argv[2];
+    if (!targetBackup) {
+        const dbs = fs.readdirSync(backupDir)
+            .filter(f => f.toLowerCase().endsWith('.db'))
             .map(f => ({ name: f, full: path.join(backupDir, f), time: fs.statSync(path.join(backupDir, f)).mtimeMs }))
             .sort((a, b) => b.time - a.time);
 
-        if (baks.length === 0) {
-            console.error('❌ Koi bhi .bak backup file nahi mili backups folder me.');
+        if (dbs.length === 0) {
+            console.error('❌ Koi bhi .db SQLite backup file nahi mili backups folder me.');
             process.exit(1);
         }
-        targetBak = baks[0].full;
-    } else if (!path.isAbsolute(targetBak)) {
-        targetBak = path.join(backupDir, targetBak);
+        targetBackup = dbs[0].full;
+    } else if (!path.isAbsolute(targetBackup)) {
+        targetBackup = path.join(backupDir, targetBackup);
     }
 
-    if (!fs.existsSync(targetBak)) {
-        console.error('❌ Specified backup file nahi mili:', targetBak);
+    if (!fs.existsSync(targetBackup)) {
+        console.error('❌ Specified backup file nahi mili:', targetBackup);
         process.exit(1);
     }
 
-    const bakFileName = path.basename(targetBak);
-    const sizeMB = (fs.statSync(targetBak).size / (1024 * 1024)).toFixed(2);
+    const bakFileName = path.basename(targetBackup);
+    const sizeMB = (fs.statSync(targetBackup).size / (1024 * 1024)).toFixed(2);
+    const liveDbPath = process.env.CMBC_DB_PATH
+        ? path.resolve(process.env.CMBC_DB_PATH)
+        : path.join(__dirname, 'data', 'cash_management.db');
 
     console.log(`📁 Backup File: ${bakFileName} (${sizeMB} MB)`);
-    console.log('⏳ SQL Server me database restore ho raha hai...');
+    console.log('⏳ SQLite backup verify aur restore ho raha hai...');
 
+    let backupDb = null;
     try {
-        const lit = (v) => `'${String(v).replace(/'/g, "''")}'`;
+        // 1. Integrity check on backup file before touching live DB
+        backupDb = new Database(targetBackup, { readonly: true, fileMustExist: true });
+        const chk = backupDb.prepare('PRAGMA integrity_check').get();
+        const chkVal = chk && (chk.integrity_check || Object.values(chk)[0]);
+        if (String(chkVal || '').toLowerCase() !== 'ok') {
+            throw new Error(`Backup integrity check failed: ${chkVal}`);
+        }
+        console.log('✅ Backup file integrity_check = ok (surakshit hai).');
 
-        // 1. Verify backup file first
-        await query(`RESTORE VERIFYONLY FROM DISK = ${lit(targetBak)};`);
-        console.log('✅ Backup file verify ho gayi (readable hai).');
+        // 2. Save safety pre-restore snapshot if live DB exists
+        fs.mkdirSync(path.dirname(liveDbPath), { recursive: true });
+        if (fs.existsSync(liveDbPath)) {
+            const safetyName = `pre_restore_${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+            const safetyPath = path.join(backupDir, safetyName);
+            await getDb().backup(safetyPath);
+            console.log(`🛟 Pre-restore safety snapshot saved: ${safetyName}`);
+        }
 
-        // 2. Disconnect existing users and restore with replace
-        await query(`
-            USE master;
-            IF DB_ID('CashManagement') IS NOT NULL
-            BEGIN
-                ALTER DATABASE CashManagement SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-            END;
-            RESTORE DATABASE CashManagement FROM DISK = ${lit(targetBak)} WITH REPLACE;
-            ALTER DATABASE CashManagement SET MULTI_USER;
-        `);
+        // 3. Close live pool & restore atomically via better-sqlite3 backup API
+        await closePool();
+        await backupDb.backup(liveDbPath);
+        backupDb.close();
+        backupDb = null;
+
+        // Clean stale WAL/SHM sidecars if left from pre-restore DB
+        for (const ext of ['-wal', '-shm']) {
+            try {
+                if (fs.existsSync(liveDbPath + ext)) fs.unlinkSync(liveDbPath + ext);
+            } catch (_) { }
+        }
 
         console.log('');
         console.log('========================================================');
-        console.log('🎉 DATABASE RESTORE SAFALTA-PURVAK HO GAYA!');
+        console.log('🎉 SQLITE DATABASE RESTORE SAFALTA-PURVAK HO GAYA!');
         console.log('========================================================');
         console.log('Saara purana data, grahak, len-den, khatabook 100% restore ho gaya!');
         console.log('');
-        await closePool();
         process.exit(0);
     } catch (err) {
         console.error('❌ Restore fail hua:', err.message);
-        try {
-            await query(`
-                USE master;
-                IF DB_ID('CashManagement') IS NOT NULL
-                BEGIN
-                    ALTER DATABASE CashManagement SET MULTI_USER;
-                END;
-            `);
-        } catch (_) {}
+        if (backupDb) {
+            try { backupDb.close(); } catch (_) { }
+        }
         await closePool();
         process.exit(1);
     }

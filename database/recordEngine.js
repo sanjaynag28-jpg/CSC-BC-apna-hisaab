@@ -23,8 +23,9 @@
 
 const { withTransaction } = require('./db');
 const { registerGlobalTransaction, deactivateGlobalTransaction } = require('./globalTxnRegistry');
+const { assertOwnedAccount } = require('../utils/helpers');
 const { addKhataEntry, refreshCustomerBalance, processKhataAfterChange } = require('./khataEngine');
-const { resolveModule } = require('./moduleRegistry');
+const { resolveModule, ensureModuleRegistered } = require('./moduleRegistry');
 
 const MODULE_SERVICE_TABLE = 'ServiceRecords';
 const MODULE_SERVICE_PK = 'RecordID';
@@ -125,6 +126,9 @@ async function writeMirrors(tQuery, rec) {
     } = rec;
 
     const ref = `${modulePrefix}-${recordId}`;
+
+    await assertOwnedAccount(tQuery, walletAccountId, userId, 'Wallet Account');
+    await assertOwnedAccount(tQuery, cashAccountId, userId, 'Cash Account');
 
     // 1. Government / actual cost outflow (wallet se)
     if (walletAccountId && govtFee > 0) {
@@ -228,6 +232,7 @@ async function createServiceRecord(input, userId) {
     const referenceNo = input.referenceNo || input.ReferenceNo || null;
 
     return await withTransaction(async (tQuery) => {
+        await ensureModuleRegistered(moduleCode, tQuery);
         // Service + defaults
         const svcRes = await tQuery(`
             SELECT ServiceID, ServiceName, GovtFee, OperatorFee, ModuleCode, Category
@@ -345,7 +350,7 @@ async function updateServiceRecord(recordId, input, userId) {
         const cur = curRes.recordset[0];
 
         const moduleCode = input.moduleCode || cur.ModuleCode;
-        const mod = await resolveModule(moduleCode);
+        const mod = await ensureModuleRegistered(moduleCode, tQuery);
         const modulePrefix = mod?.prefix || String(moduleCode).substring(0, 4).toUpperCase();
 
         const govtFee = money(input.govtFee !== undefined ? input.govtFee : cur.GovtFee);
@@ -356,9 +361,19 @@ async function updateServiceRecord(recordId, input, userId) {
         const status = input.status || (balanceAmount <= 0 ? 'Completed' : 'Pending');
         const paymentStatus = balanceAmount <= 0 ? 'Paid' : (paidAmount > 0 ? 'Partial' : 'Unpaid');
 
+        const rawWallet = input.walletAccountID !== undefined ? input.walletAccountID : input.WalletAccountID;
+        const rawCash = input.cashAccountID !== undefined ? input.cashAccountID : input.CashAccountID;
+        const walletAccountId = rawWallet !== undefined ? (parseInt(rawWallet, 10) || null) : (cur.AccountID || null);
+        const cashAccountId = rawCash !== undefined ? (parseInt(rawCash, 10) || null) : (cur.CashAccountID || null);
+        const rawRef = input.referenceNo !== undefined ? input.referenceNo : input.ReferenceNo;
+        const referenceNo = rawRef !== undefined ? rawRef : (cur.ReferenceNo || null);
+
         await tQuery(`
             UPDATE dbo.ServiceRecords
             SET ModuleCode = @moduleCode,
+                ReferenceNo = @referenceNo,
+                AccountID = @walletAccountId,
+                CashAccountID = @cashAccountId,
                 GovtFee = @govtFee,
                 OperatorFee = @operatorFee,
                 TotalFee = @totalFee,
@@ -376,7 +391,8 @@ async function updateServiceRecord(recordId, input, userId) {
                 UpdatedAt = GETDATE()
             WHERE RecordID = @id AND UserID = @uid
         `, {
-            moduleCode, govtFee, operatorFee, totalFee, paidAmount, balanceAmount,
+            moduleCode, referenceNo, walletAccountId, cashAccountId,
+            govtFee, operatorFee, totalFee, paidAmount, balanceAmount,
             status, paymentStatus,
             paymentMode: input.paymentMode || cur.PaymentMode || 'Cash',
             remarks: input.remarks !== undefined ? input.remarks : cur.Remarks,
@@ -385,6 +401,14 @@ async function updateServiceRecord(recordId, input, userId) {
         });
 
         await removeMirrors(tQuery, { moduleCode: cur.ModuleCode, recordId: id });
+
+        if (moduleCode !== cur.ModuleCode) {
+            await tQuery(`
+                UPDATE dbo.UniversalTxnRegistry
+                SET SourceModule = @newModuleCode
+                WHERE SourceModule = @oldModuleCode AND RecordID = @id
+            `, { newModuleCode: moduleCode, oldModuleCode: cur.ModuleCode, id });
+        }
 
         const sn = {
             globalSerialNo: cur.GlobalSerialNo,
@@ -397,10 +421,10 @@ async function updateServiceRecord(recordId, input, userId) {
             customerId: cur.CustomerID, userId, recordDate: cur.RecordDate,
             govtFee, operatorFee, totalFee, paidAmount, balanceAmount,
             paymentMode: input.paymentMode || cur.PaymentMode,
-            referenceNo: input.referenceNo || null,
+            referenceNo,
             customerName: null,
-            walletAccountId: parseInt(input.walletAccountID, 10) || null,
-            cashAccountId: parseInt(input.cashAccountID, 10) || null,
+            walletAccountId,
+            cashAccountId,
             sn, serviceName: null
         });
 

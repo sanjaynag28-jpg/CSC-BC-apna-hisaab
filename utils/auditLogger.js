@@ -1,4 +1,5 @@
 const { query } = require('../database/db');
+const { getCurrentActor } = require('./requestContext');
 
 /**
  * Universal Audit Logger for Cash Management BC
@@ -84,16 +85,19 @@ async function logAudit({
         const safeDesc = description ? String(description).substring(0, 500) : null;
         const safeEntity = entityName ? String(entityName).substring(0, 255) : null;
         const safeDetails = details ? String(details).substring(0, 4000) : (safeDesc || `${action} on ${tableName}`);
+        const actor = getCurrentActor();
+        const actorUserId = actor?.actorUserId || userId || 1;
+        const actorName = actor?.actorName || null;
 
         await queryRunner(`
             INSERT INTO AuditLogs (
-                UserID, Action, TableName, RecordID, Module, Description, EntityName, Amount, OldData, NewData, Details, CreatedAt
+                UserID, Action, TableName, RecordID, Module, Description, EntityName, Amount, OldData, NewData, Details, CreatedAt, CreatedByUserID, CreatedByName
             )
             VALUES (
-                @userId, @action, @tableName, @recordId, @module, @description, @entityName, @amount, @oldData, @newData, @details, GETDATE()
+                @userId, @action, @tableName, @recordId, @module, @description, @entityName, @amount, @oldData, @newData, @details, GETDATE(), @actorUserId, @actorName
             )
         `, {
-            userId: userId || 1,
+            userId: actor?.shopUserId || userId || 1,
             action: String(action).toUpperCase().substring(0, 50),
             tableName: String(tableName).substring(0, 50),
             recordId: safeRecordId,
@@ -103,7 +107,9 @@ async function logAudit({
             amount: safeAmount,
             oldData: safeOldData,
             newData: safeNewData,
-            details: safeDetails
+            details: safeDetails,
+            actorUserId,
+            actorName
         });
     } catch (err) {
         console.error('🚨 [AuditLogger] Failed to write audit log:', err.message);

@@ -127,10 +127,13 @@ async function processRecurringTransactions(filterUserId = null) {
                 WHERE RecurringID = @rid
             `, { next: current, last: today, active: stillActive, rid: r.RecurringID });
 
-            // Affected account balances isi transaction me update karo
+            // Affected account balances isi transaction me update karo (sirf is user ke owned accounts)
             const accIds = [...new Set([r.AccountID, r.ToAccountID].filter(Boolean))];
             for (const a of accIds) {
-                await tQuery('EXEC sp_UpdateAccountBalance @id', { id: a });
+                const owned = await tQuery('SELECT AccountID FROM Accounts WHERE AccountID = @id AND UserID = @uid', { id: a, uid: r.UserID || 1 });
+                if (owned.recordset?.length) {
+                    await tQuery('EXEC sp_UpdateAccountBalance @id', { id: a });
+                }
             }
 
             return created;

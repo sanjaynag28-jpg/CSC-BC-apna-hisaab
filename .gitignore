@@ -34,6 +34,11 @@ public/uploads/*
 # Logs & Runtime Temp Files
 logs/
 config/node-path.txt
+config/telemetry.json
+config/telemetry-admin.local.json
+telemetry-worker/node_modules/
+telemetry-worker/.wrangler/
+telemetry-worker/.dev.vars
 *.log
 npm-debug.log*
 .auto-update-tmp/
@@ -75,10 +80,15 @@ scripts/*
 !scripts/doctor.ps1
 !scripts/uninstall_project.ps1
 !scripts/migration_rule1_sourceline.js
-!scripts/reconcile_and_backfill_all_sn.js
+!scripts/fix_sn_codes.js
 !scripts/create_project_zip.js
 !scripts/gdrive_backup.js
 !scripts/sync_delta_sqlite_to_sqlserver.js
 !scripts/sync_delta_sqlserver_to_sqlite.js
 !scripts/switch_to_sqlite.js
 !scripts/license_control_wizard.ps1
+!scripts/generate_key.js
+
+# Large OCR training data & legacy archive scripts
+eng.traineddata
+archive/

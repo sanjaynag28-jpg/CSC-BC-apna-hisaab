@@ -168,9 +168,11 @@ function getActiveRecord() {
  */
 function getDaysRemaining(expiryDateStr) {
     if (!expiryDateStr) return 9999;
+    const datePart = String(expiryDateStr).trim().split('T')[0].split(' ')[0];
+    const [y, m, d] = datePart.split('-').map(Number);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return 0;
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const [y, m, d] = expiryDateStr.split('-').map(Number);
     const exp = new Date(y, m - 1, d);
     const diffMs = exp.getTime() - today.getTime();
     return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -194,11 +196,15 @@ async function initLicense() {
             console.warn(`[LicenseManager] Machine ${hwId} revoked/inactive — auto-provision skipped.`);
             return revokedRow || null;
         }
-        // Auto-provision TEST123 for seamless zero-downtime operation
+        // Auto-provision TEST123 only if still marked active in local licenses config
         const testKeyInfo = localCfg.universalKeys?.['TEST123'] || {
             expiryDate: '2027-02-23',
-            plan: '90 Days Free Trial'
+            plan: '90 Days Free Trial',
+            isActive: true
         };
+        if (testKeyInfo.isActive === false) {
+            return null;
+        }
 
         let shopName = 'Apna CSC / BC Kendra';
         let ownerName = 'Sanchalak';
@@ -352,13 +358,25 @@ function verifyPersonalKey(keyStr, hwId) {
         return { valid: false, error: 'अमान्य डिजिटल सिग्नेचर (Invalid Cryptographic Signature)' };
     }
 
-    // Parse Expiry Date
+    // Parse & validate Expiry Date
     let expFormatted = '2099-12-31';
-    if (expiryYmd !== 'LIFETIME' && expiryYmd.length === 8) {
+    if (expiryYmd !== 'LIFETIME') {
+        if (!/^\d{8}$/.test(expiryYmd)) {
+            return { valid: false, error: 'अमान्य लाइसेंस समाप्ति तिथि (Invalid Expiry Format)' };
+        }
         const y = expiryYmd.substring(0, 4);
         const m = expiryYmd.substring(4, 6);
         const d = expiryYmd.substring(6, 8);
         expFormatted = `${y}-${m}-${d}`;
+        const parsedDate = new Date(`${expFormatted}T00:00:00Z`);
+        if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== expFormatted) {
+            return { valid: false, error: 'अमान्य लाइसेंस समाप्ति तिथि (Invalid Calendar Date)' };
+        }
+        const now = new Date();
+        const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        if (expFormatted < todayLocal) {
+            return { valid: false, error: `यह लाइसेंस की पहले ही एक्सपायर हो चुकी है (${expFormatted})` };
+        }
     }
 
     let planName = 'Annual Pro Plan';
@@ -414,6 +432,10 @@ async function activateKey(keyInput, shopDetails = {}) {
         } catch (_) {}
     }
     const cfg = (remoteCfg && (!existingCfg?.updatedAt || new Date(remoteCfg.updatedAt || 0) >= new Date(existingCfg.updatedAt))) ? remoteCfg : (existingCfg || remoteCfg);
+
+    if (cfg && Array.isArray(cfg.blacklistedHardwareIds) && cfg.blacklistedHardwareIds.includes(hwId)) {
+        return { success: false, error: 'यह डिवाइस ब्लॉक (Blacklisted) कर दिया गया है। कृपया संजय जी से संपर्क करें।' };
+    }
 
     let planName = 'Universal Free Trial';
     let expiryDate = '2027-02-23';

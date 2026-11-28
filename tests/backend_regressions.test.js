@@ -422,3 +422,110 @@ test('server runs authentication before idempotency and bypasses only the earlie
     assert.ok(source.indexOf("app.use('/api', authenticateUser)") < source.indexOf('createIdempotencyMiddleware('));
     assert.match(source, /req\.headers\['idempotency-key'\] !== undefined\) return next\(\)/);
 });
+
+test('database/db exports callable mssql-compatible sql types for idempotencyStore', async () => {
+    const prevDefer = process.env.CMBC_DEFER_DB_INIT;
+    process.env.CMBC_DEFER_DB_INIT = '1';
+    try {
+        const db = require('../database/db');
+        assert.equal(typeof db.sql.Char, 'function');
+        assert.equal(typeof db.sql.NVarChar, 'function');
+        assert.equal(db.sql.MAX, -1);
+
+        const statements = [];
+        const store = createSqlIdempotencyStore(async (statement, params) => {
+            statements.push({ statement, params });
+            return { rowsAffected: [1] };
+        }, db.sql);
+
+        await store.reserve({
+            userId: 1,
+            requestKey: 'b7a7b360-3b1a-4db4-b59c-d70886ce18f1',
+            requestHash: 'c'.repeat(64)
+        });
+        await store.complete({
+            userId: 1,
+            requestKey: 'b7a7b360-3b1a-4db4-b59c-d70886ce18f1',
+            requestHash: 'c'.repeat(64),
+            httpStatus: 200,
+            responseBody: '{"ok":true}'
+        });
+        assert.equal(statements[0].params.requestHash.type.name, 'Char');
+        assert.equal(statements[0].params.requestHash.type.length, 64);
+        assert.equal(statements[1].params.responseBody.type.name, 'NVarChar');
+        assert.equal(statements[1].params.responseBody.type.length, db.sql.MAX);
+    } finally {
+        if (prevDefer === undefined) delete process.env.CMBC_DEFER_DB_INIT;
+        else process.env.CMBC_DEFER_DB_INIT = prevDefer;
+    }
+});
+
+test('BC dashboard and yearly report derive BCChargeOnKhata from KhataEntries instead of nonexistent column', () => {
+    const bcSource = read('routes/bc.js');
+    const reportsSource = read('routes/reports.js');
+    assert.doesNotMatch(bcSource, /BCTransactions[\s\S]*BCChargeOnKhata/);
+    assert.doesNotMatch(reportsSource, /b\.BCChargeOnKhata/);
+});
+
+test('KPI KhataGotNoAccount excludes module-linked Got entries already counted via Transactions', () => {
+    const reportsSource = read('routes/reports.js');
+    assert.match(reportsSource, /k\.PaymentID IS NULL AND k\.InvoiceID IS NULL AND \(k\.SourceModule IS NULL OR k\.SourceModule = ''\)/);
+});
+
+test('Staff users are blocked from system log inspection routes and SuperAdmin check', () => {
+    const { isStaffBlockedRequest } = require('../middleware/staffPermissions');
+    assert.equal(isStaffBlockedRequest('GET', '/api/logs').blocked, true);
+    assert.equal(isStaffBlockedRequest('GET', '/api/logs/db-errors').blocked, true);
+    assert.equal(isStaffBlockedRequest('GET', '/api/logs/client-errors').blocked, true);
+    assert.equal(isStaffBlockedRequest('PUT', '/api/logs/client-errors/1/fix').blocked, true);
+    assert.equal(isStaffBlockedRequest('POST', '/api/logs/client-error').blocked, false);
+
+    const logsSource = read('routes/logs.js');
+    assert.match(logsSource, /req\.user\.Role === 'Staff' \|\| req\.user\.ParentUserID/);
+    assert.match(logsSource, /req\.user\.ActualUserID \|\| req\.user\.UserID/);
+});
+
+test('recordEngine and billPayLedger preserve account links and zero-amount balance syncs on update', () => {
+    const recSource = read('database/recordEngine.js');
+    assert.match(recSource, /ensureModuleRegistered/);
+    assert.match(recSource, /cur\.AccountID \|\| null/);
+    assert.match(recSource, /cur\.CashAccountID \|\| null/);
+    assert.match(recSource, /UPDATE dbo\.UniversalTxnRegistry/);
+
+    const bpSource = read('database/billPayLedger.js');
+    assert.match(bpSource, /effWalletId && numBillAmount <= 0/);
+    assert.match(bpSource, /effCashId && numTotalCollected <= 0/);
+});
+
+test('nested CAST(... AS TIME/DATETIME) translates cleanly and exports scope Accounts by UserID', () => {
+    const prevDefer = process.env.CMBC_DEFER_DB_INIT;
+    process.env.CMBC_DEFER_DB_INIT = '1';
+    try {
+        const db = require('../database/db');
+        const translated = db.translateSql("SELECT CAST(CAST(ISNULL(i.CreatedAt, CAST(i.InvoiceDate AS DATETIME)) AS TIME) AS VARCHAR(8)) AS RecordTime FROM Invoices i");
+        assert.match(translated, /CAST\s*\(\s*time\s*\(\s*IFNULL\s*\(\s*i\.CreatedAt\s*,\s*datetime\s*\(\s*i\.InvoiceDate\s*\)\s*\)\s*\)\s*AS\s*VARCHAR\s*\(\s*8\s*\)\s*\)/i);
+    } finally {
+        if (prevDefer === undefined) delete process.env.CMBC_DEFER_DB_INIT;
+        else process.env.CMBC_DEFER_DB_INIT = prevDefer;
+    }
+
+    const reportsSource = read('routes/reports.js');
+    assert.doesNotMatch(reportsSource, /FROM Accounts WHERE AccountID = @accountId\)/);
+});
+
+test('service_records tenant isolation, UCL fee bounds, and verifyPersonalKey expiry rejection', () => {
+    const svcSource = read('routes/service_records.js');
+    assert.match(svcSource, /isPlatformAdmin/);
+    assert.match(svcSource, /SELECT ServiceID, UserID FROM dbo\.CSCServices WHERE ServiceID = @id/);
+
+    const uclSource = read('routes/ucl.js');
+    assert.match(uclSource, /parseUclAmounts/);
+
+    const crypto = require('node:crypto');
+    const lm = require('../utils/licenseManager');
+    const expiredPayload = 'HISAAB-PRO-ALL-20200101';
+    const sig = crypto.createHmac('sha256', 'SanjayKendra_SecretSalt_2026_SecureKey!#99')
+        .update(expiredPayload).digest('hex').substring(0, 6).toUpperCase();
+    const res = lm.verifyPersonalKey(`${expiredPayload}-${sig}`, 'ABCD1234');
+    assert.equal(res.valid, false);
+});

@@ -479,13 +479,13 @@ async function autoSettleCustomerDues(tQuery, CustomerID) {
     const duesRes = await tQuery(`
         SELECT 'CSC' AS Source, AppID AS SourceID, DueAmount AS Amount, ApplyDate AS DueDate,
                TotalFee AS TotalAmount, PaidAmount AS AlreadyPaid,
-               ('CSC: ' + ServiceType) AS Label
+               ('CSC: ' || IFNULL(ServiceType, '')) AS Label
         FROM CSCApplications WITH (UPDLOCK, HOLDLOCK)
         WHERE CustomerID = @id AND UserID = @userId AND IsActive = 1 AND DueAmount > 0
         UNION ALL
         SELECT 'BILL' AS Source, InvoiceID AS SourceID, BalanceAmount AS Amount, InvoiceDate AS DueDate,
                TotalAmount AS TotalAmount, PaidAmount AS AlreadyPaid,
-               ('Bill #' + InvoiceNumber) AS Label
+               ('Bill #' || IFNULL(InvoiceNumber, '')) AS Label
         FROM Invoices WITH (UPDLOCK, HOLDLOCK)
         WHERE CustomerID = @id AND UserID = @userId AND Status != 'Cancelled' AND BalanceAmount > 0
         ORDER BY DueDate ASC, SourceID ASC

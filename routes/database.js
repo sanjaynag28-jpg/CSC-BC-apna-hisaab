@@ -340,4 +340,42 @@ router.get('/stats', async (req, res) => {
     }
 });
 
+// 6. GET Export Table as CSV (SuperAdmin only)
+router.get('/export/:tableName', async (req, res) => {
+    try {
+        const rawName = String(req.params.tableName || '').trim();
+        const tblCheck = await query(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name = @name AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_backup_%'`,
+            { name: rawName }
+        );
+        if (!tblCheck.recordset || tblCheck.recordset.length === 0) {
+            return res.status(404).json({ success: false, error: 'Table nahi mili' });
+        }
+        const safeTable = tblCheck.recordset[0].name;
+        const rowsRes = await query(`SELECT * FROM [${safeTable}]`);
+        const rows = rowsRes.recordset || [];
+        const cols = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+        const escapeCsv = (val) => {
+            if (val === null || val === undefined) return '';
+            const s = typeof val === 'object' ? JSON.stringify(val) : String(val);
+            return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+
+        const lines = [];
+        if (cols.length) {
+            lines.push(cols.map(escapeCsv).join(','));
+            for (const row of rows) {
+                lines.push(cols.map(c => escapeCsv(row[c])).join(','));
+            }
+        }
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTable}.csv"`);
+        res.send('\uFEFF' + lines.join('\r\n'));
+    } catch (err) {
+        console.error('Database Export Error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;

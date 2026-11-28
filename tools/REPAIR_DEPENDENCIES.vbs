@@ -3,7 +3,7 @@ Option Explicit
 
 Dim fso, sh, baseDir, logDir, logPath, command, exitCode
 Set fso = CreateObject("Scripting.FileSystemObject")
-baseDir = fso.GetParentFolderName(WScript.ScriptFullName)
+baseDir = fso.GetParentFolderName(fso.GetParentFolderName(WScript.ScriptFullName))
 logDir = fso.BuildPath(baseDir, "logs")
 logPath = fso.BuildPath(logDir, "dependency-repair.log")
 If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)

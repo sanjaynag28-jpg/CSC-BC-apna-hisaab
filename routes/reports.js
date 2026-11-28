@@ -154,7 +154,7 @@ router.get('/kpis', async (req, res) => {
                 COUNT(*) as KhataCount,
                 ISNULL(SUM(CASE WHEN k.EntryType = 'Gave' THEN k.Amount ELSE 0 END), 0) as KhataUdhaarGave,
                 ISNULL(SUM(CASE WHEN k.EntryType = 'Got' THEN k.Amount ELSE 0 END), 0) as KhataJamaGot,
-                ISNULL(SUM(CASE WHEN k.EntryType = 'Got' AND k.AccountID IS NULL AND k.CSCAppID IS NULL AND k.BCID IS NULL THEN k.Amount ELSE 0 END), 0) as KhataGotNoAccount
+                ISNULL(SUM(CASE WHEN k.EntryType = 'Got' AND k.AccountID IS NULL AND k.CSCAppID IS NULL AND k.BCID IS NULL AND k.PaymentID IS NULL AND k.InvoiceID IS NULL AND (k.SourceModule IS NULL OR k.SourceModule = '') THEN k.Amount ELSE 0 END), 0) as KhataGotNoAccount
             FROM KhataEntries k
             WHERE k.UserID = @userId ${dateCondKhata}
         `, params);
@@ -489,7 +489,7 @@ router.get('/master', async (req, res) => {
                         b.ModuleCode as ModuleCode,
                         b.TransDate as RecordDate,
                         CAST(ISNULL(b.TransTime, CAST(b.CreatedAt AS TIME)) AS VARCHAR(8)) as RecordTime,
-                        b.ServiceType + CASE WHEN b.BankName IS NOT NULL AND b.BankName != '' THEN ' - ' + b.BankName ELSE '' END as Title,
+                        (IFNULL(b.ServiceType, '') || CASE WHEN b.BankName IS NOT NULL AND b.BankName != '' THEN (' - ' || b.BankName) ELSE '' END) as Title,
                         COALESCE(b.CustomerName, b.CustomerPhone, 'Walk-in Customer') as EntityName,
                         b.ServiceType as CategoryOrService,
                         b.RRN_UTR as RefNumber,
@@ -1318,9 +1318,9 @@ router.get('/analytics', async (req, res) => {
                 ISNULL(b.BCCommission, 0) as BCCommission,
                 ISNULL(bp.BPCommission, 0) as BPCommission,
                 ISNULL(ucl.UCLProfit, 0) as UCLProfit,
-                (ISNULL(t.Income, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0) + ISNULL(ucl.UCLProfit, 0)) as TotalIncome,
+                (ISNULL(t.Income, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0)) as TotalIncome,
                 ISNULL(t.Expense, 0) as TotalExpense,
-                (ISNULL(t.Income, 0) - ISNULL(t.Expense, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0) + ISNULL(ucl.UCLProfit, 0)) as NetProfit
+                (ISNULL(t.Income, 0) - ISNULL(t.Expense, 0) + ISNULL(b.BCCommission, 0) + ISNULL(bp.BPCommission, 0)) as NetProfit
             FROM (
                 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12)
             ) as m(MonthNumber)
@@ -1612,7 +1612,7 @@ router.get('/export/excel', async (req, res) => {
 
         // Account filter (union me AccountID nahi hota - naam se match)
         if (accountId && accountId !== 'all') {
-            exportFilterCond += ' AND t.AccountName IN (SELECT AccountName FROM Accounts WHERE AccountID = @accountId)';
+            exportFilterCond += ' AND t.AccountName IN (SELECT AccountName FROM Accounts WHERE AccountID = @accountId AND UserID = @userId)';
             params.accountId = parseInt(accountId, 10) || 0;
         }
 
@@ -1931,11 +1931,11 @@ router.get('/export/csv', async (req, res) => {
             else { csvExtraParts.push('t.Status = @status'); params.status = status; }
         }
         if (search) {
-            csvExtraParts.push("t.Title LIKE @search ESCAPE '\\' OR t.RefNumber LIKE @search ESCAPE '\\'");
+            csvExtraParts.push("(t.Title LIKE @search ESCAPE '\\' OR t.RefNumber LIKE @search ESCAPE '\\')");
             params.search = `%${escapeLike(search)}%`;
         }
         if (customerId && customerId !== 'all') { csvExtraParts.push('t.CustomerID = @customerId'); params.customerId = parseInt(customerId, 10) || 0; }
-        if (accountId && accountId !== 'all') { csvExtraParts.push('t.AccountName IN (SELECT AccountName FROM Accounts WHERE AccountID = @accountId)'); params.accountId = parseInt(accountId, 10) || 0; }
+        if (accountId && accountId !== 'all') { csvExtraParts.push('t.AccountName IN (SELECT AccountName FROM Accounts WHERE AccountID = @accountId AND UserID = @userId)'); params.accountId = parseInt(accountId, 10) || 0; }
         if (categoryId && categoryId !== 'all') { csvExtraParts.push('t.CategoryOrService IN (SELECT CategoryName FROM Categories WHERE CategoryID = @categoryId)'); params.categoryId = parseInt(categoryId, 10) || 0; }
         if (csvExtraParts.length > 0) { csvExtraCond = ' AND ' + csvExtraParts.join(' AND '); }
 
@@ -2215,14 +2215,32 @@ router.get('/yearly', async (req, res) => {
                 WHERE TransDate >= @yearStart AND TransDate <= @yearEnd AND UserID = @userId AND IsDeleted = 0
                 GROUP BY MONTH(TransDate)
             ),
-            BCAgg AS (
+            BCAggRaw AS (
                 SELECT
                     MONTH(b.TransDate) as Month,
                     ISNULL(SUM(b.CommissionEarned), 0) as BCCommission,
-                    ISNULL(SUM(b.CustomerCharge), 0) as BCCharge
+                    ISNULL(SUM(b.CustomerCharge), 0) as BCTotalCharge
                 FROM BCTransactions b
                 WHERE b.TransDate >= @yearStart AND b.TransDate <= @yearEnd AND b.Status = 'Success' AND b.UserID = @userId
                 GROUP BY MONTH(b.TransDate)
+            ),
+            BCKhataAgg AS (
+                SELECT
+                    MONTH(k.EntryDate) as Month,
+                    ISNULL(SUM(k.Amount), 0) as BCChargeOnKhata
+                FROM KhataEntries k
+                WHERE k.EntryDate >= @yearStart AND k.EntryDate <= @yearEnd AND k.EntryType = 'Gave' AND k.BCID IS NOT NULL AND k.UserID = @userId
+                GROUP BY MONTH(k.EntryDate)
+            ),
+            BCAgg AS (
+                SELECT
+                    r.Month,
+                    r.BCCommission,
+                    CASE WHEN r.BCTotalCharge > ISNULL(bk.BCChargeOnKhata, 0)
+                         THEN r.BCTotalCharge - ISNULL(bk.BCChargeOnKhata, 0)
+                         ELSE 0 END as BCCharge
+                FROM BCAggRaw r
+                LEFT JOIN BCKhataAgg bk ON r.Month = bk.Month
             ),
             BPAgg AS (
                 SELECT
@@ -2243,7 +2261,7 @@ router.get('/yearly', async (req, res) => {
             LEFT JOIN TransAgg t ON m.Month = t.Month
             LEFT JOIN BCAgg bc ON m.Month = bc.Month
             LEFT JOIN BPAgg bp ON m.Month = bp.Month
-            WHERE ISNULL(t.CashIncome, 0) > 0 OR ISNULL(t.Expense, 0) > 0 OR ISNULL(bc.BCCommission, 0) > 0 OR ISNULL(bp.BPCommission, 0) > 0
+            WHERE ISNULL(t.CashIncome, 0) > 0 OR ISNULL(t.Expense, 0) > 0 OR ISNULL(bc.BCCommission, 0) > 0 OR ISNULL(bc.BCCharge, 0) > 0 OR ISNULL(bp.BPCommission, 0) > 0
             ORDER BY m.Month
         `, { yearStart, yearEnd, userId });
 

@@ -7,11 +7,18 @@ const lm = require('../utils/licenseManager');
 
 const LOCAL_CONFIG_PATH = path.join(__dirname, '..', 'config', 'licenses.json');
 
+function isStrictLoopback(req) {
+    if (req.headers['x-forwarded-for'] || req.headers['forwarded'] || req.headers['cf-ray'] || req.headers['cf-connecting-ip']) {
+        return false;
+    }
+    const remoteAddr = String((req.socket && req.socket.remoteAddress) || req.ip || '').replace(/^::ffff:/, '');
+    return remoteAddr === '127.0.0.1' || remoteAddr === '::1';
+}
+
 function isAuthorizedAdmin(req) {
-    const isLoopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'].includes(req.hostname) || ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip);
     const userRole = req.user?.Role;
     const userId = req.user?.UserID;
-    return isLoopback || userRole === 'SuperAdmin' || userRole === 'Admin' || userId === 1;
+    return isStrictLoopback(req) || userRole === 'SuperAdmin' || userRole === 'Admin' || userId === 1;
 }
 
 // GET /api/license/status - Get current license state

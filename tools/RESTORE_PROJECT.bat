@@ -17,7 +17,7 @@ if not exist "node_modules\" (
 )
 
 echo.
-echo ⏳ Step 2: Restoring SQL Server Database from latest backup...
+echo ⏳ Step 2: Restoring SQLite Database from latest backup...
 node database/restore-runner.js
 if errorlevel 1 goto restore_failed
 

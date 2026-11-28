@@ -29,7 +29,7 @@ function userIdOf(req) {
 
 function isAdmin(req) {
     const role = String(req.user?.Role || '').toLowerCase();
-    return role === 'superadmin' || role === 'admin' || role === 'owner' || role === 'shopowner';
+    return role === 'superadmin' || role === 'admin' || role === 'shopadmin' || role === 'owner' || role === 'shopowner';
 }
 
 function bad(res, msg, code = 400) {
@@ -50,9 +50,15 @@ router.get('/modules', async (req, res) => {
     }
 });
 
+function isPlatformAdmin(req) {
+    const role = String(req.user?.Role || '').toLowerCase();
+    const actualUid = Number(req.user?.ActualUserID || req.user?.UserID || 0);
+    return role === 'superadmin' || (isAdmin(req) && actualUid === 1);
+}
+
 router.post('/modules', async (req, res) => {
     try {
-        if (!isAdmin(req)) return bad(res, 'Sirf admin naya module add kar sakta hai', 403);
+        if (!isPlatformAdmin(req)) return bad(res, 'Sirf SuperAdmin global module add/update kar sakta hai', 403);
 
         const moduleCode = String(req.body.moduleCode || req.body.ModuleCode || '').trim();
         const moduleName = String(req.body.moduleName || req.body.ModuleName || '').trim();
@@ -98,6 +104,7 @@ router.post('/modules', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/services', async (req, res) => {
     try {
+        const userId = userIdOf(req);
         const moduleCode = req.query.module ? String(req.query.module) : null;
         const includeInactive = String(req.query.includeInactive || '') === 'true';
 
@@ -105,10 +112,11 @@ router.get('/services', async (req, res) => {
             SELECT ServiceID, ServiceName, GovtFee, OperatorFee, DefaultDays, Icon,
                    IsActive, SortOrder, Category, ModuleCode, CustomFieldsSchema
             FROM dbo.CSCServices
-            WHERE (@module IS NULL OR ModuleCode = @module)
+            WHERE (UserID = @userId OR UserID = 1 OR UserID IS NULL)
+              AND (@module IS NULL OR ModuleCode = @module)
               AND (@includeInactive = 1 OR IsActive = 1)
             ORDER BY SortOrder, ServiceName
-        `, { module: moduleCode, includeInactive: includeInactive ? 1 : 0 });
+        `, { userId, module: moduleCode, includeInactive: includeInactive ? 1 : 0 });
 
         res.json({ success: true, data: result.recordset });
     } catch (err) {
@@ -216,14 +224,32 @@ router.post('/services/:id/fields', async (req, res) => {
         }
         if (!fieldLabel) return bad(res, 'fieldLabel zaroori hai');
 
-        const svc = await query(`SELECT ServiceID FROM dbo.CSCServices WHERE ServiceID = @id`, { id: serviceId });
+        const svc = await query(`SELECT ServiceID, UserID FROM dbo.CSCServices WHERE ServiceID = @id`, { id: serviceId });
         if (!svc.recordset.length) return bad(res, 'Service nahi mila', 404);
+        if (!isPlatformAdmin(req) && Number(svc.recordset[0].UserID) !== Number(userIdOf(req))) {
+            return bad(res, 'Doosre tenant ki service me field modify nahi kar sakte', 403);
+        }
 
         const options = req.body.options !== undefined ? JSON.stringify(req.body.options) : null;
 
-        const ins = await query(`
-            IF EXISTS (SELECT 1 FROM dbo.FieldDefinitions WHERE ServiceID = @sid AND FieldKey = @key)
-            BEGIN
+        const fieldParams = {
+            sid: serviceId,
+            key: fieldKey,
+            label: fieldLabel,
+            type: req.body.fieldType || 'text',
+            options,
+            def: req.body.defaultValue || null,
+            ph: req.body.placeholder || null,
+            req: req.body.isRequired ? 1 : 0,
+            order: parseInt(req.body.displayOrder, 10) || 0
+        };
+        const existingField = await query(
+            'SELECT FieldID FROM dbo.FieldDefinitions WHERE ServiceID = @sid AND FieldKey = @key',
+            { sid: serviceId, key: fieldKey }
+        );
+        let ins;
+        if (existingField.recordset && existingField.recordset.length > 0) {
+            await query(`
                 UPDATE dbo.FieldDefinitions
                 SET FieldLabel = @label,
                     FieldType = @type,
@@ -234,30 +260,19 @@ router.post('/services/:id/fields', async (req, res) => {
                     DisplayOrder = @order,
                     IsActive = 1,
                     UpdatedAt = GETDATE()
-                WHERE ServiceID = @sid AND FieldKey = @key;
-                SELECT FieldID FROM dbo.FieldDefinitions WHERE ServiceID = @sid AND FieldKey = @key;
-            END
-            ELSE
-            BEGIN
+                WHERE ServiceID = @sid AND FieldKey = @key
+            `, fieldParams);
+            ins = existingField;
+        } else {
+            ins = await query(`
                 INSERT INTO dbo.FieldDefinitions
                     (ServiceID, FieldKey, FieldLabel, FieldType, FieldOptionsJson,
                      DefaultValue, Placeholder, IsRequired, DisplayOrder, IsActive)
                 VALUES
-                    (@sid, @key, @label, @type, @options, @def, @ph, @req, @order, 1);
-                -- FieldDefinitions par AFTER INSERT trigger hai, isliye OUTPUT nahi
-                SELECT CAST(SCOPE_IDENTITY() AS INT) AS FieldID;
-            END
-        `, {
-            sid: serviceId,
-            key: fieldKey,
-            label: fieldLabel,
-            type: req.body.fieldType || 'text',
-            options,
-            def: req.body.defaultValue || null,
-            ph: req.body.placeholder || null,
-            req: req.body.isRequired ? 1 : 0,
-            order: parseInt(req.body.displayOrder, 10) || 0
-        });
+                    (@sid, @key, @label, @type, @options, @def, @ph, @req, @order, 1)
+                RETURNING FieldID
+            `, fieldParams);
+        }
 
         res.status(201).json({
             success: true,

@@ -1,0 +1,12 @@
+name = "cmbc-fleet-monitor"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[observability]
+enabled = true
+
+# D1 Database binding (run SETUP_CLOUDFLARE.bat or `npx wrangler d1 create cmbc-fleet-db` to fill database_id)
+[[d1_databases]]
+binding = "DB"
+database_name = "cmbc-fleet-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"

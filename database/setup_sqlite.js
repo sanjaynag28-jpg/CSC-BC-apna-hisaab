@@ -269,6 +269,11 @@ function finalizeSeedData(db, hasExistingTables) {
             } catch (credErr) { }
         }
 
+        // 2a. Ensure any Staff account without ParentUserID defaults to Shop 1
+        try {
+            db.prepare("UPDATE Users SET ParentUserID = 1 WHERE Role = 'Staff' AND ParentUserID IS NULL").run();
+        } catch (_) { }
+
         // 2b. Seed missing TxnModules idempotently (preserve any user-added modules)
         try {
             const existsMod = db.prepare('SELECT 1 FROM TxnModules WHERE ModuleCode = @code');
@@ -431,7 +436,7 @@ function setupSQLite(existingDb) {
         fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    const dbPath = path.join(dataDir, 'cash_management.db');
+    const dbPath = process.env.CMBC_DB_PATH ? path.resolve(process.env.CMBC_DB_PATH) : path.join(dataDir, 'cash_management.db');
     const shouldClose = !existingDb;
     const db = existingDb || new Database(dbPath, { timeout: 7000 });
 
@@ -452,7 +457,7 @@ async function setupSQLiteAsync(existingDb, onProgress) {
         fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    const dbPath = path.join(dataDir, 'cash_management.db');
+    const dbPath = process.env.CMBC_DB_PATH ? path.resolve(process.env.CMBC_DB_PATH) : path.join(dataDir, 'cash_management.db');
     const shouldClose = !existingDb;
     const db = existingDb || new Database(dbPath, { timeout: 7000 });
 

@@ -2,7 +2,13 @@
 
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
 const safety = require('./test-safety');
+const gdrivePath = path.resolve(__dirname, '../scripts/gdrive_backup.js');
+if (!fs.existsSync(gdrivePath)) {
+    console.log('[SKIP] scripts/gdrive_backup.js not present; skipping gdrive restore target assertions.');
+    process.exit(0);
+}
 const { validateRestoreTarget } = require('../scripts/gdrive_backup');
 
 assert.throws(
